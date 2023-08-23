@@ -144,4 +144,4 @@ if __name__ == "__main__":
         )
 
     demo.queue()
-    demo.launch(show_error=True, share=False)
+    demo.launch(show_error=True, share=True)
