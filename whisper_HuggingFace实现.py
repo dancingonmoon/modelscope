@@ -1,5 +1,7 @@
-import whisper
+import transformers
 import gradio as gr
+
+transformers.BarkModel.
 
 # audio_path = r"H:\music\Music\2.mp3"
 model = whisper.load_model("small")
