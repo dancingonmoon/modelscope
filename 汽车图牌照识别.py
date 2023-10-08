@@ -25,34 +25,37 @@ def VehiclePlate_Recognition(photo_path):
         img = plt.imread(photo_path)
         # 云端显示图片
         # plt.imshow(img)
-    elif isinstance(photo_path, np.ndarray):
+    elif isinstance(photo_path, object):
         img = photo_path # gradio输出的image的numpy结构为: (height, width, 3)
         
     # 获取牌照的最大面积截图矩阵:
-    widths = plate['polygons'][0,::2] # 四坐标x轴(width)
-    heights = plate['polygons'][0,1::2] # 四坐标y轴(heights)
-    print(widths,heights)
-    H_up = math.floor(min(heights))
-    H_down = math.ceil(max(heights))
-    W_left = math.floor(min(widths))
-    W_right = math.ceil(max(widths))
+    if plate['text'] != [] :  # 表示图片中取到了汽车类型,从而polygons不为空
+        widths = plate['polygons'][0,::2] # 四坐标x轴(width)
+        heights = plate['polygons'][0,1::2] # 四坐标y轴(heights)
+        # print(widths,heights)
+        H_up = math.floor(min(heights))
+        H_down = math.ceil(max(heights))
+        W_left = math.floor(min(widths))
+        W_right = math.ceil(max(widths))
     
-    plate_crop = img[H_up:H_down, W_left:W_right]
-    # print(H_up,H_down,W_left,W_right)
-    # 云端显示牌照截图:
-    # plt.imshow(plate_crop)
+        plate_crop = img[H_up:H_down, W_left:W_right]
+        # print(H_up,H_down,W_left,W_right)
+        #云端显示牌照截图:
+        # plt.imshow(plate_crop)
     
-    # 给定一张文本图片，识别出图中所含文字并输出对应字符串
-    ocr_recognition = pipeline(Tasks.ocr_recognition, model='damo/cv_convnextTiny_ocr-recognition-licenseplate_damo')
+        # 给定一张文本图片，识别出图中所含文字并输出对应字符串
+        ocr_recognition = pipeline(Tasks.ocr_recognition, model='damo/cv_convnextTiny_ocr-recognition-licenseplate_damo')
     
-    recognized_plate = ocr_recognition(plate_crop)
-    return [plate['text'], recognized_plate['text']]
+        recognized_plate = ocr_recognition(plate_crop)
+        return [plate['text'], recognized_plate['text']]
+    else:
+        return '未识别出车辆类型,图片中未找到车牌区域'
 
 def image_source(img_src):
     if img_src == 'upload':
-        return gr.update(source='upload',label="请上传图片")
+        return gr.Image(source='upload',label="请上传图片")
     if img_src == 'webcam':
-        return gr.update(source='webcam',label="请拍照")
+        return gr.Image(source='webcam',label="请拍照")
     
 
 if __name__ == "__main__":
@@ -62,12 +65,12 @@ if __name__ == "__main__":
         title="传入汽车图,获取汽车牌照,以及汽车类别",
     ) as demo:
         gr.Markdown(
-            """[车牌照识别](https://modelscope.cn/models/damo/cv_convnextTiny_ocr-recognition-licenseplate_damo/summary)
+            """[**车牌照识别**](https://modelscope.cn/models/damo/cv_convnextTiny_ocr-recognition-licenseplate_damo/summary)
             > 1. 拍照,或者上传带有汽车牌照的汽车图片
             > 1. 点击,"提交",输出汽车牌照,汽车类别            
             """)
         inp0 = gr.Radio(
-                    choices=["camera", "upload"],
+                    choices=["webcam", "upload"],
                     value="upload",
                     type="value",
                     label="选择图片来源",
@@ -83,8 +86,8 @@ if __name__ == "__main__":
         out = gr.Text(label='车辆类别,识别车牌号', show_copy_button=True,show_label=True,
                      placeholder="['小型汽车'],['浙A88888']")
         submit_button = gr.Button(value='提交')
-        submit_button.click(VehiclePlate_Recognition,img_numpy,out)
+        submit_button.click(VehiclePlate_Recognition, inp1, out)
         
         
         demo.queue()
-        demo.launch(show_error=True, share=True)
+        demo.launch(show_error=True, share=True, debug=True)
