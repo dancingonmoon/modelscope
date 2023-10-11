@@ -16,8 +16,8 @@ def Paraformer_longaudio_model(
         vad_model = ""
 
     if use_punc_model:
-        # punc_model='damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch'
-        punc_model = ("damo/punc_ct-transformer_cn-en-common-vocab471067-large",)
+        punc_model='damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch'
+        # punc_model = "damo/punc_ct-transformer_cn-en-common-vocab471067-large"
 
     else:
         punc_model = ""
@@ -27,15 +27,16 @@ def Paraformer_longaudio_model(
         inference_pipeline = pipeline(
             task=Tasks.auto_speech_recognition,
             # defaults to combine VAD, ASR and PUNC
-            # model='damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
-            model="damo/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",  # 分角色语音识别
+            model='damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
+            # model='damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
+            # model="damo/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",  # 分角色语音识别
             vad_model=vad_model,
             punc_model=punc_model,
             lm_model="damo/speech_transformer_lm_zh-cn-common-vocab8404-pytorch",
             lm_weight=0.15,
             beam_size=10,
-            # model_revision=None,
-            model_revision="v0.0.2",
+            model_revision=None,
+            # model_revision="v0.0.2",
             output_dir=output_dir,
         )
 
@@ -43,12 +44,13 @@ def Paraformer_longaudio_model(
         inference_pipeline = pipeline(
             task=Tasks.auto_speech_recognition,
             # defaults to combine VAD, ASR and PUNC
-            # model='damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
-            model="damo/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",  # 分角色语音识别
+            model='damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
+            # model='damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
+            # model="damo/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",  # 分角色语音识别
             vad_model=vad_model,
             punc_model=punc_model,
-            # model_revision=None,
-            model_revision="v0.0.2",
+            model_revision=None,
+            # model_revision="v0.0.2",
             output_dir=output_dir,
         )
 
@@ -95,7 +97,7 @@ def audio_source(source, url):
         # inp_url.input(lambda x: x, inp_url,out)
     else:
         print("invalid source")
-    return out, inp_url
+    return inp_url, out
 
 
 def model_checkbox(model_selected):
@@ -167,9 +169,7 @@ if __name__ == "__main__":
                     show_copy_button=True,
                     value="https://isv-data.oss-cn-hangzhou.aliyuncs.com/ics/MaaS/ASR/test_audio/asr_speaker_demo.wav",
                     visible=False # 初始就让其不可现,仅当点击url时,才可见
-                )
-                url_state = gr.State()
-                inp_url.submit(text2text,inp_url, url_state)
+                )                               
             
                 inp1 = gr.Audio(
                     source='upload',
@@ -177,7 +177,9 @@ if __name__ == "__main__":
                     show_label=True,
                     interactive=True,
                 )
-                inp0.change(audio_source, [inp0, url_state], [inp1, inp_url])
+                inp0.change(audio_source, [inp0, inp_url], [inp_url,inp1],show_progress=True)
+                inp_url.submit(audio_source,[inp0,inp_url],[inp_url,inp1],show_progress=True)
+                
                 with gr.Row(variant="panel"):
                     inp2 = gr.CheckboxGroup(
                         ["VAD", "PUNC", "NNLM"],
