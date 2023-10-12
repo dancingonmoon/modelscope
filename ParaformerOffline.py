@@ -5,6 +5,13 @@ import numpy as np
 
 import librosa
 
+def ms2strftime(timestamp):
+    """
+    将毫秒值转换为可读的时间格式
+    timestamp: 为毫秒值
+    """
+    formatted_time = time.strftime("%H:%M:%S", time.gmtime(timestamp/1000))
+    return formatted_time
 
 def Paraformer_longaudio_model(
     use_vad_model=True, use_punc_model=True, use_lm_model=False
@@ -57,20 +64,46 @@ def Paraformer_longaudio_model(
     return inference_pipeline  # 这里先输出模型, 以避免后续模型重复生成;
 
 
-def Paraformer_longaudio_recognition(
-    inference_pipeline,
-    audio_data,
-    use_timestamp=True,
-):
+def RUN(inference_pipeline, audio_data, model_selected, 
+        models_change_flag=False, use_timestamp=True):
     """
     audio_data: 为输入音频,为gr.Audio输出,为元组: (int sample rate, numpy.array for the data),二进制数据(bytes);url
     """
-    param_dict = {"use_timestamp": use_timestamp}
-    # param_dict['use_timestamp'] = use_timestamp
-    sample_rate, waveform = audio_data
-    rec_result = inference_pipeline(audio_in=waveform)  # , param_dict=param_dict)
-    return rec_result
+    # 判断模型选择是否发生变化,并重新加载模型:
+    if models_change_flag:        
+        use_vad_model = True if "VAD" in model_selected else False
+        use_punc_model = True if "PUNC" in model_selected else False
+        use_lm_model = True if "NNLM" in model_selected else False
+        
+        inference_pipeline = Paraformer_longaudio_model(
+            use_vad_model=use_vad_model, use_punc_model=use_punc_model, use_lm_model=use_lm_model)
+    
+    samplerate, waveform = audio_data
+    waveform = waveform.astype(np.float32)  
+    # gr.Audio转换的为(sample rate in Hz, audio data as a 16-bit int array);
+    # Paraformer模型的音频输入要求: 1) 单声道;2) 16K采样率, 3) float32 缺一不可;
+    # 双声道变成单声道
+    if len(waveform.shape) > 1:  # 说明是双声道
+        waveform = np.mean(waveform, axis=1)
+    # 采样率调整成16K:
+    target_sr = 16000
+    if samplerate != target_sr:
+        waveform = librosa.resample(waveform, samplerate, target_sr)
+    
+    result = inference_pipeline(waveform, use_timestamp=use_timestamp) 
 
+    # 读出内容:
+    contents = ""
+    if use_timestamp:
+        for dic in result["sentences"]:
+            start = ms2strftime(dic['start'])
+            end = ms2strftime(dic['end'])
+            contents += f"{start}->{end} : {dic['text']} \n"
+    else:
+        for dic in result["sentences"]:
+            contents += f"{dic['text']} \n"
+
+    return contents
 
 def audio_source(source, url):
     if source == "upload":
