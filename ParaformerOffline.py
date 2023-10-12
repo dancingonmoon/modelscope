@@ -6,25 +6,26 @@ import numpy as np
 import librosa
 import time
 
+
 def ms2strftime(timestamp):
     """
     将毫秒值转换为可读的时间格式
     timestamp: 为毫秒值
     """
-    formatted_time = time.strftime("%H:%M:%S", time.gmtime(timestamp/1000))
+    formatted_time = time.strftime("%H:%M:%S", time.gmtime(timestamp / 1000))
     return formatted_time
 
-def Paraformer_longaudio_model(
-    use_vad_model=True, use_punc_model=True, use_lm_model=False
-):
 
+def Paraformer_longaudio_model(
+        use_vad_model=True, use_punc_model=True, use_lm_model=False
+):
     if use_vad_model:
         vad_model = "damo/speech_fsmn_vad_zh-cn-16k-common-pytorch"
     else:
         vad_model = ""
 
     if use_punc_model:
-        punc_model='damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch'
+        punc_model = 'damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch'
         # punc_model = "damo/punc_ct-transformer_cn-en-common-vocab471067-large"
 
     else:
@@ -64,25 +65,27 @@ def Paraformer_longaudio_model(
 
     return inference_pipeline  # 这里先输出模型, 以避免后续模型重复生成;
 
-inference_pipeline = Paraformer_longaudio_model() # 使用缺省值生成模型;
 
-def RUN(audio_data, model_selected, 
+inference_pipeline = Paraformer_longaudio_model()  # 使用缺省值生成模型;
+
+
+def RUN(audio_data, model_selected,
         models_change_flag=False, use_timestamp=True):
     """
     audio_data: 为输入音频,为gr.Audio输出,为元组: (int sample rate, numpy.array for the data),二进制数据(bytes);url
     """
-    global inference_pipeline 
+    global inference_pipeline
     # 判断模型选择是否发生变化,并重新加载模型:
-    if models_change_flag:        
+    if models_change_flag:
         use_vad_model = True if "VAD" in model_selected else False
         use_punc_model = True if "PUNC" in model_selected else False
         use_lm_model = True if "NNLM" in model_selected else False
-        
+
         inference_pipeline = Paraformer_longaudio_model(
             use_vad_model=use_vad_model, use_punc_model=use_punc_model, use_lm_model=use_lm_model)
-    
+
     samplerate, waveform = audio_data
-    waveform = waveform.astype(np.float32)  
+    waveform = waveform.astype(np.float32)
     # gr.Audio转换的为(sample rate in Hz, audio data as a 16-bit int array);
     # Paraformer模型的音频输入要求: 1) 单声道;2) 16K采样率, 3) float32 缺一不可;
     # 双声道变成单声道
@@ -92,8 +95,8 @@ def RUN(audio_data, model_selected,
     target_sr = 16000
     if samplerate != target_sr:
         waveform = librosa.resample(waveform, orig_sr=samplerate, target_sr=target_sr)
-    
-    result = inference_pipeline(waveform, use_timestamp=use_timestamp) 
+
+    result = inference_pipeline(waveform, use_timestamp=use_timestamp)
 
     # 读出内容:
     contents = ""
@@ -104,10 +107,11 @@ def RUN(audio_data, model_selected,
             contents += f"{start}->{end} : {dic['text']} \n"
     else:
         contents = result["text"]
-        
-    models_change_flag=False # 模型调用一次后,标志位复位,标记模型的新状态; 否则,后续每次都会重复重新调用模型;
-            
+
+    models_change_flag = False  # 模型调用一次后,标志位复位,标记模型的新状态; 否则,后续每次都会重复重新调用模型;
+
     return contents, models_change_flag
+
 
 def audio_source(source, url):
     if source == "upload":
@@ -126,10 +130,10 @@ def audio_source(source, url):
         inp_url = gr.Textbox(visible=True)
         try:
             out = gr.Audio(
-                value=url, 
+                value=url,
                 source=None)
         except:  # 异常时,恢复upload上传来源
-            out = gr.Audio(value=None,source="upload")
+            out = gr.Audio(value=None, source="upload")
 
         # inp_url.input(lambda x: x, inp_url,out)
     else:
@@ -143,13 +147,12 @@ def model_checkbox(models_change_flag):
 
 
 if __name__ == "__main__":
-
-    model_selected = ["VAD", "PUNC"] # 模型选择缺省值;
+    model_selected = ["VAD", "PUNC"]  # 模型选择缺省值;
     # inference_pipeline = Paraformer_longaudio_model() # 使用缺省值生成模型;
-    
+
     with gr.Blocks(
-        theme="soft",
-        title="UniASR语音实时识别",
+            theme="soft",
+            title="UniASR语音实时识别",
     ) as demo:
         gr.Markdown(
             """[**语音识别**](https://www.modelscope.cn/models/damo/speech_paraformer-large_asr_nat-zh-cn-16k-aishell1-vocab8404-pytorch/summary)              
@@ -176,18 +179,18 @@ if __name__ == "__main__":
                     show_label=True,
                     show_copy_button=True,
                     value="https://isv-data.oss-cn-hangzhou.aliyuncs.com/ics/MaaS/ASR/test_audio/asr_speaker_demo.wav",
-                    visible=False # 初始就让其不可现,仅当点击url时,才可见
-                )                               
-            
+                    visible=False  # 初始就让其不可现,仅当点击url时,才可见
+                )
+
                 inp1 = gr.Audio(
                     source='upload',
                     type="numpy",
                     show_label=True,
                     interactive=True,
                 )
-                inp0.change(audio_source, [inp0, inp_url], [inp_url,inp1],show_progress=True)
-                inp_url.submit(audio_source,[inp0,inp_url],[inp_url,inp1],show_progress=True)
-                
+                inp0.change(audio_source, [inp0, inp_url], [inp_url, inp1], show_progress=True)
+                inp_url.submit(audio_source, [inp0, inp_url], [inp_url, inp1], show_progress=True)
+
                 with gr.Row(variant="panel"):
                     inp2 = gr.CheckboxGroup(
                         ["VAD", "PUNC", "NNLM"],
@@ -196,13 +199,13 @@ if __name__ == "__main__":
                         show_label=True,
                     )
 
-                    models_change_flag_var = gr.State(False) # 缺省模型没有被选择;
+                    models_change_flag_var = gr.State(False)  # 缺省模型没有被选择;
                     # use_timestamp_var = gr.State(True) # 缺省use_timestamp=True
                     inp3 = gr.Checkbox(value=True, label="时间戳", show_label=True)
-                    
+
                     inp2.select(model_checkbox, models_change_flag_var, models_change_flag_var)
                     # inp3.select(use_timestamp_checkbox, use_timestamp_var, use_timestamp_var)
-                    
+
             with gr.Column(variant="panel"):
                 out0 = gr.Textbox(
                     lines=6,
@@ -214,7 +217,7 @@ if __name__ == "__main__":
 
         with gr.Row(variant="panel"):
             submit = gr.Button(value="一键识别", variant="primary")
-            submit.click(RUN, [ inp1, inp2, models_change_flag_var, inp3], [out0,models_change_flag_var])
+            submit.click(RUN, [inp1, inp2, models_change_flag_var, inp3], [out0, models_change_flag_var])
             clear = gr.Button(value="清除", variant="primary")
 
             clear.click(lambda: "", outputs=out0)
