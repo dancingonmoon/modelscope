@@ -6,6 +6,22 @@ import numpy as np
 import librosa
 import time
 
+# large asr+vad+punc
+# asr_model='damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch'
+# large asr 仅仅
+# asr_model='damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch'
+# large asr+vad+punc+spk分角色
+# asr_model="damo/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",  # 分角色语音识别
+# large 热词 asr 仅仅:
+asr_model="damo/speech_paraformer-large-contextual_asr_nat-zh-cn-16k-common-vocab8404"
+vad_model = "damo/speech_fsmn_vad_zh-cn-16k-common-pytorch"
+punc_model='damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch'
+# punc_model = "damo/punc_ct-transformer_cn-en-common-vocab471067-large"
+lm_model="damo/speech_transformer_lm_zh-cn-common-vocab8404-pytorch"
+timestamp_model="damo/speech_timestamp_prediction-v1-16k-offline"
+
+output_dir = "./results"
+
 def ms2strftime(timestamp):
     """
     将毫秒值转换为可读的时间格式
@@ -15,72 +31,105 @@ def ms2strftime(timestamp):
     return formatted_time
 
 def Paraformer_longaudio_model(
-    use_vad_model=True, use_punc_model=True, use_lm_model=False
-):
+    use_vad_model=True, use_punc_model=True, use_lm_model=False,
+    use_hotword=False, hotword_txt = '', use_timestamp = False):
+    
+    global asr_model
+    global vad_model
+    global punc_model
+    global lm_model
+    global timestamp_model
 
-    if use_vad_model:
-        vad_model = "damo/speech_fsmn_vad_zh-cn-16k-common-pytorch"
-    else:
+    if use_vad_model == False:
         vad_model = ""
 
-    if use_punc_model:
-        punc_model='damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch'
-        # punc_model = "damo/punc_ct-transformer_cn-en-common-vocab471067-large"
-
-    else:
+    if use_punc_model == False:
         punc_model = ""
-
-    output_dir = "./results"
+    
+    if use_hotword:
+        # 添加自定义hotword
+        if isinstance(hotword_txt, str):
+            hotword_txt = re.sub(r'[\s\n,][\s\n,]*','\n',hotword_txt) #将单个或者连续的空格/换行/逗号,替换成换行符
+        else:
+            hotword_txt = ''
+            
+        param_dict['hotword'] = hotword_txt
+          
+      
     if use_lm_model:
-        inference_pipeline = pipeline(
-            task=Tasks.auto_speech_recognition,
-            # defaults to combine VAD, ASR and PUNC
-            model='damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
-            # model='damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
-            # model="damo/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",  # 分角色语音识别
-            vad_model=vad_model,
-            punc_model=punc_model,
-            lm_model="damo/speech_transformer_lm_zh-cn-common-vocab8404-pytorch",
-            lm_weight=0.15,
-            beam_size=10,
-            model_revision=None,
-            # model_revision="v0.0.2",
-            output_dir=output_dir,
-        )
+        if use_hotword:
+            inference_pipeline = pipeline(
+                task=Tasks.auto_speech_recognition,
+                model = asr_model,
+                vad_model=vad_model,
+                punc_model=punc_model,
+                lm_model=lm_model,
+                lm_weight=0.15,
+                beam_size=10,
+                model_revision=None,
+                # model_revision="v0.0.2",
+                output_dir=output_dir,
+                param_dict=param_dict)
+        else:
+            inference_pipeline = pipeline(
+                task=Tasks.auto_speech_recognition,
+                model = asr_model,
+                vad_model=vad_model,
+                punc_model=punc_model,
+                lm_model=lm_model,
+                lm_weight=0.15,
+                beam_size=10,
+                model_revision=None,
+                # model_revision="v0.0.2",
+                output_dir=output_dir,)
+            
 
     else:
-        inference_pipeline = pipeline(
-            task=Tasks.auto_speech_recognition,
-            # defaults to combine VAD, ASR and PUNC
-            model='damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
-            # model='damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
-            # model="damo/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",  # 分角色语音识别
-            vad_model=vad_model,
-            punc_model=punc_model,
-            model_revision=None,
-            # model_revision="v0.0.2",
-            output_dir=output_dir,
-        )
+        if use_hotword:
+            inference_pipeline = pipeline(
+                task=Tasks.auto_speech_recognition,
+                model = asr_model,
+                vad_model=vad_model,
+                punc_model=punc_model,
+                model_revision=None,
+                # model_revision="v0.0.2",
+                output_dir=output_dir,
+                param_dict=param_dict)
+        else:
+            inference_pipeline = pipeline(
+                task=Tasks.auto_speech_recognition,
+                model = asr_model,
+                vad_model=vad_model,
+                punc_model=punc_model,
+                model_revision=None,
+                # model_revision="v0.0.2",
+                output_dir=output_dir,)
 
     return inference_pipeline  # 这里先输出模型, 以避免后续模型重复生成;
 
 inference_pipeline = Paraformer_longaudio_model() # 使用缺省值生成模型;
 
 def RUN(audio_data, model_selected, 
-        models_change_flag=False, use_timestamp=True):
+        models_change_flag=False, use_timestamp=True, use_hotword=False, hotword_txt = ''):
     """
     audio_data: 为输入音频,为gr.Audio输出,为元组: (int sample rate, numpy.array for the data),二进制数据(bytes);url
     """
     global inference_pipeline 
     # 判断模型选择是否发生变化,并重新加载模型:
+    output_dir = './result'
+    param_dict = dict()
+    
     if models_change_flag:        
         use_vad_model = True if "VAD" in model_selected else False
         use_punc_model = True if "PUNC" in model_selected else False
         use_lm_model = True if "NNLM" in model_selected else False
         
         inference_pipeline = Paraformer_longaudio_model(
-            use_vad_model=use_vad_model, use_punc_model=use_punc_model, use_lm_model=use_lm_model)
-    
+                use_vad_model=use_vad_model, 
+                use_punc_model=use_punc_model, 
+                use_lm_model=use_lm_model,
+                use_hotword=False, hotword_txt = hotword_txt)
+        
     samplerate, waveform = audio_data
     waveform = waveform.astype(np.float32)  
     # gr.Audio转换的为(sample rate in Hz, audio data as a 16-bit int array);
@@ -92,8 +141,9 @@ def RUN(audio_data, model_selected,
     target_sr = 16000
     if samplerate != target_sr:
         waveform = librosa.resample(waveform, orig_sr=samplerate, target_sr=target_sr)
-    
-    result = inference_pipeline(waveform, use_timestamp=use_timestamp) 
+    if use_timestamp:
+        param_dict['use_timestamp'] = True
+    result = inference_pipeline(waveform, param_dict=param_dict)
 
     # 读出内容:
     contents = ""
@@ -107,7 +157,8 @@ def RUN(audio_data, model_selected,
         
     models_change_flag=False # 模型调用一次后,标志位复位,标记模型的新状态; 否则,后续每次都会重复重新调用模型;
             
-    return contents, models_change_flag
+    # return contents, models_change_flag
+    return result, models_change_flag
 
 def audio_source(source, url):
     if source == "upload":
@@ -140,6 +191,14 @@ def audio_source(source, url):
 def model_checkbox(models_change_flag):
     models_change_flag = True
     return models_change_flag
+
+def use_hotword_checkbox(use_hotword_flag):
+    if use_hotword_flag:
+        out = gr.Textbox(visible=True)
+    else:
+        out = gr.Textbox(visible=False)
+        
+    return out
 
 
 if __name__ == "__main__":
@@ -199,9 +258,19 @@ if __name__ == "__main__":
                     models_change_flag_var = gr.State(False) # 缺省模型没有被选择;
                     # use_timestamp_var = gr.State(True) # 缺省use_timestamp=True
                     inp3 = gr.Checkbox(value=True, label="时间戳", show_label=True)
+                    inp4 = gr.Checkbox(value=False,label="添加热词",show_label=True)
                     
                     inp2.select(model_checkbox, models_change_flag_var, models_change_flag_var)
                     # inp3.select(use_timestamp_checkbox, use_timestamp_var, use_timestamp_var)
+                    
+                with gr.Row(variant='panel'):
+                    inp5 = gr.Textbox(lines=1,placeholder='请输入热词,以空格,或者分号间隔:',label='热词表',
+                                     show_label=True,interactive=True,visible=False)
+                    inp4.select(use_hotword_checkbox, inp4, inp5) #控制visible
+                    # add_hotword_txt = gr.State('')
+                    # inp5.submit(add_hotword, none, add_hotword_txt)
+                    
+                    
                     
             with gr.Column(variant="panel"):
                 out0 = gr.Textbox(
@@ -214,7 +283,7 @@ if __name__ == "__main__":
 
         with gr.Row(variant="panel"):
             submit = gr.Button(value="一键识别", variant="primary")
-            submit.click(RUN, [ inp1, inp2, models_change_flag_var, inp3], [out0,models_change_flag_var])
+            submit.click(RUN, [ inp1, inp2, models_change_flag_var, inp3, inp4, inp5], [out0,models_change_flag_var])
             clear = gr.Button(value="清除", variant="primary")
 
             clear.click(lambda: "", outputs=out0)
