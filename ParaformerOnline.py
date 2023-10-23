@@ -46,7 +46,7 @@ def RUN(audio_stream, speech_txt):
     speech_txt: 之前累计的识别文本
     """
     samplerate = 16000  # 初始赋值,避免警告;
-    speech = np.empty(None, dtype=np.float32)
+    speech = np.empty(shape=None, dtype=np.float32)
     # 当输入是gr.Audio(type="Numpy")
     if isinstance(audio_stream, np.ndarray):
         samplerate, speech = audio_stream
@@ -104,6 +104,7 @@ def RUN(audio_stream, speech_txt):
                 # if speech_stride_vad_clip_result != []: # 例子中的代码,应该是错误的
                 # (https://github.com/alibaba-damo-academy/FunASR/discussions/278)
                 if len(speech_stride_vad_clip_result) != 0:  # 语音识别出非空时,
+                    param_dict['cache'] = []
                     speech_stride_vad_clip_punc_result = inference_pipeline_punc(
                         text_in=speech_stride_vad_clip_result['text'],
                         param_dict=param_dict)
@@ -115,6 +116,8 @@ def RUN(audio_stream, speech_txt):
                 # 4. 拼接
                 if len(speech_stride_vad_clip_punc_result) != 0:
                     final_result += speech_stride_vad_clip_punc_result['text']
+
+                param_dict['cache'] = dict()
         # else: # 当在说话停顿处，做标点断句恢复，修正识别文字:
 
         # if len(rec_result) != 0:
