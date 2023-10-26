@@ -75,7 +75,7 @@ def RUN(audio_stream, speech_txt):
         )
 
     speech_length = speech.shape[0]
-
+    print(f'后台收到的speech.shape: {speech.shape};speech_length: {speech_length};每个stride步长:9600')
     sample_offset = 0
     chunk_size = [5, 10, 5]  # 第一个5为左看5帧,10为text_n 10帧,为600ms, 第二个5为右看5帧
     # stride_size = chunk_size[1] * 960 # 为什么是960 ?
@@ -89,6 +89,7 @@ def RUN(audio_stream, speech_txt):
     for sample_offset in range(
         0, speech_length, min(stride_size, speech_length - sample_offset)
     ):
+        print(f"sample: {sample_offset} of {speech_length}")
         if sample_offset + stride_size >= speech_length - 1:
             stride_size = speech_length - sample_offset
             param_dict["is_final"] = True
