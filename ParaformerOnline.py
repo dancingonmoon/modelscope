@@ -40,6 +40,7 @@ inference_pipeline_punc = pipeline(
 
 stride = 960 * 10 * 1
 
+
 # model_dir = os.path.join(os.environ["MODELSCOPE_CACHE"], "damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online")
 # audio_data, sample_rate = soundfile.read(os.path.join(model_dir, "example/asr_example.wav"))
 
@@ -85,38 +86,36 @@ def Stream_VAD_Stream(audio_stream, vad_stream, vad_flag=True):
     vad_len = 0
     if vad_flag:
         segments_list.append(vad_stream)
+        print(f"vad合并之前的speech.shape:{speech.shape};拼接的vad_stream.shape:{vad_stream.shape}")
+        segments_result = inference_pipeline_vad(audio_in=speech)
+        print(f"vad之后的segments:{segments_result}")
+        if "text" in segments_result:
+            for segment in segments_result["text"]:
+                segment_stream = speech[segment[0]: segment[1]]  # 当出现起始,终止为-1时,不知如何处理?
+                segment_len = segment[1] - segment[0]
+                vad_len += segment_len
+                segments_list.append(segment_stream)
+            vad_stream = np.concatenate(segments_list, axis=-1)
 
-    print(f"vad合并之前的speech.shape:{speech.shape};拼接的vad_stream.shape:{vad_stream.shape}")
-    segments_result = inference_pipeline_vad(audio_in=speech)
-    print(f"vad之后的segments:{segments_result}")
-    if "text" in segments_result:
-        for segment in segments_result["text"]:
-            segment_stream = speech[segment[0] : segment[1]]  # 当出现起始,终止为-1时,不知如何处理?
-            segment_len = segment[1] - segment[0]
-            vad_len += segment_len
-            segments_list.append(segment_stream)
-        vad_stream = np.concatenate(segments_list, axis=-1)
+            #  当累积到长度超过9600*1时, 抛弃历史,保留最新:
+            if vad_stream.shape[0] >= stride + vad_len + 1:  # 长度增长是跳跃性的,
+                vad_stream = vad_stream[stride + vad_len:]
 
-    if vad_flag:  # 当累积到长度超过9600*1时, 抛弃历史,保留最新:
-        if vad_stream.shape[0] >= stride + vad_len:  # 长度增长是跳跃性的,
-            vad_stream = vad_stream[stride + vad_len - 1 :]
+    else:
+        vad_stream = speech
 
     return vad_stream
 
 
-def RUN(audio_stream, speech_txt, vad_stream):
+def RUN(audio_stream, speech_txt, vad_stream, vad_flag=False):
     """
     audio_stream : stream 片段, VAD之前;
     speech_txt: 之前累计的识别文本punc后的列表
     vad_stream : stream
     """
-    vad_flag = True
     speech = Stream_VAD_Stream(audio_stream, vad_stream, vad_flag=vad_flag)
-    if vad_flag:
-        if (
-            np.all(speech == 0) or speech.shape[0] < stride
-        ):  # 排除全0 ,无内容音频;排除长度不到stride,不予识别
-            return speech_txt, speech_txt, speech
+    if np.all(speech == 0) or (vad_flag and speech.shape[0] < stride):  # 排除全0 ,无内容音频;排除长度不到stride,不予识别
+        return speech_txt, speech_txt, speech
     else:
         print(f"vad合并之后的speech.shape:{speech.shape}")
         speech_length = speech.shape[0]
@@ -134,7 +133,7 @@ def RUN(audio_stream, speech_txt, vad_stream):
         # punc_list.append(speech_txt) # 将之前的punc后的txt,作为vad之后的第一个,再送入pineline_punc()
 
         for sample_offset in range(
-            0, speech_length, min(stride_size, speech_length - sample_offset)
+                0, speech_length, min(stride_size, speech_length - sample_offset)
         ):
             print(f"sample: {sample_offset} of {speech_length}")
             if sample_offset + stride_size >= speech_length - 1:
@@ -143,7 +142,7 @@ def RUN(audio_stream, speech_txt, vad_stream):
             else:
                 param_dict["is_final"] = False
 
-            speech_stride = speech[sample_offset : sample_offset + stride_size]
+            speech_stride = speech[sample_offset: sample_offset + stride_size]
             # 1. VAD 输入时,已经完成;
             # 2. ASR:
             speech_stride_result = inference_pipeline(
@@ -171,18 +170,20 @@ def RUN(audio_stream, speech_txt, vad_stream):
 
 with gr.Blocks(theme="soft", title="实时识别") as demo:
     with gr.Row(variant="panel"):
-        audio_stream = gr.Audio(
-            source="microphone",
-            type="filepath",
-            label="请录音并实时说话",
-            streaming=True,
-        )
+        with gr.Column():
+            audio_stream = gr.Audio(
+                source="microphone",
+                type="filepath",
+                label="请录音并实时说话",
+                streaming=True,
+            )
+            vad_flag = gr.Checkbox(value=False, label='VAD', show_label=True, )
         speech_txt = gr.State("")
         out = gr.Textbox(lines=2, placeholder="实时识别....", show_copy_button=True)
         vad_stream_var = gr.State(np.zeros(shape=(1,), dtype=np.float32))
         audio_stream.stream(
             RUN,
-            [audio_stream, speech_txt, vad_stream_var],
+            [audio_stream, speech_txt, vad_stream_var, vad_flag],
             [out, speech_txt, vad_stream_var],
         )
 
