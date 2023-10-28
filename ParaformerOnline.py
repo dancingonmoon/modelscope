@@ -1,10 +1,8 @@
 import gradio as gr
 import numpy as np
 
-# import os
 import logging
 
-# import soundfile
 import librosa
 
 from modelscope.pipelines import pipeline
@@ -15,7 +13,7 @@ logger = get_logger(log_level=logging.CRITICAL)
 logger.setLevel(logging.CRITICAL)
 
 # os.environ["MODELSCOPE_CACHE"] = "./"
-output_dir = "./result"
+output_dir = "./results"
 inference_pipeline_vad = pipeline(
     task=Tasks.voice_activity_detection,
     model="damo/speech_fsmn_vad_zh-cn-16k-common-pytorch",
@@ -24,7 +22,7 @@ inference_pipeline_vad = pipeline(
     batch_size=1,
     # mode="online",
 )
-inference_pipeline = pipeline(
+inference_pipeline_online = pipeline(
     task=Tasks.auto_speech_recognition,
     model="damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online",
     model_revision=None,
@@ -44,10 +42,6 @@ inference_pipeline_punc_offline = pipeline(
     model_revision=None)
 
 stride = 960 * 10 * 1
-
-
-# model_dir = os.path.join(os.environ["MODELSCOPE_CACHE"], "damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online")
-# audio_data, sample_rate = soundfile.read(os.path.join(model_dir, "example/asr_example.wav"))
 
 
 def Stream_VAD_Stream(audio_stream, vad_stream, vad_flag=True):
@@ -150,7 +144,7 @@ def RUN(audio_stream, speech_txt, vad_stream, vad_flag=False):
             speech_stride = speech[sample_offset: sample_offset + stride_size]
             # 1. VAD 输入时,已经完成;
             # 2. ASR:
-            speech_stride_result = inference_pipeline(
+            speech_stride_result = inference_pipeline_online(
                 audio_in=speech_stride, param_dict=param_dict
             )
             # 3. punc
@@ -183,38 +177,47 @@ def punc_offline(speech_txt, ):
     :return: speech_txt
     """
     rec_result = inference_pipeline_punc_offline(text_in=speech_txt)
+    if 'text' in rec_result:
+        speech_txt = rec_result['text']
 
-    return rec_result
+    return speech_txt
 
+def continue_recording(speech_txt, ):
+    """
+    当点击开始录音时,承接在之前识别的文本上继续实时录音和识别, 即将speech_txt送入speech_txt= gr.State()
+    :param speech_txt:
+    :return:
+    """
+    return speech_txt
 
-with gr.Blocks(theme="soft", title="实时识别") as demo:
-    with gr.Row(variant="panel"):
-        with gr.Column():
-            audio_stream = gr.Audio(
-                source="microphone",
-                type="filepath",
-                label="请录音并实时说话",
-                streaming=True,
-                show_label=True,
-                interactive=True
-            )
-            vad_flag = gr.Checkbox(value=False, label='是否识别之前打开VAD. Note: 会有较大延时', show_label=True, )
-        with gr.Column(variant='panel'):
-            speech_txt = gr.State("")
-            out = gr.Textbox(lines=2, placeholder="实时识别....", label='实时识别文本输出:', show_label=True,
-                             show_copy_button=True)
-            clear = gr.Button(value="清除", variant="primary")
-            clear.click(lambda: "", outputs=out)
-
-            vad_stream_var = gr.State(np.zeros(shape=(1,), dtype=np.float32))
-            audio_stream.stream(
-                RUN,
-                [audio_stream, speech_txt, vad_stream_var, vad_flag],
-                [out, speech_txt, vad_stream_var],
-            )
-            audio_stream.stop_recording(punc_offline, inputs=speech_txt, outputs=out, )
-
-demo.launch(
-    debug=True,
-    show_error=True,
-)
+# with gr.Blocks(theme="soft", title="实时识别") as demo:
+#     with gr.Row(variant="panel"):
+#         with gr.Column():
+#             audio_stream = gr.Audio(
+#                 source="microphone",
+#                 type="filepath",
+#                 label="请录音并实时说话",
+#                 streaming=True,
+#                 show_label=True,
+#                 interactive=True
+#             )
+#             vad_flag = gr.Checkbox(value=False, label='是否识别之前打开VAD. Note: 会有较大延时', show_label=True, )
+#         with gr.Column(variant='panel'):
+#             speech_txt = gr.State("")
+#             out = gr.Textbox(lines=2, placeholder="实时识别....", label='实时识别文本输出:', show_label=True,
+#                              show_copy_button=True)
+#             clear = gr.Button(value="清除", variant="primary")
+#             clear.click(lambda: "", outputs=out)
+#
+#             vad_stream_var = gr.State(np.zeros(shape=(1,), dtype=np.float32))
+#             audio_stream.stream(
+#                 RUN,
+#                 [audio_stream, speech_txt, vad_stream_var, vad_flag],
+#                 [out, speech_txt, vad_stream_var],
+#             )
+#             audio_stream.stop_recording(punc_offline, inputs=speech_txt, outputs=out, )
+#
+# demo.launch(
+#     debug=True,
+#     show_error=True,
+# )

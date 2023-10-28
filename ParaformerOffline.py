@@ -26,7 +26,8 @@ output_dir = "./results"
 model_choices = ["VAD", "PUNC", "NNLM", "HotWords", "TimeStamp"]  # 模型选项;
 model_selected = ["VAD", "PUNC"]  # 模型缺省配置
 
-inference_pipeline_punc = pipeline(
+
+inference_pipeline_punc_offline = pipeline(
     task=Tasks.punctuation,
     model="damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
     output_dir=output_dir,
@@ -75,8 +76,8 @@ def timeframe2idx_txt(txt, timestamp):
     max_timestamp_len = len(str(timestamp[-1][1])) * 2 + 2
 
     for i in range(len(time_frame) - 1):
-        time_frame_index = f"{time_frame[i][0]}->{time_frame[i+1][0]}"
-        time_frame_txt = f"{txt_NoPunc[time_frame_list[i]:time_frame_list[i+1]]}"
+        time_frame_index = f"{time_frame[i][0]}->{time_frame[i + 1][0]}"
+        time_frame_txt = f"{txt_NoPunc[time_frame_list[i]:time_frame_list[i + 1]]}"
         line_out = f"{time_frame_index:>{max_timestamp_len}}:  {time_frame_txt}"
         out.append(line_out)
         # print(line_out)
@@ -85,12 +86,12 @@ def timeframe2idx_txt(txt, timestamp):
 
 
 def Paraformer_longaudio_model(
-    use_vad_model=True,
-    use_punc_model=True,
-    use_lm_model=False,
-    use_hotword=False,
-    hotword_txt="",
-    use_timestamp=False,
+        use_vad_model=True,
+        use_punc_model=True,
+        use_lm_model=False,
+        use_hotword=False,
+        hotword_txt="",
+        use_timestamp=False,
 ):
     global asr_model
     global vad_model
@@ -147,7 +148,7 @@ def Paraformer_longaudio_model(
     return inference_pipeline  # 这里先输出模型, 以避免后续模型重复生成;
 
 
-inference_pipeline = Paraformer_longaudio_model()  # 提前启动缺省模型.
+inference_pipeline_offline = Paraformer_longaudio_model()  # 提前启动缺省模型.
 
 
 def RUN(audio_data, model_selected, models_change_flag=False, hotword_txt=""):
@@ -155,7 +156,7 @@ def RUN(audio_data, model_selected, models_change_flag=False, hotword_txt=""):
     audio_data: 为输入音频,为gr.Audio输出,为元组: (int sample rate, numpy.array for the data),二进制数据(bytes);url
     """
     print(f"hotword_txt={hotword_txt}")
-    global inference_pipeline
+    global inference_pipeline_offline
     # 判断模型选择是否发生变化,并重新加载模型:
 
     use_timestamp = False  # 初始值
@@ -167,7 +168,7 @@ def RUN(audio_data, model_selected, models_change_flag=False, hotword_txt=""):
         use_hotword = True if "HotWords" in model_selected else False
         use_timestamp = True if "TimeStamp" in model_selected else False
 
-        inference_pipeline = Paraformer_longaudio_model(
+        inference_pipeline_offline = Paraformer_longaudio_model(
             use_vad_model=use_vad_model,
             use_punc_model=use_punc_model,
             use_lm_model=use_lm_model,
@@ -188,7 +189,7 @@ def RUN(audio_data, model_selected, models_change_flag=False, hotword_txt=""):
     if samplerate != target_sr:
         waveform = librosa.resample(waveform, orig_sr=samplerate, target_sr=target_sr)
 
-    result = inference_pipeline(waveform)
+    result = inference_pipeline_offline(waveform)
 
     # 读出内容:
     # contents = ""
@@ -205,7 +206,7 @@ def RUN(audio_data, model_selected, models_change_flag=False, hotword_txt=""):
     result_punc_tp = "起始为空"
     if "text" in result:
         if use_timestamp and "timestamp" in result:
-            result_punc_txt = inference_pipeline_punc(result["text"])
+            result_punc_txt = inference_pipeline_punc_offline(result["text"])
             if len(result_punc_txt) != 0:
                 result_punc_tp = timeframe2idx_txt(
                     result_punc_txt["text"], result["timestamp"]
@@ -264,101 +265,100 @@ def models_checkbox_on_select(env: gr.SelectData):
 
     return models_change_flag_var, hotword_txt
 
-
-if __name__ == "__main__":
-    with gr.Blocks(
-        theme="soft",
-        title="UniASR语音实时识别",
-    ) as demo:
-        gr.Markdown(
-            """[**语音识别**](https://alibaba-damo-academy.github.io/FunASR/en/)              
-               [**长音频离线识别模型**](https://www.modelscope.cn/models/damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch/summary)
-            > 1. 录音,或者上传音频,单声道,16K采样率音频会减少运行时间; 尽管如此,其它格式会自动转换; 
-            > 1. 选择是否使用 vad(voice activity detection), punc(标点), lm(NNLM), HotWords, 以及TimeStamp, 重新加载模型;
-            > 1. 点击,"一键识别",输出语音文字
-            > 1. <font color='orange' face='lisu'>时间戳生成步骤:a)asr+tp;b)punc;c)拼接时间戳与句子<font>
-            """
-        )
-        with gr.Row():
-            with gr.Column(variant="panel"):
-                inp0 = gr.Radio(
-                    choices=["microphone", "upload", "url"],
-                    value="upload",
-                    type="value",
-                    label="选择音频来源",
-                    show_label=True,
-                )
-                inp_url = gr.Textbox(
-                    lines=2,
-                    placeholder="https://",
-                    label="输入音频链接",
-                    show_label=True,
-                    show_copy_button=True,
-                    value="https://isv-data.oss-cn-hangzhou.aliyuncs.com/ics/MaaS/ASR/test_audio/asr_speaker_demo.wav",
-                    visible=False,  # 初始就让其不可现,仅当点击url时,才可见
-                )
-
-                inp1 = gr.Audio(
-                    source="upload",
-                    type="numpy",
-                    show_label=True,
-                    interactive=True,
-                )
-                inp0.change(
-                    audio_source, [inp0, inp_url], [inp_url, inp1], show_progress=True
-                )
-                inp_url.submit(
-                    audio_source, [inp0, inp_url], [inp_url, inp1], show_progress=True
-                )
-
-                with gr.Row(variant="panel"):
-                    inp2 = gr.CheckboxGroup(
-                        model_choices,
-                        label="开启以下功能:",
-                        value=model_selected,
-                        show_label=True,
-                    )
-
-                    models_change_flag_var = gr.State(False)  # 缺省模型没有被选择;
-                    # use_timestamp_var = gr.State(True)  # 缺省use_timestamp=True
-                    # inp3 = gr.Checkbox(value=True, label="时间戳", show_label=True)
-                    # inp4 = gr.Checkbox(value=False, label="添加热词", show_label=True)
-
-                with gr.Row(variant="panel"):
-                    inp5 = gr.Textbox(
-                        lines=1,
-                        placeholder="请输入热词,以空格,或者分号间隔,每个热词少于10个字:",
-                        label="热词表",
-                        show_label=True,
-                        interactive=True,
-                        visible=False,
-                    )
-                    # inp4.select(use_hotword_checkbox, inp4, inp5)  # 控制visible
-                    inp2.select(
-                        models_checkbox_on_select,
-                        None,
-                        [models_change_flag_var, inp5],
-                    )
-
-            with gr.Column(variant="panel"):
-                out0 = gr.Textbox(
-                    lines=6,
-                    placeholder="语音识别为:",
-                    label="识别文本......",
-                    show_label=True,
-                    show_copy_button=True,
-                )
-
-        with gr.Row(variant="panel"):
-            submit = gr.Button(value="一键识别", variant="primary")
-            submit.click(
-                RUN,
-                [inp1, inp2, models_change_flag_var, inp5],
-                [out0, models_change_flag_var],
-            )
-            clear = gr.Button(value="清除", variant="primary")
-
-            clear.click(lambda: "", outputs=out0)
-
-        demo.queue()
-        demo.launch(show_error=True, share=True, debug=True)
+# if __name__ == "__main__":
+#     with gr.Blocks(
+#         theme="soft",
+#         title="UniASR语音实时识别",
+#     ) as demo:
+#         gr.Markdown(
+#             """[**语音识别**](https://alibaba-damo-academy.github.io/FunASR/en/)
+#                [**长音频离线识别模型**](https://www.modelscope.cn/models/damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch/summary)
+#             > 1. 录音,或者上传音频,单声道,16K采样率音频会减少运行时间; 尽管如此,其它格式会自动转换;
+#             > 1. 选择是否使用 vad(voice activity detection), punc(标点), lm(NNLM), HotWords, 以及TimeStamp, 重新加载模型;
+#             > 1. 点击,"一键识别",输出语音文字
+#             > 1. <font color='orange' face='lisu'>时间戳生成步骤:a)asr+tp;b)punc;c)拼接时间戳与句子<font>
+#             """
+#         )
+#         with gr.Row():
+#             with gr.Column(variant="panel"):
+#                 inp0 = gr.Radio(
+#                     choices=["microphone", "upload", "url"],
+#                     value="upload",
+#                     type="value",
+#                     label="选择音频来源",
+#                     show_label=True,
+#                 )
+#                 inp_url = gr.Textbox(
+#                     lines=2,
+#                     placeholder="https://",
+#                     label="输入音频链接",
+#                     show_label=True,
+#                     show_copy_button=True,
+#                     value="https://isv-data.oss-cn-hangzhou.aliyuncs.com/ics/MaaS/ASR/test_audio/asr_speaker_demo.wav",
+#                     visible=False,  # 初始就让其不可现,仅当点击url时,才可见
+#                 )
+#
+#                 inp1 = gr.Audio(
+#                     source="upload",
+#                     type="numpy",
+#                     show_label=True,
+#                     interactive=True,
+#                 )
+#                 inp0.change(
+#                     audio_source, [inp0, inp_url], [inp_url, inp1], show_progress=True
+#                 )
+#                 inp_url.submit(
+#                     audio_source, [inp0, inp_url], [inp_url, inp1], show_progress=True
+#                 )
+#
+#                 with gr.Row(variant="panel"):
+#                     inp2 = gr.CheckboxGroup(
+#                         model_choices,
+#                         label="开启以下功能:",
+#                         value=model_selected,
+#                         show_label=True,
+#                     )
+#
+#                     models_change_flag_var = gr.State(False)  # 缺省模型没有被选择;
+#                     # use_timestamp_var = gr.State(True)  # 缺省use_timestamp=True
+#                     # inp3 = gr.Checkbox(value=True, label="时间戳", show_label=True)
+#                     # inp4 = gr.Checkbox(value=False, label="添加热词", show_label=True)
+#
+#                 with gr.Row(variant="panel"):
+#                     inp5 = gr.Textbox(
+#                         lines=1,
+#                         placeholder="请输入热词,以空格,或者分号间隔,每个热词少于10个字:",
+#                         label="热词表",
+#                         show_label=True,
+#                         interactive=True,
+#                         visible=False,
+#                     )
+#                     # inp4.select(use_hotword_checkbox, inp4, inp5)  # 控制visible
+#                     inp2.select(
+#                         models_checkbox_on_select,
+#                         None,
+#                         [models_change_flag_var, inp5],
+#                     )
+#
+#             with gr.Column(variant="panel"):
+#                 out0 = gr.Textbox(
+#                     lines=6,
+#                     placeholder="语音识别为:",
+#                     label="识别文本......",
+#                     show_label=True,
+#                     show_copy_button=True,
+#                 )
+#
+#         with gr.Row(variant="panel"):
+#             submit = gr.Button(value="一键识别", variant="primary")
+#             submit.click(
+#                 RUN,
+#                 [inp1, inp2, models_change_flag_var, inp5],
+#                 [out0, models_change_flag_var],
+#             )
+#             clear = gr.Button(value="清除", variant="primary")
+#
+#             clear.click(lambda: "", outputs=out0)
+#
+#         demo.queue()
+#         demo.launch(show_error=True, share=True, debug=True)
