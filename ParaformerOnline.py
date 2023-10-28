@@ -32,11 +32,16 @@ inference_pipeline = pipeline(
     mode="paraformer_streaming",
     output_dir=output_dir,
 )
-inference_pipeline_punc = pipeline(
+inference_pipeline_punc_online = pipeline(
     task=Tasks.punctuation,
     model="damo/punc_ct-transformer_zh-cn-common-vad_realtime-vocab272727",
     model_revision=None,
 )
+
+inference_pipeline_punc_offline = pipeline(
+    task=Tasks.punctuation,
+    model='damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch',
+    model_revision=None)
 
 stride = 960 * 10 * 1
 
@@ -98,8 +103,8 @@ def Stream_VAD_Stream(audio_stream, vad_stream, vad_flag=True):
             vad_stream = np.concatenate(segments_list, axis=-1)
 
             #  当累积到长度超过9600*1时, 抛弃历史,保留最新:
-            if vad_stream.shape[0] >= stride + vad_len + 1:  # 长度增长是跳跃性的,
-                vad_stream = vad_stream[stride + vad_len:]
+            # if vad_stream.shape[0] >= stride + vad_len + 1:  # 长度增长是跳跃性的,
+            #     vad_stream = vad_stream[stride + vad_len:]
 
     else:
         vad_stream = speech
@@ -154,7 +159,7 @@ def RUN(audio_stream, speech_txt, vad_stream, vad_flag=False):
             # the online model is used at each time of speech absence of voice activity detection(VAD)
             # and should be feed the cache extracted from the history text.
             if "text" in speech_stride_result:  # 语音识别出非空时,
-                speech_stride_punc_result = inference_pipeline_punc(
+                speech_stride_punc_result = inference_pipeline_punc_online(
                     text_in=speech_stride_result["text"],
                     param_dict=param_punc,
                 )
@@ -165,7 +170,21 @@ def RUN(audio_stream, speech_txt, vad_stream, vad_flag=False):
             if "text" in speech_stride_punc_result:
                 speech_txt += speech_stride_punc_result["text"]
 
+        if vad_flag and speech.shape[0] > stride:
+            speech = np.zeros(shape=(1,), dtype=np.float32)  # 抛弃历史,从新(零)开始
+
     return speech_txt, speech_txt, speech
+
+
+def punc_offline(speech_txt, ):
+    """
+    用于在点击停止录音之后的中文标点生成
+    :param speech_txt:
+    :return: speech_txt
+    """
+    rec_result = inference_pipeline_punc_offline(text_in=speech_txt)
+
+    return rec_result
 
 
 with gr.Blocks(theme="soft", title="实时识别") as demo:
@@ -176,16 +195,24 @@ with gr.Blocks(theme="soft", title="实时识别") as demo:
                 type="filepath",
                 label="请录音并实时说话",
                 streaming=True,
+                show_label=True,
+                interactive=True
             )
-            vad_flag = gr.Checkbox(value=False, label='VAD', show_label=True, )
-        speech_txt = gr.State("")
-        out = gr.Textbox(lines=2, placeholder="实时识别....", show_copy_button=True)
-        vad_stream_var = gr.State(np.zeros(shape=(1,), dtype=np.float32))
-        audio_stream.stream(
-            RUN,
-            [audio_stream, speech_txt, vad_stream_var, vad_flag],
-            [out, speech_txt, vad_stream_var],
-        )
+            vad_flag = gr.Checkbox(value=False, label='是否识别之前打开VAD. Note: 会有较大延时', show_label=True, )
+        with gr.Column(variant='panel'):
+            speech_txt = gr.State("")
+            out = gr.Textbox(lines=2, placeholder="实时识别....", label='实时识别文本输出:', show_label=True,
+                             show_copy_button=True)
+            clear = gr.Button(value="清除", variant="primary")
+            clear.click(lambda: "", outputs=out)
+
+            vad_stream_var = gr.State(np.zeros(shape=(1,), dtype=np.float32))
+            audio_stream.stream(
+                RUN,
+                [audio_stream, speech_txt, vad_stream_var, vad_flag],
+                [out, speech_txt, vad_stream_var],
+            )
+            audio_stream.stop_recording(punc_offline, inputs=speech_txt, outputs=out, )
 
 demo.launch(
     debug=True,
