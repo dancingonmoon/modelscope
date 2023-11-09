@@ -132,7 +132,7 @@ if __name__ == "__main__":
                     out = gr.Textbox(lines=2, placeholder="实时识别....", label='实时识别文本输出:', show_label=True,
                                      show_copy_button=True)
                     clear = gr.Button(value="清除", variant="primary")
-                    clear.click(lambda: ("", ""), outputs=[out, speech_txt_var]) # 存放speech_txt的变量也清零
+                    clear.click(lambda: ("", ""), outputs=[out, speech_txt_var]) # 存放speosech_txt的变量也清零
 
                     vad_stream_var = gr.State(np.zeros(shape=(1,), dtype=np.float32))
                     audio_stream.stream(
