@@ -1,5 +1,5 @@
-from modelscope.pipelines import pipeline
-from modelscope.utils.constant import Tasks
+# from modelscope.pipelines import pipeline
+# from modelscope.utils.constant import Tasks
 import gradio as gr
 import numpy as np
 
@@ -14,9 +14,15 @@ model_selected = ["VAD", "PUNC"]  # 模型缺省配置
 
 if __name__ == "__main__":
     with gr.Blocks(
-            theme="soft",
-            title="Paraformer模型,语音实时/离线识别",
+        theme="soft",
+        title="Paraformer模型,语音实时/离线识别",
     ) as demo:
+        # 声明 offline 变量:
+        # models_change_flag_var = gr.State(False)  # 缺省模型没有被选择;
+        # 声明 online 变量:
+        # speech_txt_var = gr.State("")
+        # vad_stream_var = gr.State(np.zeros(shape=(1,), dtype=np.float32))
+
         gr.Markdown(
             """
             [**语音识别**](https://alibaba-damo-academy.github.io/FunASR/en/)              
@@ -32,7 +38,7 @@ if __name__ == "__main__":
             >> 3. 录音结束时,会自动离线punctuation一次;
             """
         )
-        with gr.Tab(label='Offline'):
+        with gr.Tab(label="Offline"):
             with gr.Row():
                 with gr.Column(variant="panel"):
                     inp0 = gr.Radio(
@@ -59,10 +65,18 @@ if __name__ == "__main__":
                         interactive=True,
                     )
                     inp0.change(
-                        ParaformerOffline.audio_source, [inp0, inp_url], [inp_url, inp1], show_progress=True
+                        ParaformerOffline.audio_source,
+                        [inp0, inp_url],
+                        [inp_url, inp1],
+                        show_progress=True,
+                        api_name="radio2audio_source",
                     )
                     inp_url.submit(
-                        ParaformerOffline.audio_source, [inp0, inp_url], [inp_url, inp1], show_progress=True
+                        ParaformerOffline.audio_source,
+                        [inp0, inp_url],
+                        [inp_url, inp1],
+                        show_progress=True,
+                        api_name="url2audio_source",
                     )
 
                     with gr.Row(variant="panel"):
@@ -109,10 +123,11 @@ if __name__ == "__main__":
                     ParaformerOffline.RUN,
                     [inp1, inp2, models_change_flag_var, inp5],
                     [out0, models_change_flag_var],
+                    api_name="offline_RUN",
                 )
                 clear = gr.Button(value="清除", variant="primary")
 
-                clear.click(lambda: "", outputs=out0)
+                clear.click(lambda: "", outputs=out0, api_name="offline_lambda")
 
         with gr.Tab(label="Online"):
             with gr.Row(variant="panel"):
@@ -123,25 +138,46 @@ if __name__ == "__main__":
                         label="请录音并实时说话",
                         streaming=True,
                         show_label=True,
-                        interactive=True
+                        interactive=True,
                     )
-                    vad_flag = gr.Checkbox(value=False, label='是否识别之前打开VAD. Note: 会有较大延时',
-                                           show_label=True, )
-                with gr.Column(variant='panel'):
+                    vad_flag = gr.Checkbox(
+                        value=False,
+                        label="是否识别之前打开VAD. Note: 会有较大延时",
+                        show_label=True,
+                    )
+                with gr.Column(variant="panel"):
                     speech_txt_var = gr.State("")
-                    out = gr.Textbox(lines=2, placeholder="实时识别....", label='实时识别文本输出:', show_label=True,
-                                     show_copy_button=True)
+                    out = gr.Textbox(
+                        lines=2,
+                        placeholder="实时识别....",
+                        label="实时识别文本输出:",
+                        show_label=True,
+                        show_copy_button=True,
+                    )
                     clear = gr.Button(value="清除", variant="primary")
-                    clear.click(lambda: ("", ""), outputs=[out, speech_txt_var]) # 存放speosech_txt的变量也清零
+                    clear.click(
+                        lambda: ("", ""),
+                        outputs=[out, speech_txt_var],
+                        api_name="online_lambda",
+                    )  # 存放speech_txt的变量也清零
 
                     vad_stream_var = gr.State(np.zeros(shape=(1,), dtype=np.float32))
                     audio_stream.stream(
                         ParaformerOnline.RUN,
                         [audio_stream, speech_txt_var, vad_stream_var, vad_flag],
                         [out, speech_txt_var, vad_stream_var],
+                        api_name="online_RUN",
                     )
-                    audio_stream.stop_recording(ParaformerOnline.punc_offline, inputs=speech_txt_var, outputs=out, ) # 停止录音,离线打标点;
-                    audio_stream.start_recording(ParaformerOnline.continue_recording, inputs=out, outputs=speech_txt_var) #
+                    audio_stream.stop_recording(
+                        ParaformerOnline.punc_offline,
+                        inputs=speech_txt_var,
+                        outputs=out,
+                    )  # 停止录音,离线打标点;
+                    audio_stream.start_recording(
+                        ParaformerOnline.continue_recording,
+                        inputs=out,
+                        outputs=speech_txt_var,
+                    )  #
 
     demo.queue()
     demo.launch(show_error=True, share=True, debug=True)
