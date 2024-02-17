@@ -5,8 +5,7 @@ import numpy as np
 
 # import logging
 
-import ParaformerOffline
-import ParaformerOnline
+from audio import ParaformerOffline, ParaformerOnline
 
 model_choices = ["VAD", "PUNC", "NNLM", "HotWords", "TimeStamp"]  # 模型选项;
 model_selected = ["VAD", "PUNC"]  # 模型缺省配置
