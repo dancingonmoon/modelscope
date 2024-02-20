@@ -137,4 +137,35 @@ query = "风能对环境有什么好处？"
 scores, samples = semantic_search(client, query=query, sentences=sentences)
 for score, sample in zip(scores, samples):
     print(score,sample)
-print(samples)
+# print(samples)
+
+# retrieval:
+knowledge = "百度引擎"
+question = "Tucker Carson与普京的会面,都谈了些什么?"
+response = client.chat.completions.create(
+    model="glm-4",  # 填写需要调用的模型名称
+    messages=[
+        {"role": "user", "content": "你好！你叫什么名字"},
+    ],
+    tools=[
+            {
+                "type": "retrieval",
+                "retrieval": {
+                    "knowledge_id": "1759942607489871872",
+                    "prompt_template": "从文档\n"""\n
+                    {{knowledge}}\n
+                    """\n
+                    中找问题\n
+                    """\n
+                    {{question}}\n
+                    """\n
+                    的答案，找到答案就仅使用文档语句回答，找不到答案就用自身知识回答并告诉用户该信息不是来自文档。\n
+
+                    不要复述问题，直接开始回答。"
+                }
+            }
+            ],
+    stream=True,
+)
+for chunk in response:
+    print(chunk.choices[0].delta)
