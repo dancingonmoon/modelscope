@@ -2,8 +2,10 @@ import configparser
 from zhipuai import ZhipuAI
 from datasets import Dataset
 import numpy as np
+from semantic_search_by_zhipu import semantic_search
 
-config_path = r"L:/Python_WorkSpace/zhipuai_SDK.ini"
+# config_path = r"L:/Python_WorkSpace/zhipuai_SDK.ini"
+config_path = r"E:/Python_WorkSpace/config/zhipuai_SDK.ini"
 config = configparser.ConfigParser()
 config.read(config_path, encoding='utf-8')
 api_key = config.get('zhipuai_SDK_API', 'api_key')
@@ -97,35 +99,7 @@ def image_to_base64(image_path):
 #     print(score,sample)
 
 # 语义搜索,自定义函数:
-def semantic_search(client, query, sentences, k=3,):
-    """
-    使用zhipuAI向量模型, 在sentences列中搜索与query最相似的k个句子
-    :param
-        client: object; zhipuAI client (已经送入API_KEY)
-        query: str; 欲搜索的关键词或者句子
-        sentences: list; 包含所有欲搜索句子列表
-        k: int; 返回最相似的句子数量
-    :return: scores, nearest_examples中的text; 得分,以及对应的句子 (score越小,越佳)
-    """
-    sentences_vec = []
-    for sentence in sentences:
-        response = client.embeddings.create(
-            model="embedding-2",
-            input=sentence
-            )
-        sentences_vec.append(response.data[0].embedding)  # 输出字典,'embedding':每个向量长度为1024的列表
 
-    dataset = Dataset.from_dict({'embedding': sentences_vec, 'txt': sentences})
-    dataset.add_faiss_index(column="embedding")
-
-    response = client.embeddings.create(
-        model="embedding-2",  # 填写需要调用的模型名称
-        input=query
-    )
-    query_embedding = np.array(response.data[0].embedding, dtype=np.float32)  # get_nearest_examples(需要是numpy)
-
-    scores, nearest_examples = dataset.get_nearest_examples("embedding", query_embedding, k=k)
-    return scores, nearest_examples['txt']
 
 sentences= [
     "太阳能电池板是一种可再生能源，对环境有益。",
@@ -134,14 +108,15 @@ sentences= [
     "水电是一种可持续能源，依靠水流发电。",
     ]
 query = "风能对环境有什么好处？"
-scores, samples = semantic_search(client, query=query, sentences=sentences)
-for score, sample in zip(scores, samples):
-    print(score,sample)
+# scores, samples = semantic_search(client, query=query, sentences=sentences)
+# for score, sample in zip(scores, samples):
+#     print(score,sample)
 # print(samples)
 
 # retrieval:
 knowledge = "百度引擎"
 question = "Tucker Carson与普京的会面,都谈了些什么?"
+
 response = client.chat.completions.create(
     model="glm-4",  # 填写需要调用的模型名称
     messages=[
@@ -151,8 +126,9 @@ response = client.chat.completions.create(
             {
                 "type": "retrieval",
                 "retrieval": {
-                    "knowledge_id": "1759942607489871872",
-                    "prompt_template": "从文档\n"""\n
+                    "knowledge_id": "your knowledge id",
+                    "prompt_template":"从文档\n
+                    """\n
                     {{knowledge}}\n
                     """\n
                     中找问题\n
