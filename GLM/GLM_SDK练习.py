@@ -5,7 +5,7 @@ import numpy as np
 from semantic_search_by_zhipu import semantic_search
 
 # config_path = r"L:/Python_WorkSpace/zhipuai_SDK.ini"
-config_path = r"E:/Python_WorkSpace/config/zhipuai_SDK.ini"
+config_path = r"L:/Python_WorkSpace/config/zhipuai_SDK.ini"
 config = configparser.ConfigParser()
 config.read(config_path, encoding='utf-8')
 api_key = config.get('zhipuai_SDK_API', 'api_key')
@@ -114,7 +114,7 @@ query = "风能对环境有什么好处？"
 # print(samples)
 
 # retrieval:
-knowledge_id = 1759942607489871872 # 百度搜索
+knowledge_id = 1759942607489871872 #
 question = "Tucker Carson与普京的会面,都谈了些什么?"
 
 prompt_template = """
@@ -127,6 +127,28 @@ prompt_template = """
 不要复述问题，直接开始回答。
 """
 
+# response = client.chat.completions.create(
+#     model="glm-4",  # 填写需要调用的模型名称
+#     messages=[
+#         {"role": "user", "content": question},
+#     ],
+#     tools=[
+#             {
+#                 "type": "retrieval",
+#                 "retrieval": {
+#                     "knowledge_id": "your knowledge id",
+#                     "prompt_template": prompt_template,
+#                 }
+#             }
+#             ],
+#     stream=False,
+# )
+# # for chunk in response:
+# #     print(chunk.choices[0].delta)
+# print(response.choices[0].message.content)
+
+# web_search
+question = "Tucker Carlson与普京的会面,都谈了些什么?"
 response = client.chat.completions.create(
     model="glm-4",  # 填写需要调用的模型名称
     messages=[
@@ -134,10 +156,10 @@ response = client.chat.completions.create(
     ],
     tools=[
             {
-                "type": "retrieval",
-                "retrieval": {
-                    "knowledge_id": "your knowledge id",
-                    "prompt_template": prompt_template,
+                "type": "web_search",
+                "web_search": {
+                    "enable": True,
+                    "search_query": "塔克卡尔森与普京的访谈内容",
                 }
             }
             ],
