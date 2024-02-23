@@ -4,8 +4,7 @@ from datasets import Dataset
 import numpy as np
 from semantic_search_by_zhipu import semantic_search
 
-# config_path = r"L:/Python_WorkSpace/zhipuai_SDK.ini"
-config_path = r"L:/Python_WorkSpace/config/zhipuai_SDK.ini"
+config_path = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
 config = configparser.ConfigParser()
 config.read(config_path, encoding='utf-8')
 api_key = config.get('zhipuai_SDK_API', 'api_key')
