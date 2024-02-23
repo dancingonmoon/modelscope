@@ -1,6 +1,7 @@
 from datasets import Dataset
 import numpy as np
-from SerpAPI_fn import get_api_key,serpapi_GoogleSearch,serpapi_BaiduSearch
+import configparser
+from serpapi import GoogleSearch, BaiduSearch
 
 
 # 语义搜索,自定义函数:
@@ -43,20 +44,76 @@ class semanticSearch_via_SerpAPI_by_zhipuai:
     """
     关键字Google或者Baidu搜索引擎之后,再语义搜索:
     1) query于Google或者Baidu获得link,title,以及snippet,将title与snippet合并后,生成字典,包含key:link与title_snippet; (SerpAPI_fn.py)
-    2) 字典的content,送入semantic_search 获得最佳的k个样本;
+    2) 字典的content,送入semantic_search 获得最佳的k个样本 (zhipuai embedding-2向量模型);
     3) 对k中的n个样本的link,进行request,获取webpage的主要内容,并生成字典,keys: link,title_snippet,link_content
     """
-    def __init__(self,query,
-                 key_serp_path=None, key_serp_section='Serp_API',key_serp_option='api_key',
-                key_zhipu_path=None,key_zhipu_section='zhipuai_SDK_API',key_zhipu_option='api_key',
+    def __init__(self,engine="Baidu",):
+        """
+        :param engine: "Baidu","Google",or "None",分别表示,以baidu,google为搜索引擎,搜索指定query,或者None表示不从搜索引擎获取数据
+        """
+        if engine in ["Google","Baidu"]:
+            serp_api =
 
-                 ):
-        self.query = query
 
-    def get_api_key(self,
-                    key_path=None, key_section='Serp_API',key_option='api_key',):
-        api_key = get_api_key(config_path, key_section, key_option)
-        return api_key
+    def get_api_key(self,key_path=None, key_section='Serp_API',key_option='api_key'):
+        """
+            从配置文件config.ini中,读取api_key;避免程序代码中明文显示key,secret.
+            args:
+                key_path: config.ini的文件路径(包含文件名,即: directory/config.ini)
+                key_section: config.ini中的section名称;
+                key_option: config.ini中的option名称;
+            out:
+                返回option对应的value值;此处为api_key
+            """
+        config = configparser.ConfigParser()
+        config.read(key_path, encoding="utf-8")  # utf-8支持中文
+        return config[key_section][key_option]
+
+    def serpapi_GoogleSearch(self, api_key, query,
+                             location='Hong Kong', hl='zh-cn', gl='cn', tbs=None, tbm=None, num=30, ):
+        """
+        使用SerpAPI进行Google搜索
+        args:
+            config_path: config.ini的文件路径(包含文件名,即: directory/config.ini)
+            section: config.ini中section名称;
+            option: config.ini中option名称;
+            query: 搜索的问题或关键字
+            location: Parameter defines from where you want the search to originate.
+            hl:Parameter defines the country to use for the Google search. It's a two-letter country code. (e.g., us for the
+                United States, uk for United Kingdom, or fr for France)
+            gl:Parameter defines the language to use for the Google search. It's a two-letter language code. (e.g., en for
+                English, es for Spanish, or fr for French). Head to the Google languages page for a full list of supported
+                Google languages.
+            num:Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results
+            tbs:(to be searched) parameter defines advanced search parameters that aren't possible in the regular query
+            field. (e.g., advanced search for patents, dates, news, videos, images, apps, or text contents).
+            tbm:(to be matched) parameter defines the type of search you want to do.
+                It can be set to:
+                (no tbm parameter): regular Google Search,
+                isch: Google Images API,
+                lcl - Google Local API
+                vid: Google Videos API,
+                nws: Google News API,
+                shop: Google Shopping API,
+                pts: Google Patents API,
+                or any other Google service.
+
+        out:
+            result: a structured JSON of the google search results
+        """
+        param = {
+            "q": query,
+            "location": location,
+            "api_key": api_key,
+            "hl": hl,
+            "gl": gl,
+            "num": num,
+            "tbm": tbm,
+            "tbs": tbs
+        }
+        search = GoogleSearch(param)
+        result = search.get_dict()
+        return result
 
 if __name__ == "__main__":
     config_path = r"l:/Python_WorkSpace/config/SerpAPI.ini"
