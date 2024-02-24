@@ -44,7 +44,7 @@ def semantic_search(client, query, sentences, embedding_key=None, k=3, ):
     return scores, nearest_examples
 
 
-class chatGLM_by_semanticSearch_via_SerpAPI:
+class chatGLM_by_semanticSearch_amid_SerpAPI:
     """
     关键字Google或者Baidu搜索引擎之后,再语义搜索:
     1) query于Google或者Baidu获得link,title,以及snippet,将title与snippet合并后,生成字典,包含key:link与title_snippet; (SerpAPI_fn.py)
