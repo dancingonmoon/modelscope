@@ -1,36 +1,37 @@
 from datasets import Dataset
 import numpy as np
-import configparser
-from serpapi import GoogleSearch, BaiduSearch
-from SerpAPI_fn import serpapi_GoogleSearch
+from SerpAPI_fn import serpapi_GoogleSearch, serpapi_BaiduSearch, get_api_key
 from zhipuai import ZhipuAI
 from collections import defaultdict
 
 
 # 语义搜索,自定义函数:
-def semantic_search(client, query, sentences, k=3, ):
+def semantic_search(client, query, sentences, embedding_key=None, k=3, ):
     """
     使用zhipuAI向量模型Embedding-2, 在sentences列中搜索与query最相似的k个句子.(使用huggingface的Dataset调用的faiss方法)
-    1) sentences list 送入embedding-2模型,获得长度1024的向量列表;
+    1) sentences为一字典,包含embedding的key,将其转换成huggingface的Dataset;
     2) Dataset.add_faiss_index,生成faiss索引;
     3) query 送入embedding-2模型,获得长度1024的向量;
     4) Dataset.get_nearest_examples,获得最佳的k个dataset的样本
     :param
         client: object; zhipuAI client (已经送入API_KEY)
         query: str; 欲搜索的关键词或者句子
-        sentences: list; 包含所有欲搜索句子列表
+        sentences: 字典,送入embedding-2模型,获得长度1024的向量列表;
+        embedding_key: str; sentences字典中用于embedding的key的名称,该key下的values将用于embedding并用于语义搜索
         k: int; 返回最相似的句子数量
     :return: scores, nearest_examples中的text; 得分,以及对应的句子 (score越小,越佳)
     """
     sentences_vec = []
-    for sentence in sentences:
-        response = client.embeddings.create(
-            model="embedding-2",
-            input=sentence
-        )
-        sentences_vec.append(response.data[0].embedding)  # 输出字典,'embedding':每个向量长度为1024的列表
+    if embedding_key is not None:
+        for sentence in sentences[embedding_key]:
+            response = client.embeddings.create(
+                model="embedding-2",
+                input=sentence
+            )
+            sentences_vec.append(response.data[0].embedding)  # 输出字典,'embedding':每个向量长度为1024的列表
 
-    dataset = Dataset.from_dict({'embedding': sentences_vec, 'txt': sentences})
+    sentences['embedding'] = sentences_vec
+    dataset = Dataset.from_dict(sentences)
     dataset.add_faiss_index(column="embedding")
 
     response = client.embeddings.create(
@@ -59,116 +60,27 @@ class chatGLM_by_semanticSearch_via_SerpAPI:
         """
         :param engine: "Baidu","Google",or "None",分别表示,以baidu,google为搜索引擎,搜索指定query,或者None表示不从搜索引擎获取数据
         """
-        zhipu_api_key = self.get_api_key(key_path=zhipu_key_path, key_section=zhipu_key_section,
-                                         key_option=zhipu_key_option)
+        zhipu_api_key = get_api_key(config_file_path=zhipu_key_path, section=zhipu_key_section,
+                                    option=zhipu_key_option)
         self.zhipuai_client = ZhipuAI(api_key=zhipu_api_key)
         if engine in ["Google", "Baidu"]:
-            self.serp_api_key = self.get_api_key(key_path=serp_key_path, key_section=serp_key_section,
-                                                 key_option=serp_key_option)
+            self.serp_api_key = get_api_key(config_file_path=serp_key_path, section=serp_key_section,
+                                            option=serp_key_option)
         self.engine = engine
         # self.query = query
-
-    def get_api_key(self, key_path=None, key_section='Serp_API', key_option='api_key'):
-        """
-            从配置文件config.ini中,读取api_key;避免程序代码中明文显示key,secret.
-            args:
-                key_path: config.ini的文件路径(包含文件名,即: directory/config.ini)
-                key_section: config.ini中的section名称;
-                key_option: config.ini中的option名称;
-            out:
-                返回option对应的value值;此处为api_key
-            """
-        config = configparser.ConfigParser()
-        config.read(key_path, encoding="utf-8")  # utf-8支持中文
-        return config[key_section][key_option]
-
-    def serpapi_GoogleSearch(self, query,
-                             location='Hong Kong', hl='zh-cn', gl='cn', tbs=None, tbm=None, num=30, ):
-        """
-        使用SerpAPI进行Google搜索
-        args:
-            config_path: config.ini的文件路径(包含文件名,即: directory/config.ini)
-            section: config.ini中section名称;
-            option: config.ini中option名称;
-            query: 搜索的问题或关键字
-            location: Parameter defines from where you want the search to originate.
-            hl:Parameter defines the country to use for the Google search. It's a two-letter country code. (e.g., us for the
-                United States, uk for United Kingdom, or fr for France)
-            gl:Parameter defines the language to use for the Google search. It's a two-letter language code. (e.g., en for
-                English, es for Spanish, or fr for French). Head to the Google languages page for a full list of supported
-                Google languages.
-            num:Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results
-            tbs:(to be searched) parameter defines advanced search parameters that aren't possible in the regular query
-            field. (e.g., advanced search for patents, dates, news, videos, images, apps, or text contents).
-            tbm:(to be matched) parameter defines the type of search you want to do.
-                It can be set to:
-                (no tbm parameter): regular Google Search,
-                isch: Google Images API,
-                lcl - Google Local API
-                vid: Google Videos API,
-                nws: Google News API,
-                shop: Google Shopping API,
-                pts: Google Patents API,
-                or any other Google service.
-
-        out:
-            result: a structured JSON of the google search results
-        """
-        param = {
-            "q": query,
-            "location": location,
-            "api_key": self.serp_api_key,
-            "hl": hl,
-            "gl": gl,
-            "num": num,
-            "tbm": tbm,
-            "tbs": tbs
-        }
-        search = GoogleSearch(param)
-        result = search.get_dict()
-        return result
-
-    def serpapi_BaiduSearch(self, query, ct=2, rn=50, ):
-        """
-        使用SerpAPI进行Baidu搜索
-        args:
-            config_path: config.ini的文件路径(包含文件名,即: directory/config.ini)
-            section: config.ini中section名称;
-            option: config.ini中option名称;
-            query: 搜索的问题或关键字
-            ct: Parameter defines which language to restrict results. Available options:
-                1 - All languages
-                2 - Simplified Chinese
-                3 - Traditional Chinese
-            rn: Parameter defines the maximum number of results to return, limited to 50. (e.g., 10 (default) returns 10 results,
-            engine: Set parameter to Baidu to use the Baidu API engine.
-
-        out:
-            result: a structured JSON of the baidu search results
-        """
-        param = {
-            "q": query,
-            'ct': ct,
-            'rn': rn,
-            'engine': 'Baidu',
-            'api_key': self.serp_api_key
-        }
-        search = BaiduSearch(param)
-        result = search.get_dict()
-        return result
 
     def web_search(self, query,
                    location='Hong Kong', hl='zh-cn', gl='cn', tbs=None, tbm=None, num=30,
                    ct=2, rn=50, ):
         """
-        GoogleSerach,或者BaiduSearch,将搜索结果,提取title,snippet,生成字典
+        Google Search,或者Baidu Search,将搜索结果,提取title,snippet,生成字典
         :return:
         """
         search_results_dict = defaultdict(list)
-        if self.engine == 'Google':
-            search_result = self.serpapi_GoogleSearch(query,
-                                                      location=location, hl=hl, gl=gl,
-                                                      tbs=tbs, tbm=tbm, num=num, )
+        if self.engine.lower() == 'Google'.lower():
+            search_result = serpapi_GoogleSearch(self.serp_api_key, query,
+                                                 location=location, hl=hl, gl=gl,
+                                                 tbs=tbs, tbm=tbm, num=num, )
             if 'organic_results' in search_result:
                 for result_dict in search_result['organic_results']:
                     search_results_dict['link'].append(result_dict['link'])
@@ -176,27 +88,55 @@ class chatGLM_by_semanticSearch_via_SerpAPI:
                     search_results_dict['snippet'].append(result_dict['snippet'])
                     search_results_dict['title_snippet'].append(
                         ';'.join([result_dict['title'], result_dict['snippet']]))
-        elif self.engine == 'Baidu':
-            search_results = self.serpapi_BaiduSearch(query, ct=ct, rn=rn, )
+        elif self.engine.lower() == 'Baidu'.lower():
+            search_results = serpapi_BaiduSearch(self.serp_api_key, query, ct=ct, rn=rn, )
             if 'organic_results' in search_results:
                 for result_dict in search_results['organic_results']:
                     search_results_dict['link'].append(result_dict['link'])
                     search_results_dict['title'].append(result_dict['title'])
-                    search_results_dict['snippet'].append(result_dict['snippet'])
-                    search_results_dict['title_snippet'].append(
-                        ';'.join([result_dict['title'], result_dict['snippet']]))
+                    if 'snippet' in result_dict:
+                        search_results_dict['snippet'].append(result_dict['snippet'])
+                        search_results_dict['title_snippet'].append(
+                            ';'.join([result_dict['title'], result_dict['snippet']]))
+                    else:
+                        search_results_dict['snippet'].append('')
+                        search_results_dict['title_snippet'].append(
+                            ';'.join([result_dict['title'], '']))
 
         return search_results_dict  # 字典 keys: link, title, snippet, title_snippet
 
-    def semantic_websearch(self, query, search_results_dict, k=3):
-        search_results_list = search_results_dict['title_snippet']
-        scores, nearest_examples = semantic_search(self.zhipuai_client, query, sentences=search_results_list, k=k)
+    def semantic_websearch(self, query, search_results_dict, k=3, ):
+
+        if 'title_snippet' in search_results_dict:
+            scores, nearest_examples = semantic_search(self.zhipuai_client, query, sentences=search_results_dict,
+                                                       embedding_key='title_snippet', k=k)
+        else:
+            return '搜索结果中无title_snippet键', query
+
         return scores, nearest_examples  # list中包含字典
 
-    def GLM_answer(self,):
+    def GLM_chat_RAG(self, query, nearest_examples, knowledge_key):
+        """
+        将web_search搜索,语义匹配之后的n个句子作为参考信息,送入GLM模型生成回复
+        :param query:
+        :param nearest_examples:
+        :param knowledge_key:
+        :return:
+        """
+        pass
         return
 
 
 if __name__ == "__main__":
-    config_path = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+
     query = 'Tucker Carson与普京的会面,都谈了些什么?'
+    semantic_search_engine = chatGLM_by_semanticSearch_via_SerpAPI(engine='Google', serp_key_path=config_path_serp,
+                                                                   zhipu_key_path=config_path_zhipuai, )
+
+    search_results_dict = semantic_search_engine.web_search(query, rn=20)
+    # print(search_results_dict)
+    scores, nearest_samples = semantic_search_engine.semantic_websearch(query, search_results_dict, k=3)
+    for score, sample in zip(scores, nearest_samples['title_snippet']):
+        print(score, sample)

@@ -19,25 +19,22 @@ def get_api_key(config_file_path, section='Serp_API', option='api_key'):
     return config[section][option]
 
 
-def serpapi_GoogleSearch(config_path, query, section='Serp_API', option='api_key',
-                         location='Hong Kong', hl='zh-cn', gl='cn', tbs=None, tbm=None, num=30, ):
+def serpapi_GoogleSearch(api_key, query, location='Hong Kong', hl='zh-cn', gl='cn', tbs=None, tbm=None, num=30, ):
     """
     使用SerpAPI进行Google搜索
     args:
-        config_path: config.ini的文件路径(包含文件名,即: directory/config.ini)
-        section: config.ini中section名称;
-        option: config.ini中option名称;
+        api_key: SerpAPI的api_key
         query: 搜索的问题或关键字
         location: Parameter defines from where you want the search to originate.
-        hl:Parameter defines the country to use for the Google search. It's a two-letter country code. (e.g., us for the
-            United States, uk for United Kingdom, or fr for France)
+        hl:Parameter defines the country to use for the Google search. It's a two-letter country code. (e.g., 'us' for the
+            United States, uk for the United Kingdom, or 'fr' for France)
         gl:Parameter defines the language to use for the Google search. It's a two-letter language code. (e.g., en for
             English, es for Spanish, or fr for French). Head to the Google languages page for a full list of supported
             Google languages.
         num:Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results
         tbs:(to be searched) parameter defines advanced search parameters that aren't possible in the regular query
         field. (e.g., advanced search for patents, dates, news, videos, images, apps, or text contents).
-        tbm:(to be matched) parameter defines the type of search you want to do.
+        tbm: (to be matched) parameter defines the type of search you want to do.
             It can be set to:
             (no tbm parameter): regular Google Search,
             isch: Google Images API,
@@ -51,7 +48,6 @@ def serpapi_GoogleSearch(config_path, query, section='Serp_API', option='api_key
     out:
         result: a structured JSON of the google search results
     """
-    api_key = get_api_key(config_path, section, option)
     param = {
         "q": query,
         "location": location,
@@ -67,14 +63,11 @@ def serpapi_GoogleSearch(config_path, query, section='Serp_API', option='api_key
     return result
 
 
-def serpapi_BaiduSearch(config_path, query, section='Serp_API', option='api_key',
-                        ct=2, rn=50, engine='Baidu'):
+def serpapi_BaiduSearch(api_key, query, ct=2, rn=50, engine='Baidu'):
     """
     使用SerpAPI进行Baidu搜索
     args:
-        config_path: config.ini的文件路径(包含文件名,即: directory/config.ini)
-        section: config.ini中section名称;
-        option: config.ini中option名称;
+        api_key: SerpAPI的API key
         query: 搜索的问题或关键字
         ct: Parameter defines which language to restrict results. Available options:
             1 - All languages
@@ -86,7 +79,6 @@ def serpapi_BaiduSearch(config_path, query, section='Serp_API', option='api_key'
     out:
         result: a structured JSON of the baidu search results
     """
-    api_key = get_api_key(config_path, section, option)
     param = {
         "q": query,
         'ct': ct,
@@ -99,16 +91,15 @@ def serpapi_BaiduSearch(config_path, query, section='Serp_API', option='api_key'
     return result
 
 
-
 if __name__ == "__main__":
     config_path = r"e:/Python_WorkSpace/config/SerpAPI.ini"
+    api_key = get_api_key(config_path, section='Serp_API', option='api_key')
     query = 'Tucker Carson与普京的会面,都谈了些什么?'
 
-    # search_result = serpapi_GoogleSearch(config_path, query, section='Serp_API', option='api_key', location='Hong Kong',
+    # search_result = serpapi_GoogleSearch(api_key, query, location='Hong Kong',
     #                                      hl='zh-cn',
     #                                      gl='cn',
     #                                      tbs='News', tbm=None,
     #                                      num=30)
-    search_result = serpapi_BaiduSearch(config_path, query, section='Serp_API', option='api_key',
-                                        ct=2, rn=30)
+    search_result = serpapi_BaiduSearch(api_key, query, ct=2, rn=30)
     print(search_result)
