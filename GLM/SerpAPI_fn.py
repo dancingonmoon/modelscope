@@ -101,7 +101,7 @@ def serpapi_BaiduSearch(config_path, query, section='Serp_API', option='api_key'
 
 
 if __name__ == "__main__":
-    config_path = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path = r"e:/Python_WorkSpace/config/SerpAPI.ini"
     query = 'Tucker Carson与普京的会面,都谈了些什么?'
 
     # search_result = serpapi_GoogleSearch(config_path, query, section='Serp_API', option='api_key', location='Hong Kong',
