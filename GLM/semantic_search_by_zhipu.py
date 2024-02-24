@@ -2,6 +2,8 @@ from datasets import Dataset
 import numpy as np
 import configparser
 from serpapi import GoogleSearch, BaiduSearch
+from SerpAPI_fn import serpapi_GoogleSearch
+from zhipuai import ZhipuAI
 
 
 # 语义搜索,自定义函数:
@@ -40,22 +42,31 @@ def semantic_search(client, query, sentences, k=3, ):
     return scores, nearest_examples['txt']
 
 
-class semanticSearch_via_SerpAPI_by_zhipuai:
+class chatGLM_by_semanticSearch_via_SerpAPI:
     """
     关键字Google或者Baidu搜索引擎之后,再语义搜索:
     1) query于Google或者Baidu获得link,title,以及snippet,将title与snippet合并后,生成字典,包含key:link与title_snippet; (SerpAPI_fn.py)
     2) 字典的content,送入semantic_search 获得最佳的k个样本 (zhipuai embedding-2向量模型);
     3) 对k中的n个样本的link,进行request,获取webpage的主要内容,并生成字典,keys: link,title_snippet,link_content
+    4) 将n个样本的title_snippet,link_content,送入GLM-4,或者GLM-3-Turbo,获得模型回答;
     """
-    def __init__(self,engine="Baidu",):
+
+    def __init__(self, engine="Baidu",
+                 serp_key_path=None, serp_key_section='Serp_API', serp_key_option='api_key',
+                 zhipu_key_path=None, zhipu_key_section='zhipuai_SDK_API', zhipu_key_option='api_key',
+                 ):
         """
         :param engine: "Baidu","Google",or "None",分别表示,以baidu,google为搜索引擎,搜索指定query,或者None表示不从搜索引擎获取数据
         """
-        if engine in ["Google","Baidu"]:
-            serp_api =
+        zhipu_api_key = self.get_api_key(key_path=zhipu_key_path, key_section=zhipu_key_section, key_option=zhipu_key_option    )
+        self.client = ZhipuAI(api_key=zhipu_api_key)
+        if engine in ["Google", "Baidu"]:
+            self.serp_api_key = self.get_api_key(key_path=serp_key_path, key_section=serp_key_section,
+                                            key_option=serp_key_option)
+        self.engine = engine
+        # self.query = query
 
-
-    def get_api_key(self,key_path=None, key_section='Serp_API',key_option='api_key'):
+    def get_api_key(self, key_path=None, key_section='Serp_API', key_option='api_key'):
         """
             从配置文件config.ini中,读取api_key;避免程序代码中明文显示key,secret.
             args:
@@ -114,6 +125,16 @@ class semanticSearch_via_SerpAPI_by_zhipuai:
         search = GoogleSearch(param)
         result = search.get_dict()
         return result
+
+    def web_search(self,query,
+                   location='Hong Kong', hl='zh-cn', gl='cn', tbs=None, tbm=None, num=30,):
+        """
+        googleserach,或者Baidusearch,将搜索结果,提取title,snippet,生成字典
+        :return:
+        """
+        if self.engine=='Google':
+            search_result = self.serpapi_GoogleSearch(query,)
+
 
 if __name__ == "__main__":
     config_path = r"l:/Python_WorkSpace/config/SerpAPI.ini"
