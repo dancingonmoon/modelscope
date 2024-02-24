@@ -115,28 +115,69 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
 
         return scores, nearest_examples  # list中包含字典
 
-    def GLM_chat_RAG(self, query, nearest_examples, knowledge_key):
+    def chatGLM_RAG(self, question, query, glm_model='GLM-4', web_search_enable=False, nearest_examples=None,
+                    reference_key='title_snippet', ):
         """
         将web_search搜索,语义匹配之后的n个句子作为参考信息,送入GLM模型生成回复
         :param query:
         :param nearest_examples:
-        :param knowledge_key:
+        :param reference_key:
         :return:
         """
-        pass
-        return
+        reference = ';'.join(nearest_examples[reference_key])
+        if reference is not None:
+            question_template = f"请基于以下参考信息生成回答: {reference}\n问题: {question}"
+        else:
+            question_template = question
+        web_search_parameters = {"enable": web_search_enable,
+                                 "search_query": query, }
+        response = self.zhipuai_client.chat.completions.create(
+            model=glm_model,  # 填写需要调用的模型名称
+            messages=[
+                {"role": "user", "content": question_template},
+            ],
+            tools=[
+                {
+                    "type": "web_search",
+                    "web_search": web_search_parameters,
+                }
+            ],
+            stream=False,
+        )
+        # for chunk in response:
+        #     print(chunk.choices[0].delta)
+        result = response.choices[0].message.content
+
+        return result
+
+    def chatGLM_RAG_oneshot(self, question, query, glm_model='GLM-4', web_search_enable=False, k=3, rn=10):
+        search_results_dict = self.web_search(query, rn=rn)
+        scores, nearest_samples = self.semantic_websearch(query, search_results_dict, k=k, )
+        # for score, sample in zip(scores, nearest_samples['title_snippet']):
+        #     print(f'----语义搜索最佳的{k}个结果:---------')
+        #     print(score, sample)
+        result = self.chatGLM_RAG(question, query, glm_model=glm_model, web_search_enable=web_search_enable,
+                                  nearest_examples=nearest_samples, reference_key='title_snippet')
+        print(f'-------web_search_enable={web_search_enable}后,模型{glm_model}/RAG的回答:--------')
+        print(result)
+        return scores, nearest_samples,result
 
 
 if __name__ == "__main__":
     config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
     config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
 
-    query = 'Tucker Carson与普京的会面,都谈了些什么?'
-    semantic_search_engine = chatGLM_by_semanticSearch_via_SerpAPI(engine='Google', serp_key_path=config_path_serp,
-                                                                   zhipu_key_path=config_path_zhipuai, )
+    question = 'Tucker Carlson与普京的会面,都谈了些什么?'
+    query = '塔克卡尔森与普京的会面,都谈了些什么?'  # 用于web_search
+    semantic_search_engine = chatGLM_by_semanticSearch_amid_SerpAPI(engine='Baidu', serp_key_path=config_path_serp,
+                                                                    zhipu_key_path=config_path_zhipuai, )
+    # search_results_dict = semantic_search_engine.web_search(query, rn=10)
+    # scores, nearest_samples = semantic_search_engine.semantic_websearch(query, search_results_dict, k=3, )
+    # for score, sample in zip(scores, nearest_samples['title_snippet']):
+    #     print('----语义搜索最佳的k个结果:---------')
+    #     print(score, sample)
+    # result = semantic_search_engine.chatGLM_RAG(question, query, 'GLM-3-Turbo', web_search_enable=True,
+    #                                             nearest_examples=nearest_samples, reference_key='title_snippet')
+    # print('-------chatGLM-RAG的回答:--------')
 
-    search_results_dict = semantic_search_engine.web_search(query, rn=20)
-    # print(search_results_dict)
-    scores, nearest_samples = semantic_search_engine.semantic_websearch(query, search_results_dict, k=3)
-    for score, sample in zip(scores, nearest_samples['title_snippet']):
-        print(score, sample)
+    semantic_search_engine.chatGLM_RAG_oneshot(question,query,'GLM-3-Turbo', web_search_enable=True,k=3,rn=10)

@@ -63,7 +63,7 @@ def serpapi_GoogleSearch(api_key, query, location='Hong Kong', hl='zh-cn', gl='c
     return result
 
 
-def serpapi_BaiduSearch(api_key, query, ct=2, rn=50, engine='Baidu'):
+def serpapi_BaiduSearch(api_key, query, ct=1, rn=50, engine='Baidu'):
     """
     使用SerpAPI进行Baidu搜索
     args:

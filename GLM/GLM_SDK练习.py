@@ -2,7 +2,7 @@ import configparser
 from zhipuai import ZhipuAI
 from datasets import Dataset
 import numpy as np
-from semantic_search_by_zhipu import semantic_search
+from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
 
 config_path = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
 config = configparser.ConfigParser()
@@ -100,12 +100,12 @@ def image_to_base64(image_path):
 # 语义搜索,自定义函数:
 
 
-sentences= [
+sentences = [
     "太阳能电池板是一种可再生能源，对环境有益。",
     "风力涡轮机利用风能发电。",
     "地热供暖利用来自地球的热量为建筑物供暖。",
     "水电是一种可持续能源，依靠水流发电。",
-    ]
+]
 query = "风能对环境有什么好处？"
 # scores, samples = semantic_search(client, query=query, sentences=sentences)
 # for score, sample in zip(scores, samples):
@@ -113,7 +113,7 @@ query = "风能对环境有什么好处？"
 # print(samples)
 
 # retrieval:
-knowledge_id = 1759942607489871872 #
+knowledge_id = 1759942607489871872  #
 question = "Tucker Carson与普京的会面,都谈了些什么?"
 
 prompt_template = """
@@ -154,16 +154,25 @@ response = client.chat.completions.create(
         {"role": "user", "content": question},
     ],
     tools=[
-            {
-                "type": "web_search",
-                "web_search": {
-                    "enable": True,
-                    "search_query": "塔克卡尔森与普京的访谈内容",
-                }
+        {
+            "type": "web_search",
+            "web_search": {
+                "enable": True,
+                "search_query": "塔克卡尔森与普京的访谈内容",
             }
-            ],
+        }
+    ],
     stream=False,
 )
 # for chunk in response:
 #     print(chunk.choices[0].delta)
 print(response.choices[0].message.content)
+
+# 自定义one-shot-RAG:
+config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
+config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+question = 'Tucker Carlson与普京的会面,都谈了些什么?'
+query = '塔克卡尔森与普京的会面,都谈了些什么?'  # 用于web_search
+semantic_search_engine = chatGLM_by_semanticSearch_amid_SerpAPI(engine='Baidu', serp_key_path=config_path_serp,
+                                                                zhipu_key_path=config_path_zhipuai, )
+semantic_search_engine.chatGLM_RAG_oneshot(question, query, 'GLM-3-Turbo', web_search_enable=True, k=3, rn=10)
