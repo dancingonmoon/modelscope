@@ -147,9 +147,10 @@ prompt_template = """
 # print(response.choices[0].message.content)
 
 # web_search
-question = "Tucker Carlson与普京的会面,都谈了些什么?"
+question = 'Tucker Carlson与普京的会面,都谈了些什么?'
+query = '塔克卡尔森与普京的会面,都谈了些什么?'  # 用于web_search
 response = client.chat.completions.create(
-    model="glm-4",  # 填写需要调用的模型名称
+    model="glm-3-turbo",  # 填写需要调用的模型名称
     messages=[
         {"role": "user", "content": question},
     ],
@@ -158,7 +159,7 @@ response = client.chat.completions.create(
             "type": "web_search",
             "web_search": {
                 "enable": True,
-                "search_query": "塔克卡尔森与普京的访谈内容",
+                "search_query": query,
             }
         }
     ],
@@ -171,8 +172,7 @@ print(response.choices[0].message.content)
 # 自定义one-shot-RAG:
 config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
 config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
-question = 'Tucker Carlson与普京的会面,都谈了些什么?'
-query = '塔克卡尔森与普京的会面,都谈了些什么?'  # 用于web_search
+
 semantic_search_engine = chatGLM_by_semanticSearch_amid_SerpAPI(engine='Baidu', serp_key_path=config_path_serp,
                                                                 zhipu_key_path=config_path_zhipuai, )
-semantic_search_engine.chatGLM_RAG_oneshot(question, query, 'GLM-3-Turbo', web_search_enable=True, k=3, rn=10)
+semantic_search_engine.chatGLM_RAG_oneshot(question, query, 'glm-3-turbo', web_search_enable=True, k=3, rn=10)

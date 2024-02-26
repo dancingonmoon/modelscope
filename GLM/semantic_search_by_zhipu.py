@@ -160,7 +160,7 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
                                   nearest_examples=nearest_samples, reference_key='title_snippet')
         print(f'-------web_search_enable={web_search_enable}后,模型{glm_model}/RAG的回答:--------')
         print(result)
-        return scores, nearest_samples,result
+        return scores, nearest_samples, result
 
 
 if __name__ == "__main__":
@@ -180,4 +180,4 @@ if __name__ == "__main__":
     #                                             nearest_examples=nearest_samples, reference_key='title_snippet')
     # print('-------chatGLM-RAG的回答:--------')
 
-    semantic_search_engine.chatGLM_RAG_oneshot(question,query,'GLM-3-Turbo', web_search_enable=True,k=3,rn=10)
+    semantic_search_engine.chatGLM_RAG_oneshot(question, query, 'GLM-3-Turbo', web_search_enable=True, k=3, rn=10)
