@@ -66,7 +66,9 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
         if engine in ["Google", "Baidu"]:
             self.serp_api_key = get_api_key(config_file_path=serp_key_path, section=serp_key_section,
                                             option=serp_key_option)
-        self.engine = engine
+            self.engine = engine
+        else:
+            self.engine = None
         # self.query = query
 
     def web_search(self, query,
@@ -124,7 +126,11 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
         :param reference_key:
         :return:
         """
-        reference = ';'.join(nearest_examples[reference_key])
+        reference = None
+        if self.engine is None:
+            web_search_enable = False # 搜索引擎未设置,或者None时, 不能启动搜索功能;
+        if nearest_examples:
+            reference = ';'.join(nearest_examples[reference_key])
         if reference is not None:
             question_template = f"请基于以下参考信息生成回答: {reference}\n问题: {question}"
         else:
@@ -151,8 +157,12 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
         return result
 
     def chatGLM_RAG_oneshot(self, question, query, glm_model='GLM-4', web_search_enable=False, k=3, rn=10):
-        search_results_dict = self.web_search(query, rn=rn)
-        scores, nearest_samples = self.semantic_websearch(query, search_results_dict, k=k, )
+        if web_search_enable and self.engine is not None :
+            search_results_dict = self.web_search(query, rn=rn)
+            scores, nearest_samples = self.semantic_websearch(query, search_results_dict, k=k, )
+        else:
+            scores, nearest_samples = None, None
+
         # for score, sample in zip(scores, nearest_samples['title_snippet']):
         #     print(f'----语义搜索最佳的{k}个结果:---------')
         #     print(score, sample)
@@ -165,12 +175,12 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
 
 
 if __name__ == "__main__":
-    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
 
     question = 'Tucker Carlson与普京的会面,都谈了些什么?'
     query = '塔克卡尔森与普京的会面,都谈了些什么?'  # 用于web_search
-    semantic_search_engine = chatGLM_by_semanticSearch_amid_SerpAPI(engine='Baidu', serp_key_path=config_path_serp,
+    semantic_search_engine = chatGLM_by_semanticSearch_amid_SerpAPI(engine='None', serp_key_path=config_path_serp,
                                                                     zhipu_key_path=config_path_zhipuai, )
     # search_results_dict = semantic_search_engine.web_search(query, rn=10)
     # scores, nearest_samples = semantic_search_engine.semantic_websearch(query, search_results_dict, k=3, )
@@ -181,4 +191,5 @@ if __name__ == "__main__":
     #                                             nearest_examples=nearest_samples, reference_key='title_snippet')
     # print('-------chatGLM-RAG的回答:--------')
 
-    semantic_search_engine.chatGLM_RAG_oneshot(question, query, 'GLM-3-Turbo', web_search_enable=True, k=3, rn=10)
+    output_text = semantic_search_engine.chatGLM_RAG_oneshot(question, query, 'GLM-3-Turbo', web_search_enable=True, k=3, rn=10)
+    print(output_text)
