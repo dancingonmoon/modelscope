@@ -37,7 +37,7 @@ def chatGLM_RAG_generate(question, query, search_engine=None,
     websearch_flag = False
     if search_engine is None:
         websearch_flag = False
-    elif search_engine in ["Google", "Baidu"]:
+    elif search_engine.lower() in ["google", "baidu"]:
         websearch_flag = True
     scores, nearest_samples, result, output_text = semantic_search_engine.chatGLM_RAG_oneshot(question, query,
                                                                                               'GLM-3-Turbo',

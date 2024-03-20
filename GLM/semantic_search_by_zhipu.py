@@ -63,12 +63,13 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
         zhipu_api_key = get_api_key(config_file_path=zhipu_key_path, section=zhipu_key_section,
                                     option=zhipu_key_option)
         self.zhipuai_client = ZhipuAI(api_key=zhipu_api_key)
-        if engine in ["Google", "Baidu"]:
+        if engine.lower() in ["google", "baidu"] and engine is not None:
             self.serp_api_key = get_api_key(config_file_path=serp_key_path, section=serp_key_section,
                                             option=serp_key_option)
             self.engine = engine
         else:
             self.engine = None
+
         # self.query = query
 
     def web_search(self, query,
