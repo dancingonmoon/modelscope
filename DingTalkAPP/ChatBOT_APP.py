@@ -87,6 +87,7 @@ class EchoTextHandler(dingtalk_stream.ChatbotHandler):
         incoming_message = dingtalk_stream.ChatbotMessage.from_dict(callback.data)
         question = incoming_message.text.content.strip()
         query = question
+        logger.info(question)
         text = '收到您问题了,请待我调用GLM-3-Turbo大模型来回答:'
         self.reply_text(text, incoming_message)
         question, search_engine = split_string(question)
