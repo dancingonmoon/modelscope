@@ -20,11 +20,12 @@ def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID',
     return client_ID, client_secret
 
 
-def chatGLM_RAG_generate(question, query, search_engine=None,
+def chatGLM_RAG_generate(question, query, search_engine=None, LLM='glm-3-Turbo',
                          config_path_serp=r"e:/Python_WorkSpace/config/SerpAPI.ini",
                          config_path_zhipuai=r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"):
     """
     search_engine: [None, "Google", "Baidu"],三者之一; 当search_engine为None时，不进行搜索，直接回答问题
+    LLM: zhipuAI的模型选择: 'glm-3-Turbo', 或者 'glm-4'
     question: 问题;
     query: 用于web_search的query
     """
@@ -39,8 +40,7 @@ def chatGLM_RAG_generate(question, query, search_engine=None,
         websearch_flag = False
     elif search_engine.lower() in ["google", "baidu"]:
         websearch_flag = True
-    scores, nearest_samples, result, output_text = semantic_search_engine.chatGLM_RAG_oneshot(question, query,
-                                                                                              'GLM-3-Turbo',
+    scores, nearest_samples, result, output_text = semantic_search_engine.chatGLM_RAG_oneshot(question, query, LLM,
                                                                                               web_search_enable=websearch_flag,
                                                                                               k=3, rn=10)
     return output_text
@@ -48,11 +48,18 @@ def chatGLM_RAG_generate(question, query, search_engine=None,
 
 def setup_logger():
     logger = logging.getLogger()
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter('%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]'))
-    logger.addHandler(handler)
     logger.setLevel(logging.INFO)
+    # 控制台handler:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(
+        logging.Formatter('%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]'))
+    logger.addHandler(console_handler)
+
+    # 文件handler:
+    file_handler = logging.FileHandler('log.log')
+    file_handler.setFormatter(
+        logging.Formatter('%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]'))
+    logger.addHandler(file_handler)
     return logger
 
 
@@ -85,11 +92,11 @@ class EchoTextHandler(dingtalk_stream.ChatbotHandler):
         question, search_engine = split_string(question)
         # self.reply_text(search_engine, incoming_message)
         # self.reply_text(question, incoming_message)
-        # if search_engine == "None":
-        #     search_engine = None
-        text = chatGLM_RAG_generate(question=question, query=query, search_engine=search_engine,
+
+        text = chatGLM_RAG_generate(question=question, query=query, search_engine=search_engine,LLM='glm-3-Turbo',
                                     config_path_serp=config_path_serp, config_path_zhipuai=config_path_zhipuai)
         self.reply_text(text, incoming_message)
+        logger.info(text)
         return AckMessage.STATUS_OK, 'OK'
 
 
@@ -109,17 +116,13 @@ def split_string(text):
 if __name__ == '__main__':
     logger = setup_logger()
     # options = define_options()
-    config_path_dtApp = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
-    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
+    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
     client_id, client_secret = config_read(config_path_dtApp)
 
     credential = dingtalk_stream.Credential(client_id, client_secret)
     client = dingtalk_stream.DingTalkStreamClient(credential)
     client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, EchoTextHandler(logger))
     client.start_forever()
-    #
-    # question = "请问美国|哈哈|如何?  |<Google>|ss"
-    #
-    # question, search_engine = split_string(question)
-    # print(question, search_engine)
+
