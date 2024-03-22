@@ -68,9 +68,8 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
         if engine is not None:
             if engine.lower() in ["google", "baidu"]:
                 self.serp_api_key = get_api_key(config_file_path=serp_key_path, section=serp_key_section,
-                                            option=serp_key_option)
+                                                option=serp_key_option)
                 self.engine = engine
-
 
         # self.query = query
 
@@ -120,6 +119,36 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
 
         return scores, nearest_examples  # list中包含字典
 
+    def chatGLMAPI_completion_create(self, question=None, query=None, glm_model='GLM-4', web_search_enable=False):
+        """
+        同步调用:chatGLM API 接口,返回生成接口
+        :param question:
+        :param query:
+        :param glm_model:
+        :param web_search_enable:
+        """
+        web_search_parameters = {"enable": web_search_enable,
+                                 "search_query": query, }
+        try:
+            response = self.zhipuai_client.chat.completions.create(
+                model=glm_model,  # 填写需要调用的模型名称
+                messages=[
+                    {"role": "user", "content": question},
+                ],
+                tools=[
+                    {
+                        "type": "web_search",
+                        "web_search": web_search_parameters,
+                    }
+                ],
+                stream=False,
+            )
+            result = response.choices[0].message.content
+        except Exception as e:
+            result = f"An error occurred: {e.args}"
+        return result
+
+
     def chatGLM_RAG(self, question, query, glm_model='GLM-4', web_search_enable=False, nearest_examples=None,
                     reference_key='title_snippet', ):
         """
@@ -136,28 +165,8 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
             reference = ';'.join(nearest_examples[reference_key])
             question_template = f"请基于以下参考信息生成回答: {reference}\n问题: {question}"
 
-        web_search_parameters = {"enable": web_search_enable,
-                                 "search_query": query, }
-        try:
-            response = self.zhipuai_client.chat.completions.create(
-                model=glm_model,  # 填写需要调用的模型名称
-                messages=[
-                    {"role": "user", "content": question_template},
-                ],
-                tools=[
-                    {
-                        "type": "web_search",
-                        "web_search": web_search_parameters,
-                    }
-                ],
-                stream=False,
-            )
-            result = response.choices[0].message.content
-        except Exception as e:
-            result = f"An error occurred: {e.args}"
-        # for chunk in response:
-        #     print(chunk.choices[0].delta)
-
+        result = self.chatGLMAPI_completion_create(question=question_template, query=query,
+                                                   glm_model=glm_model, web_search_enable=web_search_enable)
 
         return result
 
@@ -201,6 +210,8 @@ if __name__ == "__main__":
     #                                             nearest_examples=nearest_samples, reference_key='title_snippet')
     # print('-------chatGLM-RAG的回答:--------')
 
-    scores, nearest_samples, result, output_text = semantic_search_engine.chatGLM_RAG_oneshot(question, query, 'GLM-3-Turbo', web_search_enable=True,
-                                                             k=3, rn=10)
+    scores, nearest_samples, result, output_text = semantic_search_engine.chatGLM_RAG_oneshot(question, query,
+                                                                                              'GLM-3-Turbo',
+                                                                                              web_search_enable=True,
+                                                                                              k=3, rn=10)
     print(output_text)
