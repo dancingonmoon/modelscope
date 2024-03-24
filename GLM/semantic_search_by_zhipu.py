@@ -143,7 +143,10 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
                 ],
                 stream=False,
             )
-            result = response.choices[0].message.content
+            if 'error' in response:
+                result = response['error']
+            else:
+                result = response.choices[0].message.content
         except Exception as e:
             result = f"An error occurred: {e.args}"
         return result
@@ -192,8 +195,8 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
 
 
 if __name__ == "__main__":
-    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
 
     # question = 'Tucker Carlson与普京的会面,都谈了些什么?'
     # query = '塔克卡尔森与普京的会面,都谈了些什么?'  # 用于web_search

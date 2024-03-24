@@ -1,9 +1,11 @@
 # !/usr/bin/env python
+# -*- coding: utf-8 -*-
 import re
 import sys
+import time
 
 sys.path.append('../GLM')  # 将上一级目录的/GLM目录添加到系统路径中
-from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
+# from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
 
 import argparse
 import logging
@@ -13,12 +15,18 @@ import configparser
 import zhipuai
 
 
-def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID', option2='client_secret'):
+def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID', option2=None):
+    """
+    option2 = None 时,仅输出第一个option1的值; 否则输出section下的option1与option2两个值
+    """
     config = configparser.ConfigParser()
     config.read(config_path, encoding='utf-8')
-    client_ID = config.get(section=section, option=option1)
-    client_secret = config.get(section=section, option=option2)
-    return client_ID, client_secret
+    option1_value = config.get(section=section, option=option1)
+    if option2 is not None:
+        option2_value = config.get(section=section, option=option2)
+        return option1_value,option2_value
+    else:
+        return option1_value
 
 
 def chatGLM_RAG_generate(question, query, search_engine=None, LLM='glm-3-Turbo',
@@ -47,26 +55,30 @@ def chatGLM_RAG_generate(question, query, search_engine=None, LLM='glm-3-Turbo',
     return output_text
 
 
-def characterGLMAPI_completion_create(api_key, prompt, history_prompt, bot_info, bot_name, user_info="用户", user_name="用户"):
+def characterGLMAPI_completion_create(zhipuai, prompt: list, history_prompt: list = None,
+                                      bot_info: str = None, bot_name: str = None,
+                                      user_info: str = "用户", user_name: str = "用户") -> str:
     """
     角色扮演模型characterglm需要zhipuai库版本<=1.07
     实现同步调用下的角色模型输出,包含历史聊天记录并入输入
-    api_key: zhipuai_api_key
+    zhipuai: zhipuai库(1.0.7版)已经load api_key, 即:zhipuai.api_key = api_key
     prompt: list;调用角色扮演模型时，将当前对话信息列表作为提示输入给模型; 按照 {"role": "user", "content": "你好"}
                     的键值对形式进行传参; 总长度超过模型最长输入限制后会自动截断，需按时间由旧到新排序
-    history_prompt: list;
+    history_prompt: list; 当history_prompt=None时,表明是不附加历史,仅仅是prompt作为characterglm输入;否则,history_prompt为list
     bot_info:角色信息
     bot_name:角色名称
     user_info:用户信息
     user_name:用户名称，默认值为"用户"
-
     """
-    zhipuai.api_key = api_key
-    prompt = history_prompt.extend(prompt)
+    # zhipuai.api_key = api_key
+    if history_prompt is None:
+        history_prompt = []
+    history_prompt.extend(prompt)
+
     try:
         response = zhipuai.model_api.invoke(
             model="characterglm",
-            prompt=prompt,
+            prompt=history_prompt,
             temperature=0.9,
             top_p=0.7,
             meta={
@@ -76,7 +88,12 @@ def characterGLMAPI_completion_create(api_key, prompt, history_prompt, bot_info,
                 "user_name": user_name,
             },
         )
-        result = response.choices[0].content
+        # logger.info(response)
+        if 'error' in response:
+            result = response['error']
+        else:
+            result = response['data']['choices'][0]['content']
+
     except Exception as e:
         result = f"An error occurred: {e.args}"
 
@@ -137,8 +154,48 @@ class EchoTextHandler(dingtalk_stream.ChatbotHandler):
         logger.info(text)
         return AckMessage.STATUS_OK, 'OK'
 
+history_prompt = [] #初始值定义为空列表,以与后续列表进行extend()拼接
+class PromptTextHandler(dingtalk_stream.ChatbotHandler):
+    """
+    历史prompt并入prompt,对话循环
+    """
+
+    def __init__(self, logger: logging.Logger = None):
+        super(dingtalk_stream.ChatbotHandler, self).__init__()
+        if logger:
+            self.logger = logger
+
+    async def process(self, callback: dingtalk_stream.CallbackMessage):
+        global history_prompt
+        incoming_message = dingtalk_stream.ChatbotMessage.from_dict(callback.data)
+        text = incoming_message.text.content.strip()
+        if change_topic_str_Detect(text):
+            history_prompt = []
+        prompt = [{"role": "user", "content": text}]
+
+        logger.info(f"user:{text}")
+        text = characterGLMAPI_completion_create(zhipuai=zhipuai, prompt=prompt, history_prompt=history_prompt,
+                                                 bot_name=bot_name, bot_info=bot_info, user_name=user_name,
+                                                 user_info=user_info)
+        # logger.info(f"之前:{text}")
+        text = re.sub(r'^["]+|[\\n+]|[\n+"]$', '', text)  # 去除字符串中的换行符或者回车符
+        # logger.info(f"去除标点:{text}")
+        history_prompt.extend([{"role": "assistant", "content": text}])
+        self.reply_text(text, incoming_message)
+        logger.info(f"assistant:{text}")
+        # logger.info(history_prompt)
+        return AckMessage.STATUS_OK, 'OK'
+
+
+
+
 
 def split_string(text):
+    """
+    判断字符串中尾部是否有|<search_engine>|, 将字符串输出成question,以及search_engine两部分
+    :param text:
+    :return:
+    """
     pattern = r'\|<.+>\|'
     match = re.search(pattern, text)
     if match:
@@ -151,20 +208,51 @@ def split_string(text):
     return str(question), str(search_engine)
 
 
+def change_topic_str_Detect(text: str) -> bool:
+    """
+    判读字符串是否包括|<换个话题>|,或者|<change topic>|
+    """
+    pattern0 = r'\|<换个话题>\|'
+    pattern1 = r'\|<change topic>\|'
+    match0 = re.search(pattern0, text)
+    match1 = re.search(pattern1, text)
+    if match0 or match1:
+        return True
+    else:
+        return False
+
+
 if __name__ == '__main__':
+
+    characterGLM_chat_flag = True
+
+    if characterGLM_chat_flag is False:
+        from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
+
     logger = setup_logger()
     # options = define_options()
-    config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
-    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
-    client_id, client_secret = config_read(config_path_dtApp)
+    config_path_dtApp = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
+    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
 
-    bot_info = "杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。2008年，凭借古装剧《王昭君》获得第24届中国电视金鹰奖观众喜爱的电视剧女演员奖提名 。2009年，在“80后新生代娱乐大明星”评选中被评为“四小花旦”。2011年，凭借穿越剧《宫锁心玉》赢得广泛关注 ，并获得了第17届上海电视节白玉兰奖观众票选最具人气女演员奖。2012年，不仅成立杨幂工作室，还凭借都市剧《北京爱情故事》获得了多项荣誉 。2015年，主演的《小时代》系列电影票房突破18亿人民币 。2016年，其主演的职场剧《亲爱的翻译官》取得全国年度电视剧收视冠军 。2017年，杨幂主演的神话剧《三生三世十里桃花》获得颇高关注；同年，她还凭借科幻片《逆时营救》获得休斯顿国际电影节最佳女主角奖 。2018年，凭借古装片《绣春刀Ⅱ：修罗战场》获得北京大学生电影节最受大学生欢迎女演员奖 [4]；。2014年1月8日，杨幂与刘恺威在巴厘岛举办了结婚典礼。同年6月1日，在香港产下女儿小糯米。"
-    bot_name = "大幂"
-    user_info = "粉丝"
+    # bot_info = "杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。2008年，凭借古装剧《王昭君》获得第24届中国电视金鹰奖观众喜爱的电视剧女演员奖提名 。2009年，在“80后新生代娱乐大明星”评选中被评为“四小花旦”。2011年，凭借穿越剧《宫锁心玉》赢得广泛关注 ，并获得了第17届上海电视节白玉兰奖观众票选最具人气女演员奖。2012年，不仅成立杨幂工作室，还凭借都市剧《北京爱情故事》获得了多项荣誉 。2015年，主演的《小时代》系列电影票房突破18亿人民币 。2016年，其主演的职场剧《亲爱的翻译官》取得全国年度电视剧收视冠军 。2017年，杨幂主演的神话剧《三生三世十里桃花》获得颇高关注；同年，她还凭借科幻片《逆时营救》获得休斯顿国际电影节最佳女主角奖 。2018年，凭借古装片《绣春刀Ⅱ：修罗战场》获得北京大学生电影节最受大学生欢迎女演员奖 [4]；。2014年1月8日，杨幂与刘恺威在巴厘岛举办了结婚典礼。同年6月1日，在香港产下女儿小糯米。"
+    bot_info = "刘亦菲（Crystal Liu,1987年8月25日-）,生于湖北省武汉市,毕业于北京电影学院,美籍华裔女演员、歌手.2002年,因出演电视剧《金粉世家》中白秀珠一角踏入演艺圈.2003年,因主演武侠剧《天龙八部》王语嫣崭露头角.2004年,凭借仙侠剧《仙剑奇侠传》赵灵儿一角获得了高人气.2005年,因在《神雕侠侣》中饰演小龙女受到关注.2006年,发行首张国语专辑《刘亦菲》和日语专辑《All My Words》.2008年起,转战大银幕,凭借好莱坞电影《功夫之王》成为首位荣登IMDB电影新人排行榜榜首的亚洲女星.2020年3月,为电影《花木兰》演唱中文主题曲《自己》；同年9月,主演的电影《花木兰》在Disney+上线,在剧中饰演花木兰；11月,凭借《花木兰》获首届评论家选择超级奖动作电影最佳女演员提名；2022年12月21日,凭借《梦华录》获第十三届澳门国际电视节金莲花最佳女主角奖.9月1日,凭借《梦华录》获得首届金熊猫奖电视剧单元最佳女主角提名.2023年12月28日,凭借《去有风的地方》获得第十四届澳门国际电视节'金莲花'最佳女主角奖"
+    bot_name = "茜茜"
+    user_info = "喜欢刘亦菲的男孩一枚"
     user_name = "用户"
 
-    credential = dingtalk_stream.Credential(client_id, client_secret)
-    client = dingtalk_stream.DingTalkStreamClient(credential)
-    client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, EchoTextHandler(logger))
+
+
+    if characterGLM_chat_flag:
+        zhipuai_key = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key", option2=None)
+        zhipuai.api_key = zhipuai_key
+        client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id', option2='client_secret')
+        credential = dingtalk_stream.Credential(client_id, client_secret)
+        client = dingtalk_stream.DingTalkStreamClient(credential)
+        client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, PromptTextHandler(logger))
+    else:
+        client_id, client_secret = config_read(config_path_dtApp, option1='client_id', option2='client_secret')
+        credential = dingtalk_stream.Credential(client_id, client_secret)
+        client = dingtalk_stream.DingTalkStreamClient(credential)
+        client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, EchoTextHandler(logger))
     client.start_forever()
