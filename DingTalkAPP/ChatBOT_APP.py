@@ -24,7 +24,7 @@ def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID',
     option1_value = config.get(section=section, option=option1)
     if option2 is not None:
         option2_value = config.get(section=section, option=option2)
-        return option1_value,option2_value
+        return option1_value, option2_value
     else:
         return option1_value
 
@@ -144,7 +144,7 @@ class EchoTextHandler(dingtalk_stream.ChatbotHandler):
         logger.info(question)
         text = '收到您问题了,请待我调用GLM-3-Turbo大模型来回答:'
         self.reply_text(text, incoming_message)
-        question, search_engine = split_string(question)
+        question, search_engine = split_string(question, method=1)
         # self.reply_text(search_engine, incoming_message)
         # self.reply_text(question, incoming_message)
 
@@ -154,7 +154,10 @@ class EchoTextHandler(dingtalk_stream.ChatbotHandler):
         logger.info(text)
         return AckMessage.STATUS_OK, 'OK'
 
-history_prompt = [] #初始值定义为空列表,以与后续列表进行extend()拼接
+
+history_prompt = []  # 初始值定义为空列表,以与后续列表进行extend()拼接
+
+
 class PromptTextHandler(dingtalk_stream.ChatbotHandler):
     """
     历史prompt并入prompt,对话循环
@@ -187,25 +190,32 @@ class PromptTextHandler(dingtalk_stream.ChatbotHandler):
         return AckMessage.STATUS_OK, 'OK'
 
 
-
-
-
-def split_string(text):
+def split_string(text, method=0, ):
     """
-    判断字符串中尾部是否有|<search_engine>|, 将字符串输出成question,以及search_engine两部分
+    method=0: 判断字符串中尾部是否有|<search_engine>|, 将字符串输出成question,以及search_engine两部分
+    method=1: 判断字符串中尾部是否有" 1" or " 2", " 1"表示search_engine="baidu"; " 2"表示search_engine="google" 将字符串输出成question,以及search_engine两部分
     :param text:
     :return:
     """
-    pattern = r'\|<.+>\|'
-    match = re.search(pattern, text)
-    if match:
-        search_engine = match.group(0)[2:-2]
-        question = text[:match.start()]
+    search_engine = None
+    question = text
 
-    else:
-        question = text
-        search_engine = None
-    return str(question), str(search_engine)
+    if method == 0:  # |<baidu>| or |<google>|
+        pattern = r'\|<.+>\|'
+        match = re.search(pattern, text)
+        if match:
+            search_engine = match.group(0)[2:-2]
+            question = text[:match.start()]
+
+    elif method == 1:  # "空格1" or "空格2"
+        if text[-2:] == " 1":
+            search_engine = "baidu"
+            question = text[-3]
+        elif text[-2:] == " 2":
+            search_engine = "google"
+            question = text[-3]
+
+    return question, search_engine
 
 
 def change_topic_str_Detect(text: str) -> bool:
@@ -224,7 +234,7 @@ def change_topic_str_Detect(text: str) -> bool:
 
 if __name__ == '__main__':
 
-    characterGLM_chat_flag = True
+    characterGLM_chat_flag = False
 
     if characterGLM_chat_flag is False:
         from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
@@ -241,12 +251,11 @@ if __name__ == '__main__':
     user_info = "喜欢刘亦菲的男孩一枚"
     user_name = "用户"
 
-
-
     if characterGLM_chat_flag:
         zhipuai_key = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key", option2=None)
         zhipuai.api_key = zhipuai_key
-        client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id', option2='client_secret')
+        client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id',
+                                               option2='client_secret')
         credential = dingtalk_stream.Credential(client_id, client_secret)
         client = dingtalk_stream.DingTalkStreamClient(credential)
         client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, PromptTextHandler(logger))
