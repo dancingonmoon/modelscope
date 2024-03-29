@@ -6,6 +6,7 @@ import json
 from aliyunsdkcore.client import AcsClient
 from aliyunsdkcore.request import CommonRequest
 import nls
+import threading
 
 from ChatBOT_APP import config_read, setup_logger
 
@@ -45,7 +46,7 @@ def emo_label_out(data):
 
 
 # 获取 accessKey_id, accessKey_secret:
-config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
+config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
 accessKey_id, accessKey_secret = config_read(config_path_aliyunsdk, section='aliyunsdkcore', option1='AccessKey_ID',
                                              option2='AccessKey_Secret')
 
@@ -88,63 +89,142 @@ appKey = config_read(config_path_aliyunsdk, section='APP_tts', option1='AppKey')
 # URL = "wss://nls-gateway-cn-shanghai.aliyuncs.com/ws/v1"
 URL = "wss://nls-gateway.aliyuncs.com/ws/v1"  # 就近地域智能接入,自动根据地域选择shanghai/beijing/shenzhen
 TEXT = '大壮正想去摘取花瓣，谁知阿丽和阿强突然内讧，阿丽拿去手枪向树干边的阿强射击，两声枪响，阿强直接倒入水中'
+TEXT_ssml = """<speak>
+  相传北宋年间，
+  <say-as interpret-as="date">1121-10-10</say-as>，
+  <say-as interpret-as="address">开封城</say-as>
+  郊外的早晨笼罩在一片
+  <sub alias="双十一">11.11</sub>
+  前买买买的欢乐海洋中。一支运货的骡队刚进入城门
+  <soundEvent src="http://nls.alicdn.com/sound-event/bell.wav"/>
+  一个肤白貌美
+  <phoneme alphabet="py" ph="de5">地</phoneme>
+  姑娘便拦下第一排的小哥<say-as interpret-as="name">阿发。</say-as>
+</speak>"""
+
 tts_out_path = './tts_out.wav'
+femail_speakers = ["zhixiaobai", "zhixiaoxia", "zhixiaomei", "zhigui", "aixia", "zhimiao_emo", "zhiyan_emo",
+                   "zhibei_emo", "zhitian_emo", "xiaoyun", "ruoxi", "sijia", "aiqi", "aijia", "ninger", "ruilin",
+                   "siyue", "aiya", "aimei", "aiyu", "aiyue", "aijing", "xiaomei", "xiaobei", "aiwei", "guijie",
+                   "stella", "xiaoxian", "maoxiaomei", ]
 
 
-def fun_on_metainfo(message, *args):
+class TTS_threadsRUN():
     """
-    如果start方法中通过ex参数传递enable_subtitle，则会返回对应字幕信息。回调参数包含以下两种：
-    1)JSON形式的字符串 2)用户自定义参数
-    其中，用户自定义参数为callback_args字段中返回的参数内容。
+    TTS,将音频存入指定目录的文件.
+    每次初始化,启动单一thread,可以在多次初始化后,多线程处理密集I/O;
     """
-    print(f"appKey:{args}; subtitle:{message}")
-    # return f"appKey:{args}; subtitle:{message}"
 
-f = open(tts_out_path, 'wb')
-def fun_on_data(data, *args):
-    """
-    当存在合成数据后的回调参数。回调参数包含以下两种：
-    1)对应start方法中aformat的二进制音频数据 2)用户自定义参数
-    """
-    tts_out_path = args[1]
-    try:
-        # with open(tts_out_path, mode='wb') as f:
-        f.write(data)
-        print(f"write data finish")
-        # print(f"received:{data}")
-    except Exception as e:
-        print("write data failed:", e)
+    def __init__(self, tts_name, audio_path, aformat='wav', voice='xiaoyun',
+                 speech_rate=0, pitch_rate=0, wait_complete=True,
+                 enable_subtitle=False, enable_ptts=False, callbacks=None):
+        """
+        tts_name: 一个名字而已,仅用于标识
+        callbacks: list; nls.NlsSpeechSynthesizer()中的callback_args,用于自定义回调时,传入自定义参数
+        """
+        self.__thread = threading.Thread(target=self.__tts_run)
+        self.__tts_name = tts_name
+        self.__audio_path = audio_path
+        self.__aformat = aformat
+        self.__voice = voice
+        self.__speech_rate = speech_rate
+        self.__pitch_rate = pitch_rate
+        self.__wait_complete = wait_complete,
+        self.__enable_subtitle = enable_subtitle
+        self.__enable_ptts = enable_ptts
+        self.__callbacks = callbacks
 
-def fun_on_error(message, *args):
-    """
-    当SDK或云端出现错误时的回调参数。回调参数包含以下两种：
-    1)JSON形式的字符串 2)用户自定义参数
-   其中，用户自定义参数为callback_args字段中返回的参数内容。
-    """
-    print(f"error:{message}")
+    def __tts_run(self):
+        """
+        调用语音合成API,1)初始化语音合成,2)启动语音合成
+        :return: Boolean, 成功或者失败
+        """
+        print("thread:{} start..".format(self.__tts_name))
+        tts = nls.NlsSpeechSynthesizer(url=URL,
+                                       token=token,
+                                       appkey=appKey,
+                                       # on_metainfo=self.fun_on_metainfo,
+                                       on_data=self.fun_on_data,
+                                       # on_completed=self.fun_on_completed,
+                                       on_error=self.fun_on_error,
+                                       on_close=self.fun_on_close,
+                                       callback_args=self.__callbacks)
+        print("{}: session start".format(self.__tts_name))
+        r = tts.start(self.__text, aformat=self.__aformat, voice=self.__voice,
+                      speech_rate=self.__speech_rate, pitch_rate=self.__pitch_rate, wait_complete=self.__wait_complete,
+                      ex={"enable_subtitle": self.__enable_subtitle, "enable_ptts": self.__enable_ptts})
+        print("{}: tts done with result:{}".format(self.__tts_name, r))
 
-def fun_on_close(*args):
-    print("on_close: args=>{}".format(args))
-    try:
-        f.close()
-    except Exception as e:
-        print("close file failed since:", e)
+    def start(self, text):
+        self.__text = text
+        self.__f = open(self.__audio_path, 'wb')
+        self.__thread.start()
 
-nls.enableTrace(True)
-tts = nls.NlsSpeechSynthesizer(url=URL,
-                               token=token,
-                               appkey=appKey,
-                               on_metainfo=fun_on_metainfo,
-                               on_data=fun_on_data,
-                               # on_completed=fun_on_completed,
-                               on_error=fun_on_error,
-                               on_close=fun_on_close,
-                               callback_args=[appKey, tts_out_path])
-result = tts.start(text=TEXT, aformat='wav', voice='zhitian_emo',
-                   speech_rate=0, pitch_rate=0, wait_complete=True,
-                   ex={"enable_subtitle": True, "enable_ptts": False})
+    def fun_on_metainfo(self, message, *args):
+        """
+        如果start方法中通过ex参数传递enable_subtitle，则会返回对应字幕信息。回调参数包含以下两种：
+        """
+        print(f"callback_args:{args}; subtitle:{message}")
+        # return message
+
+    def fun_on_data(self, data, *args):
+        """
+        当存在合成数据后的回调参数。回调参数包含以下两种：
+        1)对应start方法中aformat的二进制音频数据 2)用户自定义参数
+        """
+        try:
+            self.__f.write(data)
+            print(f"write data finish")
+        except Exception as e:
+            print("write data failed:", e)
+
+    def fun_on_error(self, message, *args):
+        """
+        当SDK或云端出现错误时的回调参数。回调参数包含以下两种：
+        """
+        print(f"error:{message}")
+
+    def fun_on_completed(self, message, *args):
+        """
+        语音合成完成时,执行函数
+        """
+        print("on_completed:args=>{} message=>{}".format(args, message))
+
+    def fun_on_close(self, *args):
+        # global con_fig
+        print("on_close: args=>{}".format(args))
+        try:
+            self.__f.close()
+        except Exception as e:
+            print("close file failed since:", e)
+
+        # con_fig = False
+        # return con_fig
 
 
-print(result)
+# nls.enableTrace(True)
+# tts = nls.NlsSpeechSynthesizer(url=URL,
+#                                token=token,
+#                                appkey=appKey,
+#                                on_metainfo=fun_on_metainfo,
+#                                on_data=fun_on_data,
+#                                # on_completed=fun_on_completed,
+#                                on_error=fun_on_error,
+#                                on_close=fun_on_close,
+#                                callback_args=[appKey, tts_out_path])
+# result = tts.start(text=TEXT, aformat='wav', voice='zhitian_emo',
+#                    speech_rate=0, pitch_rate=0, wait_complete=True,
+#                    ex={"enable_subtitle": True, "enable_ptts": False})
 
 
+# nls.enableTrace(True)
+# voice = 'zhiyan_em' # zhiyan的声音,略微的更女性化些;
+for voice in femail_speakers:
+    con_fig = True
+    tts = TTS_threadsRUN(tts_name='测试例子', audio_path=f'./tts_{voice}_out.wav', voice=voice, wait_complete=False,
+                         enable_subtitle=False, callbacks=[con_fig])
+    tts.start(TEXT_ssml)
+    while con_fig:
+        time.sleep(2)
+        if not con_fig:
+            break
