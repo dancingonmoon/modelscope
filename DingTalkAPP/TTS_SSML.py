@@ -218,7 +218,7 @@ class TTS_threadsRUN():
 
 
 # nls.enableTrace(True)
-# voice = 'zhiyan_em' # zhiyan的声音,略微的更女性化些;
+# voice = 'zhiyan_emo' # zhiyan的声音,略微的更女性化些;
 for voice in femail_speakers:
     con_fig = True
     tts = TTS_threadsRUN(tts_name='测试例子', audio_path=f'./tts_{voice}_out.wav', voice=voice, wait_complete=False,
