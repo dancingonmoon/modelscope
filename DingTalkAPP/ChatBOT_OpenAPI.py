@@ -202,7 +202,7 @@ def upload2media_id(media_file, media_type, ):
         media_file: str或者object; 媒体文件的path,或者二进制media文件.
     """
     if isinstance(media_file, str):  # 若是文件路径;
-        media_file = {'media': open(audio_path, 'rb'), }
+        media_file = {'media': open(media_file, 'rb'), }
     elif isinstance(media_file, bytes):  # 若是bytes
         media_file = {'media': media_file}
     else:
