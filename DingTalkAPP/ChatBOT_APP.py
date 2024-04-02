@@ -132,6 +132,9 @@ def define_options():
 
 
 class EchoTextHandler(dingtalk_stream.ChatbotHandler):
+    """
+    GLM-3-Turbo LLM 聊天
+    """
     def __init__(self, logger: logging.Logger = None):
         super(dingtalk_stream.ChatbotHandler, self).__init__()
         if logger:
@@ -161,6 +164,7 @@ history_prompt = []  # 初始值定义为空列表,以与后续列表进行exten
 
 class PromptTextHandler(dingtalk_stream.ChatbotHandler):
     """
+    characterGLM 聊天
     历史prompt并入prompt,对话循环
     """
 

@@ -3,6 +3,8 @@ from dingtalk_stream.chatbot import TextContent, ImageContent, RichTextContent, 
     ConversationMessage
 from dingtalk_stream import ChatbotHandler
 import requests
+import json
+
 
 
 class Chatbotmessage_utilies(ChatbotMessage):
@@ -13,31 +15,31 @@ class Chatbotmessage_utilies(ChatbotMessage):
     def __init__(self, ):
         super(Chatbotmessage_utilies, self).__init__()
 
-        self.is_in_at_list = None
-        self.session_webhook = None
-        self.sender_nick = None
-        self.robot_code = None
-        self.session_webhook_expired_time = None
-        self.message_id = None
-        self.sender_id = None
-        self.chatbot_user_id = None
-        self.conversation_id = None
-        self.is_admin = None
-        self.create_at = None
-        self.text = None
-        self.conversation_type = None
-        self.at_users = []
-        self.chatbot_corp_id = None
-        self.sender_corp_id = None
-        self.conversation_title = None
-        self.message_type = None
-        self.image_content = None
-        self.rich_text_content = None
-        self.sender_staff_id = None
-        self.hosting_context: HostingContext = None
-        self.conversation_msg_context = None
-
-        self.extensions = {}
+        # self.is_in_at_list = None
+        # self.session_webhook = None
+        # self.sender_nick = None
+        # self.robot_code = None
+        # self.session_webhook_expired_time = None
+        # self.message_id = None
+        # self.sender_id = None
+        # self.chatbot_user_id = None
+        # self.conversation_id = None
+        # self.is_admin = None
+        # self.create_at = None
+        # self.text = None
+        # self.conversation_type = None
+        # self.at_users = []
+        # self.chatbot_corp_id = None
+        # self.sender_corp_id = None
+        # self.conversation_title = None
+        # self.message_type = None
+        # self.image_content = None
+        # self.rich_text_content = None
+        # self.sender_staff_id = None
+        # self.hosting_context: HostingContext = None
+        # self.conversation_msg_context = None
+        #
+        # self.extensions = {}
         # 增加部分:
         self.audio_duration = None
         self.audio_downloadCode = None
@@ -156,7 +158,7 @@ class chatbothandler_utilies(ChatbotHandler):
     def extract_media_from_incoming_message(self, incoming_message: Chatbotmessage_utilies,
                                             media_save_folder=None) -> list:
         """
-        获取用户发送的媒体文件，重新上传，获取新的media_ids列表;或者下载到本地存储
+        获取用户发送的媒体文件，重新上传，获取新的media_ids列表;或者不上传,直接下载到本地存储
         :param incoming_message:
         media_save_folder: 不为None,是Path的话,则media存盘,并不上传空间获得media_ids列表;media_save_path需为文件目录,文件名自动生成
         :return: media_id list
@@ -187,9 +189,64 @@ class chatbothandler_utilies(ChatbotHandler):
                 media_id = self.dingtalk_client.upload_to_dingtalk(media_content.content, filetype=filetype,
                                                                    filename=None)
                 media_ids.append(media_id)
+            elif isinstance(media_save_folder, str):
+                with open(f"{media_save_folder}/{filetype}_{len(media_ids)}.{filetype}", 'wb') as f:
+                    f.write(media_content.content)
+                    self.logger.info(f"{filetype}_{len(media_ids)}.{filetype} 下载完成")
+                    # print(f"{filetype}_{len(media_ids)}.{filetype} 下载完成")
 
         return media_ids
 
-            with open(f"{media_save_folder}/{filetype}_{len(media_ids)}.{filetype}", 'wb') as f:
-                f.write(media_content.content)
-                print(f"{filetype}_{len(media_ids)}.{filetype} 下载完成")
+    def upload2media_id(self, media_content, media_type, ):
+        """
+        media upload, 使用RestAPI接口; Request Body 参数: media (FileItem类型),构建media包括:
+                media_type: str; union['voice','image','file','video'];
+                media_content: str或者object; 媒体文件的path,或者二进制media文件content.
+        """
+        if isinstance(media_content, str):  # 若是文件路径;
+            media_content = {'media': open(media_content, 'rb'), }
+        elif isinstance(media_content, bytes):  # 若是bytes
+            media_content = {'media': media_content}
+        else:
+            self.logger.error("Invalid media file format")
+
+        access_token = self.dingtalk_client.get_access_token()
+        api = f"https://oapi.dingtalk.com/media/upload?access_token={access_token}&type={media_type}"
+        response = requests.post(api, files=media_content)
+        # print(response.text)
+        text_dict = json.loads(response.text)  # 将str转成dict
+        media_id = None
+        if 'media_id' in text_dict:
+            media_id = text_dict['media_id']
+        else:
+            self.logger.info(f"response upon uploading: {text_dict}")
+
+        return media_id
+
+    def reply_voice(self,
+                   mediaId: str, duration: int,
+                   incoming_message: ChatbotMessage):
+        request_headers = {
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+        }
+        values = {
+            'msgtype': 'sampleAudio',
+            'sampleAudio': {
+                'mediaId': mediaId,
+                'duration': duration,
+            },
+            'at': {
+                'atUserIds': [incoming_message.sender_staff_id],
+            }
+        }
+        try:
+            response = requests.post(incoming_message.session_webhook,
+                                     headers=request_headers,
+                                     data=json.dumps(values))
+            response.raise_for_status()
+        except Exception as e:
+            self.logger.error('reply sampleAudio failed, error=%s', e)
+            return None
+        return response.json()
+

@@ -20,7 +20,6 @@ import sys
 # sys.path.append("L:/Python_WorkSpace/dingtalk-sdk-python3")
 # import dingtalk.api
 
-
 from ChatBOT_APP import config_read, setup_logger
 
 
@@ -195,22 +194,22 @@ class SendMessage_userChat:
                 pass
 
 
-def upload2media_id(media_file, media_type, ):
+def upload2media_id(access_Token, media_content, media_type, ):
     """
     media upload, 直接RestAPI接口; Request Body 参数: media (FileItem类型),构建media包括:
         media_type: str; union['voice','image','file','video'];
-        media_file: str或者object; 媒体文件的path,或者二进制media文件.
+        media_content: str或者object; 媒体文件的path,或者二进制media文件.
     """
-    if isinstance(media_file, str):  # 若是文件路径;
-        media_file = {'media': open(media_file, 'rb'), }
-    elif isinstance(media_file, bytes):  # 若是bytes
-        media_file = {'media': media_file}
+    if isinstance(media_content, str):  # 若是文件路径;
+        media_content = {'media': open(media_content, 'rb'), }
+    elif isinstance(media_content, bytes):  # 若是bytes
+        media_content = {'media': media_content}
     else:
         print("Invalid media file format")
 
-    api = f"https://oapi.dingtalk.com/media/upload?access_token={aToken}&type={media_type}"
-    response = requests.post(api, files=media_file)
-    print(response.text)
+    api = f"https://oapi.dingtalk.com/media/upload?access_token={access_Token}&type={media_type}"
+    response = requests.post(api, files=media_content)
+    # print(response.text)
     text_dict = json.loads(response.text)  # 将str转成dict
     if 'media_id' in text_dict:
         media_id = text_dict['media_id']
@@ -254,7 +253,7 @@ if __name__ == '__main__':
 
     # media upload, 直接RestAPI接口; body参数: media (FileItem类型), type (str: ['voice','image','file','video']);
     # audio_path = r"E:/Python_WorkSpace/modelscope/DingTalkAPP/tts_aijing_out.wav"
-    # media_id = upload2media_id(audio_path, 'voice')
+    # media_id = upload2media_id(aToken, audio_path, 'voice')
     # print(media_id)
     #
     # # 构建语音消息模板:
