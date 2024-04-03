@@ -13,6 +13,8 @@ from dingtalk_stream import AckMessage
 import dingtalk_stream
 import configparser
 import zhipuai
+from chatbotClass_utilies import ChatbotMessage_Utilies,ChatbotHandler_utilies
+# from TTS_SSML import
 
 
 def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID', option2=None):
@@ -177,7 +179,6 @@ class PromptTextHandler(dingtalk_stream.ChatbotHandler):
         global history_prompt
         callback_data = callback.data
         incoming_message = dingtalk_stream.ChatbotMessage.from_dict(callback_data)
-        conversation_id = callback_data.conversationId
         text = incoming_message.text.content.strip()
         if change_topic_str_Detect(text):
             history_prompt = []
@@ -238,10 +239,46 @@ def change_topic_str_Detect(text: str) -> bool:
     else:
         return False
 
+class VoiceChatHandler(ChatbotHandler_utilies):
+    """
+    语音 聊天
+    """
+    def __init__(self, logger: logging.Logger = None):
+        super(ChatbotHandler_utilies, self).__init__()
+        if logger:
+            self.logger = logger
+
+    async def process(self, callback: dingtalk_stream.CallbackMessage):
+        global history_prompt
+        # callback_data = callback.data
+        incoming_message = ChatbotMessage_Utilies.from_dict(callback.data)
+        # text = incoming_message.text.content.strip()
+        # if change_topic_str_Detect(text):
+        #     history_prompt = []
+        # prompt = [{"role": "user", "content": text}]
+        #
+        # logger.info(f"user:{text}")
+        # text = characterGLMAPI_completion_create(zhipuai=zhipuai, prompt=prompt, history_prompt=history_prompt,
+        #                                          bot_name=bot_name, bot_info=bot_info, user_name=user_name,
+        #                                          user_info=user_info)
+        # text = re.sub(r'^["]+|[\\n+]|[\n+"]$', '', text)  # 去除字符串中的换行符或者回车符
+        # history_prompt.extend([{"role": "assistant", "content": text}])
+        # TTS, 上传获取mediaId,:
+        voiceMessage_path = r'tts_zhiyan_emo_out.wav'
+        duration = 23000 # 单位,毫秒;
+        mediaId = self.upload2media_id(media_content=voiceMessage_path,media_type='voice')
+        # 发送voice message:
+        self.reply_voice(mediaId, duration, incoming_message)
+        # self.reply_text(text, incoming_message)
+        # logger.info(f"assistant:{text}")
+        # logger.info(history_prompt)
+        return AckMessage.STATUS_OK, 'OK'
+
 
 if __name__ == '__main__':
 
-    characterGLM_chat_flag = False
+    characterGLM_chat_flag = False # True时,characterglm,需要zhipuai库版本<=1.07
+    voiceMessage_chat_flag = True
 
     if characterGLM_chat_flag is False:
         from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
@@ -258,18 +295,23 @@ if __name__ == '__main__':
     user_info = "喜欢刘亦菲的男孩一枚"
     user_name = "用户"
 
-    if characterGLM_chat_flag: # 角色扮演机器人
+    if characterGLM_chat_flag : # 角色扮演机器人聊天
         zhipuai_key = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key", option2=None)
         zhipuai.api_key = zhipuai_key
         client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id',
                                                option2='client_secret')
         credential = dingtalk_stream.Credential(client_id, client_secret)
         client = dingtalk_stream.DingTalkStreamClient(credential)
-        client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, PromptTextHandler(logger))
-    else:
+        if voiceMessage_chat_flag is False:  # 角色扮演机器人, 文本聊天
+            client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, PromptTextHandler(logger))
+        else:  # 角色扮演机器人,  语音聊天
+            client.register_callback_handler(ChatbotMessage_Utilies.TOPIC, VoiceChatHandler(logger))
+
+    else:  # GLM 办公助手, 文本聊
         client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_chatGLM", option1='client_id',
                                                option2='client_secret')
         credential = dingtalk_stream.Credential(client_id, client_secret)
         client = dingtalk_stream.DingTalkStreamClient(credential)
         client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, EchoTextHandler(logger))
+
     client.start_forever()

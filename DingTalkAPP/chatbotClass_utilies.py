@@ -1,19 +1,19 @@
 import dingtalk_stream
 from dingtalk_stream.chatbot import TextContent, ImageContent, RichTextContent, AtUser, HostingContext, ChatbotMessage, \
     ConversationMessage
-from dingtalk_stream import ChatbotHandler
+from dingtalk_stream import ChatbotHandler, CallbackHandler
 import requests
 import json
 
 
 
-class Chatbotmessage_utilies(ChatbotMessage):
+class ChatbotMessage_Utilies(ChatbotMessage):
     """
     在类ChatbotMessage里,增加除image以外的voice,video等media消息的支持
     """
 
     def __init__(self, ):
-        super(Chatbotmessage_utilies, self).__init__()
+        super(ChatbotMessage_Utilies, self).__init__()
 
         # self.is_in_at_list = None
         # self.session_webhook = None
@@ -144,7 +144,7 @@ class Chatbotmessage_utilies(ChatbotMessage):
             return []
 
 
-class chatbothandler_utilies(ChatbotHandler):
+class ChatbotHandler_utilies(ChatbotHandler):
     """
     补充增加方法,实现对audio,video,file接收的媒体信息:
     1) 根据downloadCode获取下载链接;
@@ -153,9 +153,9 @@ class chatbothandler_utilies(ChatbotHandler):
     """
 
     def __init__(self, ):
-        super(chatbothandler_utilies, self).__init__()
+        super(ChatbotHandler_utilies, self).__init__()
 
-    def extract_media_from_incoming_message(self, incoming_message: Chatbotmessage_utilies,
+    def extract_media_from_incoming_message(self, incoming_message: ChatbotMessage_Utilies,
                                             media_save_folder=None) -> list:
         """
         获取用户发送的媒体文件，重新上传，获取新的media_ids列表;或者不上传,直接下载到本地存储
@@ -199,7 +199,8 @@ class chatbothandler_utilies(ChatbotHandler):
 
     def upload2media_id(self, media_content, media_type, ):
         """
-        media upload, 使用RestAPI接口; Request Body 参数: media (FileItem类型),构建media包括:
+        media upload, 返回media_id.
+        使用RestAPI接口; Request Body 参数: media (FileItem类型),构建media包括:
                 media_type: str; union['voice','image','file','video'];
                 media_content: str或者object; 媒体文件的path,或者二进制media文件content.
         """
@@ -224,8 +225,8 @@ class chatbothandler_utilies(ChatbotHandler):
         return media_id
 
     def reply_voice(self,
-                   mediaId: str, duration: int,
-                   incoming_message: ChatbotMessage):
+                    mediaId: str, duration: int,
+                    incoming_message: ChatbotMessage_Utilies):
         request_headers = {
             'Content-Type': 'application/json',
             'Accept': '*/*',
