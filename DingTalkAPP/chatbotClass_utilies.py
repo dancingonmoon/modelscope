@@ -232,8 +232,8 @@ class ChatbotHandler_utilies(ChatbotHandler):
             'Accept': '*/*',
         }
         values = {
-            'msgtype': 'sampleAudio',
-            'sampleAudio': {
+            'msgKey': 'Audio',
+            'msgParm': {
                 'mediaId': mediaId,
                 'duration': duration,
             },

@@ -244,14 +244,22 @@ class VoiceChatHandler(ChatbotHandler_utilies):
     语音 聊天
     """
     def __init__(self, logger: logging.Logger = None):
-        super(ChatbotHandler_utilies, self).__init__()
+        super(VoiceChatHandler, self).__init__()
         if logger:
             self.logger = logger
 
     async def process(self, callback: dingtalk_stream.CallbackMessage):
         global history_prompt
-        # callback_data = callback.data
-        incoming_message = ChatbotMessage_Utilies.from_dict(callback.data)
+        callback_data = callback.data
+        conversationId=callback_data["conversationId"]
+        senderStaffId = callback_data["senderStaffId"]
+        chatbot_user_id =ChatbotMessage_Utilies.chatbot_user_id
+        conversation_id = ChatbotMessage_Utilies.conversation_id
+        logger.info(f"conversationId:{conversationId},senderStaffId:{senderStaffId},chatbot_user_id:{chatbot_user_id},conversation_id:{conversation_id}")
+        incoming_message = ChatbotMessage_Utilies.from_dict(callback_data)
+        logger.info(f"callback.data:{callback_data}")
+        logger.info(f"incoming_message:{incoming_message}")
+
         # text = incoming_message.text.content.strip()
         # if change_topic_str_Detect(text):
         #     history_prompt = []
@@ -266,9 +274,10 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         # TTS, 上传获取mediaId,:
         voiceMessage_path = r'tts_zhiyan_emo_out.wav'
         duration = 23000 # 单位,毫秒;
-        mediaId = self.upload2media_id(media_content=voiceMessage_path,media_type='voice')
+        # mediaId = self.upload2media_id(media_content=voiceMessage_path,media_type='voice')
+        # logger.info(mediaId)
         # 发送voice message:
-        self.reply_voice(mediaId, duration, incoming_message)
+        # self.reply_voice(mediaId, duration, incoming_message)
         # self.reply_text(text, incoming_message)
         # logger.info(f"assistant:{text}")
         # logger.info(history_prompt)
@@ -277,7 +286,7 @@ class VoiceChatHandler(ChatbotHandler_utilies):
 
 if __name__ == '__main__':
 
-    characterGLM_chat_flag = False # True时,characterglm,需要zhipuai库版本<=1.07
+    characterGLM_chat_flag = True # True时,characterglm,需要zhipuai库版本<=1.07
     voiceMessage_chat_flag = True
 
     if characterGLM_chat_flag is False:
