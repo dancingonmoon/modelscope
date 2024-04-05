@@ -3,6 +3,7 @@
 import re
 import sys
 import time
+import requests
 
 sys.path.append('../GLM')  # 将上一级目录的/GLM目录添加到系统路径中
 # from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
@@ -13,7 +14,9 @@ from dingtalk_stream import AckMessage
 import dingtalk_stream
 import configparser
 import zhipuai
-from chatbotClass_utilies import ChatbotMessage_Utilies,ChatbotHandler_utilies
+from chatbotClass_utilies import ChatbotMessage_Utilies, ChatbotHandler_utilies
+
+
 # from TTS_SSML import
 
 
@@ -137,6 +140,7 @@ class EchoTextHandler(dingtalk_stream.ChatbotHandler):
     """
     GLM-3-Turbo LLM 聊天
     """
+
     def __init__(self, logger: logging.Logger = None):
         super(dingtalk_stream.ChatbotHandler, self).__init__()
         if logger:
@@ -239,10 +243,12 @@ def change_topic_str_Detect(text: str) -> bool:
     else:
         return False
 
+
 class VoiceChatHandler(ChatbotHandler_utilies):
     """
     语音 聊天
     """
+
     def __init__(self, logger: logging.Logger = None):
         super(VoiceChatHandler, self).__init__()
         if logger:
@@ -251,14 +257,12 @@ class VoiceChatHandler(ChatbotHandler_utilies):
     async def process(self, callback: dingtalk_stream.CallbackMessage):
         global history_prompt
         callback_data = callback.data
-        conversationId=callback_data["conversationId"]
-        senderStaffId = callback_data["senderStaffId"]
-        chatbot_user_id =ChatbotMessage_Utilies.chatbot_user_id
-        conversation_id = ChatbotMessage_Utilies.conversation_id
-        logger.info(f"conversationId:{conversationId},senderStaffId:{senderStaffId},chatbot_user_id:{chatbot_user_id},conversation_id:{conversation_id}")
         incoming_message = ChatbotMessage_Utilies.from_dict(callback_data)
-        logger.info(f"callback.data:{callback_data}")
-        logger.info(f"incoming_message:{incoming_message}")
+        chatbot_user_id = incoming_message.chatbot_user_id
+        conversation_id = incoming_message.conversation_id
+        media_list = incoming_message.get_media_list()
+        logger.info(f"message_type:{incoming_message.message_type}")
+
 
         # text = incoming_message.text.content.strip()
         # if change_topic_str_Detect(text):
@@ -273,7 +277,7 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         # history_prompt.extend([{"role": "assistant", "content": text}])
         # TTS, 上传获取mediaId,:
         voiceMessage_path = r'tts_zhiyan_emo_out.wav'
-        duration = 23000 # 单位,毫秒;
+        duration = 23000  # 单位,毫秒;
         # mediaId = self.upload2media_id(media_content=voiceMessage_path,media_type='voice')
         # logger.info(mediaId)
         # 发送voice message:
@@ -286,7 +290,7 @@ class VoiceChatHandler(ChatbotHandler_utilies):
 
 if __name__ == '__main__':
 
-    characterGLM_chat_flag = True # True时,characterglm,需要zhipuai库版本<=1.07
+    characterGLM_chat_flag = True  # True时,characterglm,需要zhipuai库版本<=1.07
     voiceMessage_chat_flag = True
 
     if characterGLM_chat_flag is False:
@@ -304,7 +308,7 @@ if __name__ == '__main__':
     user_info = "喜欢刘亦菲的男孩一枚"
     user_name = "用户"
 
-    if characterGLM_chat_flag : # 角色扮演机器人聊天
+    if characterGLM_chat_flag:  # 角色扮演机器人聊天
         zhipuai_key = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key", option2=None)
         zhipuai.api_key = zhipuai_key
         client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id',

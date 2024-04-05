@@ -4,42 +4,16 @@ from dingtalk_stream.chatbot import TextContent, ImageContent, RichTextContent, 
 from dingtalk_stream import ChatbotHandler, CallbackHandler
 import requests
 import json
-
+import platform
 
 
 class ChatbotMessage_Utilies(ChatbotMessage):
     """
     在类ChatbotMessage里,增加除image以外的voice,video等media消息的支持
     """
-
     def __init__(self, ):
         super(ChatbotMessage_Utilies, self).__init__()
 
-        # self.is_in_at_list = None
-        # self.session_webhook = None
-        # self.sender_nick = None
-        # self.robot_code = None
-        # self.session_webhook_expired_time = None
-        # self.message_id = None
-        # self.sender_id = None
-        # self.chatbot_user_id = None
-        # self.conversation_id = None
-        # self.is_admin = None
-        # self.create_at = None
-        # self.text = None
-        # self.conversation_type = None
-        # self.at_users = []
-        # self.chatbot_corp_id = None
-        # self.sender_corp_id = None
-        # self.conversation_title = None
-        # self.message_type = None
-        # self.image_content = None
-        # self.rich_text_content = None
-        # self.sender_staff_id = None
-        # self.hosting_context: HostingContext = None
-        # self.conversation_msg_context = None
-        #
-        # self.extensions = {}
         # 增加部分:
         self.audio_duration = None
         self.audio_downloadCode = None
@@ -54,7 +28,7 @@ class ChatbotMessage_Utilies(ChatbotMessage):
 
     @classmethod
     def from_dict(cls, d):
-        msg = ChatbotMessage()
+        msg = ChatbotMessage_Utilies()
         data = ''
         for name, value in d.items():
             if name == 'isInAtList':
@@ -141,7 +115,7 @@ class ChatbotMessage_Utilies(ChatbotMessage):
         elif self.message_type == 'file':
             return {'msg_type': 'file', 'downloadCode': self.file_downloadCode}
         else:
-            return []
+            return {'downloadCode': None}
 
 
 class ChatbotHandler_utilies(ChatbotHandler):
@@ -155,6 +129,43 @@ class ChatbotHandler_utilies(ChatbotHandler):
     def __init__(self, ):
         super(ChatbotHandler_utilies, self).__init__()
 
+    def get_media_download_url(self, download_code: str, robot_code: str) -> str:
+        """
+        针对audio/video/file,根据downloadCode, 获取下载链接,
+        :param download_code:
+        :return:
+        """
+        access_token = self.dingtalk_client.get_access_token()
+        if not access_token:
+            self.logger.error('send_off_duty_prompt failed, cannot get dingtalk access token')
+            return None
+
+        request_headers = {
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'x-acs-dingtalk-access-token': access_token,
+            'User-Agent': ('DingTalkStream/1.0 SDK/0.1.0 Python/%s '
+                           '(+https://github.com/open-dingtalk/dingtalk-stream-sdk-python)'
+                           ) % platform.python_version(),
+        }
+
+        values = {
+            'robotCode': robot_code,
+            'downloadCode': download_code,
+        }
+
+        url = 'https://api.dingtalk.com/v1.0/robot/messageFiles/download'
+
+        try:
+            response = requests.post(url,
+                                     headers=request_headers,
+                                     data=json.dumps(values))
+
+            response.raise_for_status()
+        except Exception as e:
+            self.logger.error('get_media_download_url, error=%s, response=%s', e, response.text)
+            return ""
+        return response.json()["downloadUrl"]
     def extract_media_from_incoming_message(self, incoming_message: ChatbotMessage_Utilies,
                                             media_save_folder=None) -> list:
         """
@@ -163,9 +174,11 @@ class ChatbotHandler_utilies(ChatbotHandler):
         media_save_folder: 不为None,是Path的话,则media存盘,并不上传空间获得media_ids列表;media_save_path需为文件目录,文件名自动生成
         :return: media_id list
         """
-        media_list = incoming_message.get_media_list()['downloadCode']
-        msg_type = incoming_message.get_media_list()['msg_type']
-        if media_list is None or len(media_list) == 0:
+        media_dic = incoming_message.get_media_list()
+        msg_type = media_dic['msg_type']
+        download_code = media_dic['downloadCode']
+        # self.logger.info(f"downloadCode: {download_code}")
+        if download_code is None:
             return None
 
         filetype = None
@@ -179,23 +192,24 @@ class ChatbotHandler_utilies(ChatbotHandler):
             filetype = 'file'
             # filename = None
 
-        media_ids = []
-        for download_code in media_list:
-            download_url = self.get_image_download_url(download_code)  # get_image_download_url应该可以获取任何media的下载链接
-            media_content = requests.get(download_url)
-            # 上传媒体的类型filetype: str; union['voice','image','file','video']
-            # FileItem类型: 'media': (filename, image_content, mimetype)
-            if media_save_folder is None:
-                media_id = self.dingtalk_client.upload_to_dingtalk(media_content.content, filetype=filetype,
-                                                                   filename=None)
-                media_ids.append(media_id)
-            elif isinstance(media_save_folder, str):
-                with open(f"{media_save_folder}/{filetype}_{len(media_ids)}.{filetype}", 'wb') as f:
-                    f.write(media_content.content)
-                    self.logger.info(f"{filetype}_{len(media_ids)}.{filetype} 下载完成")
-                    # print(f"{filetype}_{len(media_ids)}.{filetype} 下载完成")
+        download_url = self.get_image_download_url(download_code)  # get_image_download_url应该可以获取任何media的下载链接
+        # self.logger.info(f"download_url: {download_url}")
+        media_content = requests.get(download_url)
+        # self.logger.info(f"media_content.content: {media_content.content}")
+        # 上传媒体的类型filetype: str; union['voice','image','file','video']
+        # FileItem类型: 'media': (filename, image_content, mimetype)
+        media_id = None
+        if media_save_folder is None:
+            media_id = self.upload2media_id(media_content.content, filetype)
+            return [media_id] #返回列表,保持与exact_image_from_incoming_message一致
 
-        return media_ids
+        elif isinstance(media_save_folder, str):
+            with open(f"{media_save_folder}/{filetype}.{filetype}", 'wb') as f:
+                f.write(media_content.content)
+                self.logger.info(f"{filetype}.{filetype} 下载完成")
+
+
+
 
     def upload2media_id(self, media_content, media_type, ):
         """
@@ -250,4 +264,3 @@ class ChatbotHandler_utilies(ChatbotHandler):
             self.logger.error('reply sampleAudio failed, error=%s', e)
             return None
         return response.json()
-
