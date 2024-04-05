@@ -11,6 +11,7 @@ class ChatbotMessage_Utilies(ChatbotMessage):
     """
     在类ChatbotMessage里,增加除image以外的voice,video等media消息的支持
     """
+
     def __init__(self, ):
         super(ChatbotMessage_Utilies, self).__init__()
 
@@ -129,43 +130,6 @@ class ChatbotHandler_utilies(ChatbotHandler):
     def __init__(self, ):
         super(ChatbotHandler_utilies, self).__init__()
 
-    def get_media_download_url(self, download_code: str, robot_code: str) -> str:
-        """
-        针对audio/video/file,根据downloadCode, 获取下载链接,
-        :param download_code:
-        :return:
-        """
-        access_token = self.dingtalk_client.get_access_token()
-        if not access_token:
-            self.logger.error('send_off_duty_prompt failed, cannot get dingtalk access token')
-            return None
-
-        request_headers = {
-            'Content-Type': 'application/json',
-            'Accept': '*/*',
-            'x-acs-dingtalk-access-token': access_token,
-            'User-Agent': ('DingTalkStream/1.0 SDK/0.1.0 Python/%s '
-                           '(+https://github.com/open-dingtalk/dingtalk-stream-sdk-python)'
-                           ) % platform.python_version(),
-        }
-
-        values = {
-            'robotCode': robot_code,
-            'downloadCode': download_code,
-        }
-
-        url = 'https://api.dingtalk.com/v1.0/robot/messageFiles/download'
-
-        try:
-            response = requests.post(url,
-                                     headers=request_headers,
-                                     data=json.dumps(values))
-
-            response.raise_for_status()
-        except Exception as e:
-            self.logger.error('get_media_download_url, error=%s, response=%s', e, response.text)
-            return ""
-        return response.json()["downloadUrl"]
     def extract_media_from_incoming_message(self, incoming_message: ChatbotMessage_Utilies,
                                             media_save_folder=None) -> list:
         """
@@ -201,15 +165,12 @@ class ChatbotHandler_utilies(ChatbotHandler):
         media_id = None
         if media_save_folder is None:
             media_id = self.upload2media_id(media_content.content, filetype)
-            return [media_id] #返回列表,保持与exact_image_from_incoming_message一致
+            return media_id
 
         elif isinstance(media_save_folder, str):
             with open(f"{media_save_folder}/{filetype}.{filetype}", 'wb') as f:
                 f.write(media_content.content)
                 self.logger.info(f"{filetype}.{filetype} 下载完成")
-
-
-
 
     def upload2media_id(self, media_content, media_type, ):
         """
@@ -241,24 +202,40 @@ class ChatbotHandler_utilies(ChatbotHandler):
     def reply_voice(self,
                     mediaId: str, duration: int,
                     incoming_message: ChatbotMessage_Utilies):
+        access_token = self.dingtalk_client.get_access_token()
+        conversationId = incoming_message.conversation_id
+        self.logger.info(f"conversation_type: {incoming_message.conversation_type}")
+        msgKey = 'sampleAudio'
+        msgParm = {
+            'mediaId': mediaId,
+            'duration': f"{duration}",
+        }
+
         request_headers = {
             'Content-Type': 'application/json',
             'Accept': '*/*',
+            'x-acs-dingtalk-access-token': access_token,
+            'User-Agent': ('DingTalkStream/1.0 SDK/0.1.0 Python/%s '
+                           '(+https://github.com/open-dingtalk/dingtalk-stream-sdk-python)'
+                           ) % platform.python_version(),
         }
         values = {
-            'msgKey': 'Audio',
-            'msgParm': {
-                'mediaId': mediaId,
-                'duration': duration,
-            },
-            'at': {
-                'atUserIds': [incoming_message.sender_staff_id],
-            }
+            'robotCode': incoming_message.robot_code,
+            'msgKey': msgKey,
+            'msgParm': f'{msgParm}',
         }
+        url = "https://api.dingtalk.com"
+        if incoming_message.conversation_type == "1":  # 1 单聊; 2 群聊
+            values['userIds'] = [incoming_message.sender_staff_id]
+            url = 'https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend'
+        elif incoming_message.conversation_type == "2":  # 1 单聊; 2 群聊
+            values["openConversationId"] = incoming_message.conversation_id
+            url = 'https://api.dingtalk.com/v1.0/robot/groupMessages/send'
+
+
+        self.logger.info(f"url:{url}; values:{values}; request_headers:{request_headers}")
         try:
-            response = requests.post(incoming_message.session_webhook,
-                                     headers=request_headers,
-                                     data=json.dumps(values))
+            response = requests.post(url, headers=request_headers, data=json.dumps(values))
             response.raise_for_status()
         except Exception as e:
             self.logger.error('reply sampleAudio failed, error=%s', e)
