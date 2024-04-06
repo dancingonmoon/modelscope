@@ -6,6 +6,15 @@ import requests
 import json
 import platform
 
+from alibabacloud_dingtalk.robot_1_0.client import Client as dingtalkrobot_1_0Client
+from alibabacloud_dingtalk.robot_1_0 import models as dingtalkrobot__1__0_models
+from alibabacloud_tea_util import models as util_models
+
+from alibabacloud_dingtalk.oauth2_1_0.client import Client as dingtalkoauth2_1_0Client
+from alibabacloud_tea_openapi import models as open_api_models
+from alibabacloud_dingtalk.oauth2_1_0 import models as dingtalkoauth_2__1__0_models
+from alibabacloud_tea_util.client import Client as UtilClient
+
 
 class ChatbotMessage_Utilies(ChatbotMessage):
     """
@@ -199,12 +208,18 @@ class ChatbotHandler_utilies(ChatbotHandler):
 
         return media_id
 
-    def reply_voice(self,
-                    mediaId: str, duration: int,
-                    incoming_message: ChatbotMessage_Utilies):
+    def reply_voice_http(self,
+                         mediaId: str, duration: int,
+                         incoming_message: ChatbotMessage_Utilies):
+        """
+        通过OpenAPI RestAPI http构造requests,post语音消息 #未成功,需技术支持
+        """
         access_token = self.dingtalk_client.get_access_token()
-        conversationId = incoming_message.conversation_id
-        self.logger.info(f"conversation_type: {incoming_message.conversation_type}")
+        if not access_token:
+            self.logger.error(
+                'reply_voice failed, cannot get dingtalk access token')
+            return None
+
         msgKey = 'sampleAudio'
         msgParm = {
             'mediaId': mediaId,
@@ -232,7 +247,6 @@ class ChatbotHandler_utilies(ChatbotHandler):
             values["openConversationId"] = incoming_message.conversation_id
             url = 'https://api.dingtalk.com/v1.0/robot/groupMessages/send'
 
-
         self.logger.info(f"url:{url}; values:{values}; request_headers:{request_headers}")
         try:
             response = requests.post(url, headers=request_headers, data=json.dumps(values))
@@ -241,3 +255,116 @@ class ChatbotHandler_utilies(ChatbotHandler):
             self.logger.error('reply sampleAudio failed, error=%s', e)
             return None
         return response.json()
+
+    def reply_voice_SDK(self,
+                        mediaId: str, duration: int,
+                        incoming_message: ChatbotMessage_Utilies):
+        """
+        通过OpenAPI python SDK,来发送语音消息
+        """
+        access_token = self.dingtalk_client.get_access_token()
+        if not access_token:
+            self.logger.error(
+                'reply_voice failed, cannot get dingtalk access token')
+            return None
+
+        msgKey = 'sampleAudio'
+        msgParm = {
+            'mediaId': mediaId,
+            'duration': f"{duration}",
+        }
+        robotCode = incoming_message.robot_code
+        userId = [incoming_message.sender_staff_id]
+        openConversationId = incoming_message.conversation_id
+        if incoming_message.conversation_type == "1":  # 1 单聊; 2 群聊
+            response = OpenAPI_SendMessage.sendMessage_userChat(access_token, robot_code=robotCode, user_ids=userId,
+                                                                msg_key=msgKey, msg_param=msgParm)
+        elif incoming_message.conversation_type == "2":  # 1 单聊; 2 群聊
+            response = OpenAPI_SendMessage.sendMessage_groupChat(access_token, open_conversation_id=openConversationId,
+                                                                 robot_code=robotCode,
+                                                                 msg_key=msgKey, msg_param=msgParm)
+
+        self.logger.info(f"OpenAPI SDK response: {response}")
+
+        return response
+
+
+class OpenAPI_SendMessage:
+    """
+    使用OpenAPI, python SDK (非RestAPI https),来实现批量发送人与机器人会话中机器人消息(包括文本,图片,语音,视频,文件)
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def create_client() -> dingtalkrobot_1_0Client:
+        """
+        使用 Token 初始化账号Client
+        @return: Client
+        @throws Exception
+        """
+        config = open_api_models.Config()
+        config.protocol = 'https'
+        config.region_id = 'central'
+        return dingtalkrobot_1_0Client(config)
+
+    @staticmethod
+    def sendMessage_userChat(access_token, robot_code, user_ids, msg_key="sampleText", msg_param=None):
+        """
+        :access_token:
+        :robot_code:
+        :user_ids: list; 包含发送的user_id的列表
+        :msg_key: 消息模板key: sampleText,sampleMarkdown,sampleImageMsg,sampleLink,sampleActionCard,sampleAudio,sampleFile,sampleVideo
+        :msg_param: dict; 对应于每一种消息模板中定义的参数: 例如: sampleMarkdown模板定义参数:
+                            {"text": "hello text","title": "hello title"}; 代码会自动将其打上引号作为字符串输入
+        :return:
+        """
+        client = OpenAPI_SendMessage.create_client()
+        batch_send_otoheaders = dingtalkrobot__1__0_models.BatchSendOTOHeaders()
+        batch_send_otoheaders.x_acs_dingtalk_access_token = access_token
+        batch_send_otorequest = dingtalkrobot__1__0_models.BatchSendOTORequest(
+            robot_code=robot_code,
+            user_ids=user_ids,
+            msg_key=msg_key,
+            msg_param=f"{msg_param}"
+        )
+        try:
+            response = client.batch_send_otowith_options(batch_send_otorequest, batch_send_otoheaders,
+                                                         util_models.RuntimeOptions())
+            response = response.body
+
+        except Exception as err:
+            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
+            # err 中含有 code 和 message 属性，可帮助开发定位问题
+            response = err
+
+        return response
+
+    @staticmethod
+    def sendMessage_groupChat(access_token, open_conversation_id, robot_code, coolAppCode=None, msg_key='sampleText',
+                              msg_param=None):
+        """
+        msg_key: 消息模板key: sampleText, sampleMarkdown, sampleImageMsg, sampleLink, sampleActionCard, sampleAudio, sampleFile, sampleVideo
+        msg_param: dict; 对应于每一种消息模板中定义的参数: 例如: sampleMarkdown模板定义参数:
+                        {"text": "hello text", "title": "hello title"};代码会自动将其打上引号作为字符串输入
+        """
+        client = OpenAPI_SendMessage.create_client()
+        private_chat_send_headers = dingtalkrobot__1__0_models.PrivateChatSendHeaders()
+        private_chat_send_headers.x_acs_dingtalk_access_token = access_token
+        private_chat_send_request = dingtalkrobot__1__0_models.PrivateChatSendRequest(
+            msg_param=f"{msg_param}",
+            msg_key=msg_key,
+            open_conversation_id=open_conversation_id,
+            robot_code=robot_code,
+            cool_app_code=coolAppCode
+        )
+        try:
+            response = client.private_chat_send_with_options(private_chat_send_request, private_chat_send_headers,
+                                                             util_models.RuntimeOptions())
+            response = response.body
+        except Exception as err:
+            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
+            # err 中含有 code 和 message 属性，可帮助开发定位问题
+            response = err
+        return response
