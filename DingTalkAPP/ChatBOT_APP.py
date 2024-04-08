@@ -311,8 +311,8 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         # mediaId = self.upload2media_id(media_content=tts_instance.speech_content, media_type='voice')
         logger.info(f"voice media_id: {mediaId}")
         # 发送voice message:
-        # self.reply_voice_http(mediaId, duration, incoming_message) # http方式发送voice message reqeust格式有误;
-        self.reply_voice_SDK(mediaId, duration, incoming_message)
+        self.reply_voice_http(mediaId, duration, incoming_message) # http方式发送voice message reqeust格式有误;
+        # self.reply_voice_SDK(mediaId, duration, incoming_message)
         self.reply_text(text, incoming_message)
         self.logger.info(f"assistant:{text}")
         # logger.info(history_prompt)

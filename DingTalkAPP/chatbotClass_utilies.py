@@ -220,36 +220,30 @@ class ChatbotHandler_utilies(ChatbotHandler):
                 'reply_voice failed, cannot get dingtalk access token')
             return None
 
-        msgKey = 'sampleAudio'
-        msgParm = {
-            'mediaId': mediaId,
-            'duration': f"{duration}",
-        }
+        msgKey = 'sampleText'
+        msgParm = "{\"content\":\"@lAfPDf0i-NZzbiPOKV79d85HUSK4\"}"
 
         request_headers = {
-            'Content-Type': 'application/json',
-            'Accept': '*/*',
+            'Host': 'api.dingtalk.com',
             'x-acs-dingtalk-access-token': access_token,
-            'User-Agent': ('DingTalkStream/1.0 SDK/0.1.0 Python/%s '
-                           '(+https://github.com/open-dingtalk/dingtalk-stream-sdk-python)'
-                           ) % platform.python_version(),
+            'Content-Type': 'application/json',
         }
         values = {
             'robotCode': incoming_message.robot_code,
             'msgKey': msgKey,
-            'msgParm': f'{msgParm}',
+            'msgParm': msgParm,
         }
         url = "https://api.dingtalk.com"
         if incoming_message.conversation_type == "1":  # 1 单聊; 2 群聊
             values['userIds'] = [incoming_message.sender_staff_id]
-            url = 'https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend'
+            url += '/v1.0/robot/oToMessages/batchSend'
         elif incoming_message.conversation_type == "2":  # 1 单聊; 2 群聊
             values["openConversationId"] = incoming_message.conversation_id
-            url = 'https://api.dingtalk.com/v1.0/robot/groupMessages/send'
+            url += '/v1.0/robot/groupMessages/send'
 
         self.logger.info(f"url:{url}; values:{values}; request_headers:{request_headers}")
         try:
-            response = requests.post(url, headers=request_headers, data=json.dumps(values))
+            response = requests.post(url, headers=request_headers, json=values)
             response.raise_for_status()
         except Exception as e:
             self.logger.error('reply sampleAudio failed, error=%s', e)

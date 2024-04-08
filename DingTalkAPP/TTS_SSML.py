@@ -18,13 +18,6 @@ from aliyunsdkcore.auth.credentials import StsTokenCredential
 from aliyunsdknlp_automl.request.v20191111.RunPreTrainServiceRequest import RunPreTrainServiceRequest
 
 
-def emo_label_out(data):
-    scores = data['scores']
-    max_value = max(scores)
-    max_index = scores.index(max_value)
-    label = data['labels'][max_index]
-    return label
-
 
 # semantic_cls = pipeline(Tasks.text_classification, 'damo/nlp_structbert_emotion-classification_chinese-base', model_revision='v1.0.0')
 
@@ -40,28 +33,38 @@ def emo_label_out(data):
 # 情绪识别 aliyun API :
 def emotion_classification(access_key_id, access_key_secret, text=None, domain='clothing'):
     """
-    中文情绪分类: labels': {"抱怨","厌恶","悲伤","投诉","惊讶","恐惧","喜好","高兴","认可","感谢"}
+    中文情绪分类: labels': {"抱怨","厌恶","悲伤","投诉","惊讶","恐惧","喜好","高兴","认可","感谢","愤怒"}
+    英文labels: {"anger","disgust","fear","happy","sad","surprise","neutral"}
     服务名称（ServiceName）:
         DeepEmotion 高性能版，速度较快，精度略低
         DeepEmotionBert 高精度版，精度较高，速度略慢
+    Return: Best_sentiment: str; sentiments:score 字典
     """
-    # Please ensure that the environment variables ALIBABA_CLOUD_ACCESS_KEY_ID and ALIBABA_CLOUD_ACCESS_KEY_SECRET are set.
     credentials = AccessKeyCredential(access_key_id, access_key_secret)
     client = AcsClient(region_id='cn-hangzhou', credential=credentials)
 
     request = RunPreTrainServiceRequest()
     request.set_accept_format('json')
-
-    request.set_ServiceName("DeepEmotion")
+    request.set_ServiceName("DeepEmotionBert")
     content = {"input":
-                   {"content":text,
-                    "domain": "clothing"}
+                   {"content": text, }
                }
-    request.set_PredictContent(f"{content}")
-
+    request.set_PredictContent(json.dumps(content))
     response = client.do_action_with_exception(request)
-    # python2:  print(response)
-    return str(response, encoding='utf-8')
+    response = json.loads(response)  # json字符串转成json
+    predResult = json.loads(response['PredictResult'])
+    # print('predictResult:', predResult.keys())
+    sentiments = predResult['output']['sentiment'] # list
+
+    sent_dict = {}
+    for s in sentiments:
+        sent_dict[s['key']] = s['score']
+
+    sent_dict = dict(sorted(sent_dict.items(), key=lambda item: item[1], reverse=True))
+    # print(sent_dict)
+    best_sentiment = list(sent_dict.keys())[0]
+
+    return best_sentiment, sent_dict
 
 
 
@@ -298,7 +301,8 @@ if __name__ == '__main__':
     # token, expirTime = get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret)
     appKey = config_read(config_path_aliyunsdk, section='APP_tts', option1='AppKey')
 
-    TEXT = '大壮正想去摘取花瓣，谁知阿丽和阿强突然内讧，阿丽拿去手枪向树干边的阿强射击，两声枪响，阿强直接倒入水中'
+    # TEXT = '大壮正想去摘取花瓣，谁知阿丽和阿强突然内讧，阿丽拿去手枪向树干边的阿强射击，两声枪响，阿强直接倒入水中'
+    TEXT = '吃了嘛?'
     TEXT_ssml = """<speak>
     相传北宋年间，
     <say-as interpret-as="date">1121-10-10</say-as>，
@@ -339,5 +343,6 @@ if __name__ == '__main__':
     #          break
 
     # 情绪识别:
-    emotions = emotion_classification(accessKey_id, accessKey_secret, TEXT)
-    print(emotions)
+    emotions, s_dict = emotion_classification(accessKey_id, accessKey_secret, TEXT)
+    print(emotions,s_dict)
+    # print(list(emotions.keys())[0])
