@@ -18,7 +18,6 @@ from aliyunsdkcore.auth.credentials import StsTokenCredential
 from aliyunsdknlp_automl.request.v20191111.RunPreTrainServiceRequest import RunPreTrainServiceRequest
 
 
-
 # semantic_cls = pipeline(Tasks.text_classification, 'damo/nlp_structbert_emotion-classification_chinese-base', model_revision='v1.0.0')
 
 # def emo_classification(text):
@@ -31,14 +30,14 @@ from aliyunsdknlp_automl.request.v20191111.RunPreTrainServiceRequest import RunP
 #     return label
 
 # 情绪识别 aliyun API :
-def emotion_classification(access_key_id, access_key_secret, text=None, domain='clothing'):
+def emotion_classification(access_key_id, access_key_secret, text=None, domain=None):
     """
     中文情绪分类: labels': {"抱怨","厌恶","悲伤","投诉","惊讶","恐惧","喜好","高兴","认可","感谢","愤怒"}
-    英文labels: {"anger","disgust","fear","happy","sad","surprise","neutral"}
+    对应的SSML英文标注: {None,"disgust"(厌恶),"sad"(悲伤),None,"surprise"(惊讶),"fear"(恐惧),None,"happy"(高兴),None,None,"anger"(愤怒),,"neutral"(None)}
     服务名称（ServiceName）:
         DeepEmotion 高性能版，速度较快，精度略低
         DeepEmotionBert 高精度版，精度较高，速度略慢
-    Return: Best_sentiment: str; sentiments:score 字典
+    Return: Best_ssml_label: str, Best_emo_label: str; sentiments:score 字典
     """
     credentials = AccessKeyCredential(access_key_id, access_key_secret)
     client = AcsClient(region_id='cn-hangzhou', credential=credentials)
@@ -47,14 +46,14 @@ def emotion_classification(access_key_id, access_key_secret, text=None, domain='
     request.set_accept_format('json')
     request.set_ServiceName("DeepEmotionBert")
     content = {"input":
-                   {"content": text, }
+                   {"content": text, "domain": None}
                }
     request.set_PredictContent(json.dumps(content))
     response = client.do_action_with_exception(request)
     response = json.loads(response)  # json字符串转成json
     predResult = json.loads(response['PredictResult'])
     # print('predictResult:', predResult.keys())
-    sentiments = predResult['output']['sentiment'] # list
+    sentiments = predResult['output']['sentiment']  # list
 
     sent_dict = {}
     for s in sentiments:
@@ -62,10 +61,14 @@ def emotion_classification(access_key_id, access_key_secret, text=None, domain='
 
     sent_dict = dict(sorted(sent_dict.items(), key=lambda item: item[1], reverse=True))
     # print(sent_dict)
-    best_sentiment = list(sent_dict.keys())[0]
 
-    return best_sentiment, sent_dict
+    # 获得best_ssml_label:
+    emo_labels = ["抱怨", "厌恶", "悲伤", "投诉", "惊讶", "恐惧", "喜好", "高兴", "认可", "感谢", "愤怒"]
+    ssml_labels = [None, "disgust", "sad", None, "surprise", "fear", "neutral", "happy", "neutral", None, "anger"]
+    best_emo_label = list(sent_dict.keys())[0]
+    best_ssml_label = ssml_labels[emo_labels.index(best_emo_label)]
 
+    return best_ssml_label, best_emo_label, sent_dict
 
 
 # SSML（Speech Synthesis Markup Language）:pip install aliyun-python-sdk-core
@@ -231,8 +234,11 @@ class TTS_threadsRUN():
         if self.logger is not None:
             self.logger.info(f"{self.__tts_name}: tts done with result:{r}")
 
-    def start(self, text):
-        self.__text = text
+    def start(self, text, ssml_label=None):
+        if ssml_label is None:
+            self.__text = text
+        else:
+            self.__text = "<emotion category={} intensity=\'1.0\'>{}</emotion>".format(ssml_label,text)
         self.__f = open(self.__audio_path, 'wb')
         self.__thread.start()
 
@@ -294,7 +300,7 @@ if __name__ == '__main__':
     from ChatBOT_APP import config_read, setup_logger
 
     # 获取 accessKey_id, accessKey_secret:
-    config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
+    config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
     accessKey_id, accessKey_secret = config_read(config_path_aliyunsdk, section='aliyunsdkcore', option1='AccessKey_ID',
                                                  option2='AccessKey_Secret')
 
@@ -343,6 +349,6 @@ if __name__ == '__main__':
     #          break
 
     # 情绪识别:
-    emotions, s_dict = emotion_classification(accessKey_id, accessKey_secret, TEXT)
-    print(emotions,s_dict)
+    ssml_label, emo_label, s_dict = emotion_classification(accessKey_id, accessKey_secret, TEXT)
+    print(ssml_label, emo_label, s_dict)
     # print(list(emotions.keys())[0])
