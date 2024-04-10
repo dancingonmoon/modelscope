@@ -17,7 +17,7 @@ import configparser
 import zhipuai
 from chatbotClass_utilies import ChatbotMessage_Utilies, ChatbotHandler_utilies, OpenAPI_SendMessage
 
-from TTS_SSML import TTS_threadsRUN, get_audio_duration
+from TTS_SSML import TTS_threadsRUN, get_audio_duration, emotion_classification
 
 
 def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID', option2=None):
@@ -297,22 +297,28 @@ class VoiceChatHandler(ChatbotHandler_utilies):
                                       pitch_rate=self.pitch_rate, wait_complete=self.wait_complete,
                                       enable_subtitle=self.enable_subtitle,
                                       enable_ptts=self.enable_ptts, callbacks=self.callbacks, logger=self.logger)
-        tts_instance.start(text)
+        # 情绪识别:
+        ssml_label, _, _ = emotion_classification(accessKey_id, accessKey_secret, text)
+        # print(ssml_label, emo_label, s_dict)
+        tts_instance.start(text, ssml_label, ssml_intensity=1.5)
         while tts_instance.completion_status is False:
             # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
             time.sleep(0.05)
         # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
-        # 获取存盘的音频文件的时长:
-        duration = get_audio_duration(self.audio_path, sample_rate=16000, sample_size=2)
-        duration = int(duration)
-
-        # TTS, 上传获取mediaId,:
-        mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
-        # mediaId = self.upload2media_id(media_content=tts_instance.speech_content, media_type='voice')
+        # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
+        if self.audio_path is None:
+            duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
+            duration = int(duration)
+            print(f'duration:{duration}')
+            mediaId = self.upload2media_id(media_content=tts_instance.BytesIO.read(), media_type='voice')
+        else:
+            duration = get_audio_duration(self.audio_path, sample_rate=16000)
+            duration = int(duration)
+            mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
         logger.info(f"voice media_id: {mediaId}")
         # 发送voice message:
-        self.reply_voice_http(mediaId, duration, incoming_message) # http方式发送voice message reqeust格式有误;
-        # self.reply_voice_SDK(mediaId, duration, incoming_message)
+        # self.reply_voice_http(mediaId, duration, incoming_message)  # http方式发送voice message reqeust格式有误;
+        self.reply_voice_SDK(mediaId, duration, incoming_message)
         self.reply_text(text, incoming_message)
         self.logger.info(f"assistant:{text}")
         # logger.info(history_prompt)
@@ -330,8 +336,8 @@ if __name__ == '__main__':
     logger = setup_logger()
     # options = define_options()
     config_path_dtApp = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
-    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_serp = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
     config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
 
     # bot_info = "杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。2008年，凭借古装剧《王昭君》获得第24届中国电视金鹰奖观众喜爱的电视剧女演员奖提名 。2009年，在“80后新生代娱乐大明星”评选中被评为“四小花旦”。2011年，凭借穿越剧《宫锁心玉》赢得广泛关注 ，并获得了第17届上海电视节白玉兰奖观众票选最具人气女演员奖。2012年，不仅成立杨幂工作室，还凭借都市剧《北京爱情故事》获得了多项荣誉 。2015年，主演的《小时代》系列电影票房突破18亿人民币 。2016年，其主演的职场剧《亲爱的翻译官》取得全国年度电视剧收视冠军 。2017年，杨幂主演的神话剧《三生三世十里桃花》获得颇高关注；同年，她还凭借科幻片《逆时营救》获得休斯顿国际电影节最佳女主角奖 。2018年，凭借古装片《绣春刀Ⅱ：修罗战场》获得北京大学生电影节最受大学生欢迎女演员奖 [4]；。2014年1月8日，杨幂与刘恺威在巴厘岛举办了结婚典礼。同年6月1日，在香港产下女儿小糯米。"
@@ -341,7 +347,8 @@ if __name__ == '__main__':
     user_name = "用户"
     voice = 'zhiyan_emo'  # zhiyan的声音,略微的更女性化些;
     today = datetime.datetime.today().strftime('%y%m%d')
-    tts_out_path = f'tts_{voice}_{today}.wav'
+    # tts_out_path = f'tts_{voice}_{today}.wav'
+    tts_out_path = None
     speech_data = 0
 
     if characterGLM_chat_flag:  # 角色扮演机器人聊天

@@ -8,6 +8,8 @@ from aliyunsdkcore.request import CommonRequest
 import nls
 import threading
 import logging
+import io
+import re
 
 from aliyunsdkcore.client import AcsClient
 from aliyunsdkcore.acs_exception.exceptions import ClientException
@@ -84,17 +86,30 @@ def emotion_classification(access_key_id, access_key_secret, text=None, domain=N
 
 # 使用阿里云公共SDK获取Token，采用RPC风格的API调用:
 
-def get_audio_duration(file_path, sample_rate=16000, sample_size=2):
+def get_audio_duration(audio_file, sample_rate=16000):
     """
     计算音频文件的时长
     sample_size : 在 PCM（脉冲编码调制）音频数据中，每个采样点的值通常用 16 位表示，也就是 2 字节。但是这也不是绝对的，因为也有可能是 8 位或者 32 位，具体取决于音频文件的格式和编码方式。
     在 WAV 文件中，每个采样点的大小通常是由音频文件的格式字段确定的。如果音频文件的格式是 LPCM（线性脉冲编码调制），那么每个采样点的大小通常就是 2 字节。
     所以 sample_size 的值需要根据实际的音频文件格式和编码方式来确定
     """
-    file_size = os.path.getsize(file_path)
-    duration = (file_size - 44) / (sample_rate * sample_size)
+    duration = 0
+    sample_depth = 16  # 假设采样深度为16位
+    if isinstance(audio_file, str):
+        sample_size = sample_depth / 8 #  假设采样深度为16位, 即为2字节
+        file_size = os.path.getsize(audio_file)
+        duration = (file_size - 44) / (sample_rate * sample_size) * 1000
+    elif isinstance(audio_file, io.BytesIO):
+        channels = 1  # 单声道
+        # 获取音频数据总字节数
+        # audio_file.seek(0, io.SEEK_END)
+        # file_size = audio_file.tell()
+        file_size = len(audio_file.getbuffer())
+        duration = file_size / (sample_rate * sample_depth // 8 * channels) * 1000
+    else:
+        print("file_path 既不是文件路径,也不是内存BytesIO对象")
 
-    return duration
+    return int(duration)
 
 
 def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shanghai'):
@@ -166,6 +181,7 @@ class TTS_threadsRUN():
 
         self.completion_status = completion_status
         self.speech_content = speech_content
+        self.BytesIO = io.BytesIO()  # 定义一个内存对象,存放音频内容
 
         self.logger: logging.Logger = logger
 
@@ -234,12 +250,22 @@ class TTS_threadsRUN():
         if self.logger is not None:
             self.logger.info(f"{self.__tts_name}: tts done with result:{r}")
 
-    def start(self, text, ssml_label=None):
-        if ssml_label is None:
-            self.__text = text
+    def start(self, text, ssml_label: str = None, ssml_intensity: float = 1.0):
+        """
+        当语音合成的Voice具备emo情感能力时,输入ssml格式的参数,输出情感语音合成
+        text:
+        ssml_label:  语音合成,该Voice可以接受的英文标签,
+        ssml_intensity: intensity: [0.01,2.0] 指定情绪强度。默认值为1.0，表示预定义的情绪强度。最小值为0.01，导致目标情绪略有倾向。最大值为2.0，导致目标情绪强度加倍。
+        :return:
+        """
+        if ssml_label is not None and re.match(r".*emo$", self.__voice):  # 当text中最后含有emo,即表明voice支持多情感:
+            self.__text = "<speak><emotion category='{}' intensity='{}' >'{}'</emotion></speak>".format(ssml_label,
+                                                                                                        ssml_intensity,
+                                                                                                        text)
         else:
-            self.__text = "<emotion category={} intensity=\'1.0\'>{}</emotion>".format(ssml_label,text)
-        self.__f = open(self.__audio_path, 'wb')
+            self.__text = text
+        if self.__audio_path is not None:
+            self.__f = open(self.__audio_path, 'wb')
         self.__thread.start()
 
     def fun_on_metainfo(self, message, *args):
@@ -254,11 +280,14 @@ class TTS_threadsRUN():
         """
         当存在合成数据后的回调参数。回调参数包含以下两种：
         1)对应start方法中aformat的二进制音频数据 2)用户自定义参数
+        如果有写入文件的路径,就即写入文件,也写入内存BytesIO;否则,仅仅写入BytesIO内存对象
         """
 
         try:
             self.speech_content = data
-            self.__f.write(data)
+            if self.__audio_path is not None:
+                self.__f.write(data)  # 写入文件
+            self.BytesIO.write(data)  # 重复再写入内存BytesIO
             if self.logger is not None:
                 self.logger.info(f"write data finished")
         except Exception as e:
@@ -286,7 +315,8 @@ class TTS_threadsRUN():
             self.logger.info("on_close: args=>{}".format(args))
 
         try:
-            self.__f.close()
+            if self.__audio_path is not None:
+                self.__f.close()
         except Exception as e:
             if self.logger is not None:
                 self.logger.info(f"close file failed since:{e}")
@@ -300,7 +330,7 @@ if __name__ == '__main__':
     from ChatBOT_APP import config_read, setup_logger
 
     # 获取 accessKey_id, accessKey_secret:
-    config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
+    config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
     accessKey_id, accessKey_secret = config_read(config_path_aliyunsdk, section='aliyunsdkcore', option1='AccessKey_ID',
                                                  option2='AccessKey_Secret')
 
@@ -308,7 +338,7 @@ if __name__ == '__main__':
     appKey = config_read(config_path_aliyunsdk, section='APP_tts', option1='AppKey')
 
     # TEXT = '大壮正想去摘取花瓣，谁知阿丽和阿强突然内讧，阿丽拿去手枪向树干边的阿强射击，两声枪响，阿强直接倒入水中'
-    TEXT = '吃了嘛?'
+    TEXT = '今天真高兴,我都兴奋死了!!'
     TEXT_ssml = """<speak>
     相传北宋年间，
     <say-as interpret-as="date">1121-10-10</say-as>，
@@ -324,21 +354,29 @@ if __name__ == '__main__':
 
     voice = 'zhiyan_emo'  # zhiyan的声音,略微的更女性化些;
 
+    text_emo = emotion_classification(accessKey_id, accessKey_secret, TEXT)
+
     today = datetime.datetime.today().strftime('%y%m%d_%H%M')
     tts_out_path = f'./tts_{voice}_{today}.wav'
-    femail_speakers = ["zhixiaobai", "zhixiaoxia", "zhixiaomei", "zhigui", "aixia", "zhimiao_emo", "zhiyan_emo",
+    female_speakers = ["zhixiaobai", "zhixiaoxia", "zhixiaomei", "zhigui", "aixia", "zhimiao_emo", "zhiyan_emo",
                        "zhibei_emo", "zhitian_emo", "xiaoyun", "ruoxi", "sijia", "aiqi", "aijia", "ninger", "ruilin",
                        "siyue", "aiya", "aimei", "aiyu", "aiyue", "aijing", "xiaomei", "xiaobei", "aiwei", "guijie",
                        "stella", "xiaoxian", "maoxiaomei", ]
 
-    # tts = TTS_threadsRUN(accessKey_id, accessKey_secret, appkey=appKey, tts_name='测试例子',
-    #                      audio_path=tts_out_path, voice=voice, wait_complete=False,
-    #                      enable_subtitle=False, callbacks=[])
+    # 情绪识别:
+    ssml_label, emo_label, s_dict = emotion_classification(accessKey_id, accessKey_secret, TEXT)
+    print(ssml_label, emo_label, s_dict)
+    # print(list(emotions.keys())[0])
+
+    tts = TTS_threadsRUN(accessKey_id, accessKey_secret, appkey=appKey, tts_name='测试例子',
+                         audio_path=tts_out_path, voice=voice, wait_complete=False,
+                         enable_subtitle=False, callbacks=[])
     # nls.enableTrace(True)
-    # tts.start(TEXT)
+    tts.start(TEXT, ssml_label, 0.5)
+    duration = get_audio_duration(tts.BytesIO)
 
     # 多线程循环:
-    # for voice in femail_speakers:
+    # for voice in female_speakers:
     #     con_fig = True
     #     tts = TTS_threadsRUN(tts_name='测试例子', audio_path=f'./tts_{voice}_out.wav', voice=voice, wait_complete=False,
     #                      enable_subtitle=False, callbacks=[con_fig])
@@ -347,8 +385,3 @@ if __name__ == '__main__':
     #         time.sleep(2)
     #         if not con_fig:
     #          break
-
-    # 情绪识别:
-    ssml_label, emo_label, s_dict = emotion_classification(accessKey_id, accessKey_secret, TEXT)
-    print(ssml_label, emo_label, s_dict)
-    # print(list(emotions.keys())[0])
