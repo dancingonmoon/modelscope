@@ -12,11 +12,11 @@ import io
 import re
 
 from aliyunsdkcore.client import AcsClient
-from aliyunsdkcore.acs_exception.exceptions import ClientException
-from aliyunsdkcore.acs_exception.exceptions import ServerException
-from aliyunsdknlp_automl.request.v20191111 import GetPredictResultRequest
+# from aliyunsdkcore.acs_exception.exceptions import ClientException
+# from aliyunsdkcore.acs_exception.exceptions import ServerException
+# from aliyunsdknlp_automl.request.v20191111 import GetPredictResultRequest
 from aliyunsdkcore.auth.credentials import AccessKeyCredential
-from aliyunsdkcore.auth.credentials import StsTokenCredential
+# from aliyunsdkcore.auth.credentials import StsTokenCredential
 from aliyunsdknlp_automl.request.v20191111.RunPreTrainServiceRequest import RunPreTrainServiceRequest
 
 
@@ -112,11 +112,15 @@ def get_audio_duration(audio_file, sample_rate=16000):
     return int(duration)
 
 
-def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shanghai'):
+def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shanghai', existing_aToken_dict= {}):
     """
     使用阿里云公共SDK获取Token,采用PRC分隔的API调用;获取的token有效期24小时
+    existing_aToken_dict : 已经存在的,历史access_token字典,用于判断是否重复获取;
+                          字典结构:{"accessToken": token, "expireTime": expireTime}
     """
-
+    now = int(time.time())
+    if existing_aToken_dict and now < existing_aToken_dict['expireTime']:
+        return existing_aToken_dict['accessToken']
     # 创建AcsClient实例
     client = AcsClient(ak=accessKey_id, secret=accessKey_secret, region_id=region_id)
     # 创建request，并设置参数。
@@ -140,7 +144,10 @@ def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shang
             # #将struct_time转换为自定义格式的字符串
             # str_time = time.strftime("%Y-%m-%d %H:%M:%S", struct_time)
             # print(f"expireTime:{str_time}")
-            return token, expireTime
+            existing_aToken_dict = {"accessToken": token, "expireTime": expireTime}
+            existing_aToken_dict['expireTime'] = int(time.time()) + existing_aToken_dict['expireTime'] - (
+                    5 * 60)  # reserve 5min buffer time
+            return existing_aToken_dict['accessToken']
     except Exception as e:
         # print(e)
         return e
@@ -317,6 +324,10 @@ class TTS_threadsRUN():
         try:
             if self.__audio_path is not None:
                 self.__f.close()
+            # 将流式传入self.BytesIO的的音频数据全部存储在中self.BytesIO.
+            # 将`audio_file`的指针移动到开头
+            self.BytesIO.seek(0)
+
         except Exception as e:
             if self.logger is not None:
                 self.logger.info(f"close file failed since:{e}")
@@ -386,3 +397,27 @@ if __name__ == '__main__':
     #         time.sleep(2)
     #         if not con_fig:
     #          break
+
+    # 测试media上传:
+    import requests
+    import dingtalk_stream
+
+    config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
+    client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id',
+                                           option2='client_secret')
+    credential = dingtalk_stream.Credential(client_id, client_secret)
+    client = dingtalk_stream.DingTalkStreamClient(credential)
+
+    media = ('audio_file.wav', tts.BytesIO, 'audio/wav')
+    media_type = 'voice'
+    media_content = {'media': media }
+    access_token = client.get_access_token()
+    api = f"https://oapi.dingtalk.com/media/upload?access_token={access_token}&type={media_type}"
+    response = requests.post(api, files=media_content)
+    # print(response.text)
+    text_dict = json.loads(response.text)  # 将str转成dict
+    media_id = None
+    if 'media_id' in text_dict:
+        media_id = text_dict['media_id']
+    else:
+        print(f"response upon uploading: {text_dict}")

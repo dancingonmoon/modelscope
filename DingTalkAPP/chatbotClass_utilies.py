@@ -1,10 +1,11 @@
+import io
+
 import dingtalk_stream
 from dingtalk_stream.chatbot import TextContent, ImageContent, RichTextContent, AtUser, HostingContext, ChatbotMessage, \
     ConversationMessage
-from dingtalk_stream import ChatbotHandler, CallbackHandler
+from dingtalk_stream import ChatbotHandler
 import requests
 import json
-import platform
 
 from alibabacloud_dingtalk.robot_1_0.client import Client as dingtalkrobot_1_0Client
 from alibabacloud_dingtalk.robot_1_0 import models as dingtalkrobot__1__0_models
@@ -190,8 +191,11 @@ class ChatbotHandler_utilies(ChatbotHandler):
         """
         if isinstance(media_content, str):  # 若是文件路径;
             media_content = {'media': open(media_content, 'rb'), }
-        elif isinstance(media_content, bytes):  # 若是bytes
-            media_content = {'media': media_content}
+        elif isinstance(media_content, io.BytesIO):  # 若是bytes
+            # form-data中媒体文件标识，有filename、filelength、content-type等信息。
+            # 这里的文件名'audio.wav'是随便定义, 无特别意义
+            media = ('audio.wav', media_content, 'audio/wav')
+            media_content = {'media': media}
         else:
             self.logger.error("Invalid media file format")
 
