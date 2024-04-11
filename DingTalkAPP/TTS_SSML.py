@@ -398,26 +398,26 @@ if __name__ == '__main__':
     #         if not con_fig:
     #          break
 
-    # 测试media上传:
-    import requests
-    import dingtalk_stream
-
-    config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
-    client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id',
-                                           option2='client_secret')
-    credential = dingtalk_stream.Credential(client_id, client_secret)
-    client = dingtalk_stream.DingTalkStreamClient(credential)
-
-    media = ('audio_file.wav', tts.BytesIO, 'audio/wav')
-    media_type = 'voice'
-    media_content = {'media': media }
-    access_token = client.get_access_token()
-    api = f"https://oapi.dingtalk.com/media/upload?access_token={access_token}&type={media_type}"
-    response = requests.post(api, files=media_content)
-    # print(response.text)
-    text_dict = json.loads(response.text)  # 将str转成dict
-    media_id = None
-    if 'media_id' in text_dict:
-        media_id = text_dict['media_id']
-    else:
-        print(f"response upon uploading: {text_dict}")
+    # 测试media上传, succeed!:
+    # import requests
+    # import dingtalk_stream
+    #
+    # config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
+    # client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id',
+    #                                        option2='client_secret')
+    # credential = dingtalk_stream.Credential(client_id, client_secret)
+    # client = dingtalk_stream.DingTalkStreamClient(credential)
+    #
+    # media = ('audio_file.wav', tts.BytesIO, 'audio/wav')
+    # media_type = 'voice'
+    # media_content = {'media': media }
+    # access_token = client.get_access_token()
+    # api = f"https://oapi.dingtalk.com/media/upload?access_token={access_token}&type={media_type}"
+    # response = requests.post(api, files=media_content)
+    # # print(response.text)
+    # text_dict = json.loads(response.text)  # 将str转成dict
+    # media_id = None
+    # if 'media_id' in text_dict:
+    #     media_id = text_dict['media_id']
+    # else:
+    #     print(f"response upon uploading: {text_dict}")

@@ -301,10 +301,10 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         ssml_label, _, _ = emotion_classification(accessKey_id, accessKey_secret, text)
         # print(ssml_label, emo_label, s_dict)
         # 将情绪加入到多情感语音合成中去,强度值根据效果调整
-        tts_instance.start(text, ssml_label, ssml_intensity=1.2)
+        tts_instance.start(text, ssml_label, ssml_intensity=1.1)
         while tts_instance.completion_status is False:
             # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
-            time.sleep(0.05)
+            time.sleep(0.0001) # 如果是是本地硬盘I/O,建议值设为0.05
         # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
         # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
         if self.audio_path is None:
@@ -350,7 +350,6 @@ if __name__ == '__main__':
     today = datetime.datetime.today().strftime('%y%m%d')
     # tts_out_path = f'tts_{voice}_{today}.wav'
     tts_out_path = None
-    speech_data = 0
 
     if characterGLM_chat_flag:  # 角色扮演机器人聊天
         zhipuai_key = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key", option2=None)
