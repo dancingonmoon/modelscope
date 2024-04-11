@@ -1,5 +1,21 @@
 pip install -U pip
-pip install -U zhipuai
+pip install -U zhipuai==1.0.7
 pip install -U google-search-results
 pip install -U dingtalk-stream
+pip install -U alibabacloud-dingtalk
+pip install -U 
 pip install -U faiss-cpu
+
+pip install aliyun-python-sdk-core # 安装阿里云 SDK 核心库
+pip install aliyun-python-sdk-nlp-automl # 安装NLP自学习平台SDK
+
+# 安装语音合成库: 
+cd autodl-fs/DingTalkAPP # 进入alibabacloud-nls-python-sdk-1.0.0.zip压缩文件所在目录
+
+unzip -u alibabacloud-nls-python-sdk-1.0.0.zip
+
+cd alibabacloud-nls-python-sdk-1.0.0 # 进入压缩文件解压之后的文件夹
+python -m pip install -r requirements.txt
+python -m pip install .
+
+

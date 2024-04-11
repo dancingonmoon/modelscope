@@ -17,7 +17,7 @@ import configparser
 import zhipuai
 from chatbotClass_utilies import ChatbotMessage_Utilies, ChatbotHandler_utilies, OpenAPI_SendMessage
 
-from TTS_SSML import TTS_threadsRUN, get_audio_duration
+from TTS_SSML import TTS_threadsRUN, get_audio_duration, emotion_classification
 
 
 def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID', option2=None):
@@ -297,22 +297,28 @@ class VoiceChatHandler(ChatbotHandler_utilies):
                                       pitch_rate=self.pitch_rate, wait_complete=self.wait_complete,
                                       enable_subtitle=self.enable_subtitle,
                                       enable_ptts=self.enable_ptts, callbacks=self.callbacks, logger=self.logger)
-        tts_instance.start(text)
+        # 情绪识别:
+        ssml_label, _, _ = emotion_classification(accessKey_id, accessKey_secret, text)
+        # print(ssml_label, emo_label, s_dict)
+        # 将情绪加入到多情感语音合成中去,强度值根据效果调整
+        tts_instance.start(text, ssml_label, ssml_intensity=1.5)
         while tts_instance.completion_status is False:
             # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
             time.sleep(0.05)
         # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
-        # 获取存盘的音频文件的时长:
-        duration = get_audio_duration(self.audio_path, sample_rate=16000, sample_size=2)
-        duration = int(duration)
-
-        # TTS, 上传获取mediaId,:
-        mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
-        # mediaId = self.upload2media_id(media_content=tts_instance.speech_content, media_type='voice')
+        # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
+        if self.audio_path is None:
+            duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000, sample_size=2)
+            duration = int(duration)
+            mediaId = self.upload2media_id(media_content=tts_instance.BytesIO.read(), media_type='voice')
+        else:
+            duration = get_audio_duration(self.audio_path, sample_rate=16000, sample_size=2)
+            duration = int(duration)
+            mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
         logger.info(f"voice media_id: {mediaId}")
         # 发送voice message:
-        self.reply_voice_http(mediaId, duration, incoming_message) # http方式发送voice message reqeust格式有误;
-        # self.reply_voice_SDK(mediaId, duration, incoming_message)
+        # self.reply_voice_http(mediaId, duration, incoming_message)  # http方式发送voice message reqeust格式有误;
+        self.reply_voice_SDK(mediaId, duration, incoming_message)
         self.reply_text(text, incoming_message)
         self.logger.info(f"assistant:{text}")
         # logger.info(history_prompt)
