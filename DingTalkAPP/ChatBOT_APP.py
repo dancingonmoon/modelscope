@@ -308,11 +308,12 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
         # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
         if self.audio_path is None:
-            duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000, sample_size=2)
+            duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
             duration = int(duration)
+            print(f'duration:{duration}')
             mediaId = self.upload2media_id(media_content=tts_instance.BytesIO.read(), media_type='voice')
         else:
-            duration = get_audio_duration(self.audio_path, sample_rate=16000, sample_size=2)
+            duration = get_audio_duration(self.audio_path, sample_rate=16000)
             duration = int(duration)
             mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
         logger.info(f"voice media_id: {mediaId}")
@@ -347,7 +348,8 @@ if __name__ == '__main__':
     user_name = "用户"
     voice = 'zhiyan_emo'  # zhiyan的声音,略微的更女性化些;
     today = datetime.datetime.today().strftime('%y%m%d')
-    tts_out_path = f'tts_{voice}_{today}.wav'
+    # tts_out_path = f'tts_{voice}_{today}.wav'
+    tts_out_path = None
     speech_data = 0
 
     if characterGLM_chat_flag:  # 角色扮演机器人聊天

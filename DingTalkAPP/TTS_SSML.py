@@ -86,23 +86,30 @@ def emotion_classification(access_key_id, access_key_secret, text=None, domain=N
 
 # 使用阿里云公共SDK获取Token，采用RPC风格的API调用:
 
-def get_audio_duration(file_path, sample_rate=16000, sample_size=2):
+def get_audio_duration(audio_file, sample_rate=16000):
     """
     计算音频文件的时长
     sample_size : 在 PCM（脉冲编码调制）音频数据中，每个采样点的值通常用 16 位表示，也就是 2 字节。但是这也不是绝对的，因为也有可能是 8 位或者 32 位，具体取决于音频文件的格式和编码方式。
     在 WAV 文件中，每个采样点的大小通常是由音频文件的格式字段确定的。如果音频文件的格式是 LPCM（线性脉冲编码调制），那么每个采样点的大小通常就是 2 字节。
     所以 sample_size 的值需要根据实际的音频文件格式和编码方式来确定
     """
-    file_size = 0
-    if isinstance(file_path, str):
-        file_size = os.path.getsize(file_path)
-    elif isinstance(file_path, io.BytesIO):
-        file_size = len(file_path.getbuffer())
+    duration = 0
+    sample_depth = 16  # 假设采样深度为16位
+    if isinstance(audio_file, str):
+        sample_size = sample_depth / 8 #  假设采样深度为16位, 即为2字节
+        file_size = os.path.getsize(audio_file)
+        duration = (file_size - 44) / (sample_rate * sample_size) * 1000
+    elif isinstance(audio_file, io.BytesIO):
+        channels = 1  # 单声道
+        # 获取音频数据总字节数
+        # audio_file.seek(0, io.SEEK_END)
+        # file_size = audio_file.tell()
+        file_size = len(audio_file.getbuffer())
+        duration = file_size / (sample_rate * sample_depth // 8 * channels) * 1000
     else:
         print("file_path 既不是文件路径,也不是内存BytesIO对象")
-    duration = (file_size - 44) / (sample_rate * sample_size)
 
-    return duration
+    return int(duration)
 
 
 def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shanghai'):
@@ -351,7 +358,7 @@ if __name__ == '__main__':
 
     today = datetime.datetime.today().strftime('%y%m%d_%H%M')
     tts_out_path = f'./tts_{voice}_{today}.wav'
-    femail_speakers = ["zhixiaobai", "zhixiaoxia", "zhixiaomei", "zhigui", "aixia", "zhimiao_emo", "zhiyan_emo",
+    female_speakers = ["zhixiaobai", "zhixiaoxia", "zhixiaomei", "zhigui", "aixia", "zhimiao_emo", "zhiyan_emo",
                        "zhibei_emo", "zhitian_emo", "xiaoyun", "ruoxi", "sijia", "aiqi", "aijia", "ninger", "ruilin",
                        "siyue", "aiya", "aimei", "aiyu", "aiyue", "aijing", "xiaomei", "xiaobei", "aiwei", "guijie",
                        "stella", "xiaoxian", "maoxiaomei", ]
@@ -370,7 +377,7 @@ if __name__ == '__main__':
     print(f'duration:{duration}')
 
     # 多线程循环:
-    # for voice in femail_speakers:
+    # for voice in female_speakers:
     #     con_fig = True
     #     tts = TTS_threadsRUN(tts_name='测试例子', audio_path=f'./tts_{voice}_out.wav', voice=voice, wait_complete=False,
     #                      enable_subtitle=False, callbacks=[con_fig])
