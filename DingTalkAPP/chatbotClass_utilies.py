@@ -84,7 +84,8 @@ class ChatbotMessage_Utilies(ChatbotMessage):
                     msg.rich_text_content = RichTextContent.from_dict(d['content'])
                 # 新增部分:
                 elif value == 'audio':
-                    msg.audio_duration = d['content']['duration']
+                    if 'duration' in d['content']:
+                        msg.audio_duration = d['content']['duration']
                     msg.audio_downloadCode = d['content']['downloadCode']
                     msg.audio_recognition = d['content']['recognition']
                 elif value == 'video':
@@ -191,7 +192,7 @@ class ChatbotHandler_utilies(ChatbotHandler):
         """
         if isinstance(media_content, str):  # 若是文件路径;
             media_content = {'media': open(media_content, 'rb'), }
-        elif isinstance(media_content, io.BytesIO):  # 若是bytes
+        elif isinstance(media_content, io.BytesIO) or isinstance(media_content, bytes):  # 转化某个音频格式的的bytes
             # form-data中媒体文件标识，有filename、filelength、content-type等信息。
             # 这里的文件名'audio.wav'是随便定义, 无特别意义
             media = ('audio.wav', media_content, 'audio/wav')

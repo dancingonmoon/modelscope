@@ -15,9 +15,9 @@ from dingtalk_stream import AckMessage
 import dingtalk_stream
 import configparser
 import zhipuai
-from chatbotClass_utilies import ChatbotMessage_Utilies, ChatbotHandler_utilies, OpenAPI_SendMessage
+from chatbotClass_utilies import ChatbotMessage_Utilies, ChatbotHandler_utilies
 
-from TTS_SSML import TTS_threadsRUN, get_audio_duration, emotion_classification
+from TTS_SSML import TTS_threadsRUN, get_audio_duration, emotion_classification,wav2ogg
 
 
 def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID', option2=None):
@@ -251,7 +251,9 @@ class VoiceChatHandler(ChatbotHandler_utilies):
 
     def __init__(self, accessKey_id, accessKey_secret, region_id='cn-shanghai', appKey=None, tts_name=None,
                  audio_path=None, aformat='wav', voice='xiaoyun', speech_rate=0, pitch_rate=0, wait_complete=False,
-                 enable_subtitle=False, enable_ptts=False, callbacks: list = [], logger: logging.Logger = None
+                 enable_subtitle=False, enable_ptts=False, callbacks: list = [], logger: logging.Logger = None,
+                 zhipuai=zhipuai, history_prompt=[], bot_name=None, bot_info=None, user_name=None, user_info=None,
+                 ssml_enabled=False
                  ):
         super(VoiceChatHandler, self).__init__()
         self.accessKey_id = accessKey_id
@@ -271,20 +273,37 @@ class VoiceChatHandler(ChatbotHandler_utilies):
 
         self.logger = logger
 
+        self.zhipuai = zhipuai
+        self.history_prompt = history_prompt
+        self.bot_name = bot_name
+        self.bot_info = bot_info
+        self.user_name = user_name
+        self.user_info = user_info
+        self.ssml_enabled = ssml_enabled
+
+
     async def process(self, callback: dingtalk_stream.CallbackMessage):
         global history_prompt
         callback_data = callback.data
         incoming_message = ChatbotMessage_Utilies.from_dict(callback_data)
+        text = ""
+        # 文本,语音消息分别判断后处理:
+        if incoming_message.message_type == 'text' :
+            text = incoming_message.text.content.strip()
+        elif incoming_message.message_type == 'audio':
+            text = incoming_message.audio_recognition
+            self.reply_text(f"你:{text}", incoming_message)
 
-        text = incoming_message.text.content.strip()
         if change_topic_str_Detect(text):
             history_prompt = []
         prompt = [{"role": "user", "content": text}]
 
         self.logger.info(f"user:{text}")
-        text = characterGLMAPI_completion_create(zhipuai=zhipuai, prompt=prompt, history_prompt=history_prompt,
-                                                 bot_name=bot_name, bot_info=bot_info, user_name=user_name,
-                                                 user_info=user_info)
+        text = characterGLMAPI_completion_create(zhipuai=self.zhipuai, prompt=prompt,
+                                                 history_prompt=self.history_prompt,
+                                                 bot_name=self.bot_name, bot_info=self.bot_info,
+                                                 user_name=self.user_name,
+                                                 user_info=self.user_info)
         text = re.sub(r'^["]+|[\\n+]|[\n+"]$', '', text)  # 去除字符串中的换行符或者回车符
         # self.logger.info(f"生成的text:{text}")
         history_prompt.extend([{"role": "assistant", "content": text}])
@@ -298,25 +317,41 @@ class VoiceChatHandler(ChatbotHandler_utilies):
                                       enable_subtitle=self.enable_subtitle,
                                       enable_ptts=self.enable_ptts, callbacks=self.callbacks, logger=self.logger)
         # 情绪识别:
-        ssml_label, _, _ = emotion_classification(accessKey_id, accessKey_secret, text)
-        # print(ssml_label, emo_label, s_dict)
-        # 将情绪加入到多情感语音合成中去,强度值根据效果调整
+        if self.ssml_enabled:
+            ssml_label, _, _ = emotion_classification(self.accessKey_id, self.accessKey_secret, text)
+            # print(ssml_label, emo_label, s_dict)
+            # 将情绪加入到多情感语音合成中去,强度值根据效果调整
+        else:
+            ssml_label = None
         tts_instance.start(text, ssml_label, ssml_intensity=1.1)
         while tts_instance.completion_status is False:
             # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
-            time.sleep(0.0001) # 如果是是本地硬盘I/O,建议值设为0.05
-        # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
+            time.sleep(0.0005)  # 如果是是本地硬盘I/O,建议值设为0.05
+
+        # 将wav格式的音频转化成ogg格式,便于手机端传送(手机端钉钉在wav格式时,当只有几个字的时间很短时,"语音播放异常,请重试"
+        audio_content, duration = wav2ogg(tts_instance.BytesIO)
         # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
-        if self.audio_path is None:
-            duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
-            duration = int(duration)
-            print(f'duration:{duration}')
-            mediaId = self.upload2media_id(media_content=tts_instance.BytesIO, media_type='voice')
-        else:
-            duration = get_audio_duration(self.audio_path, sample_rate=16000)
-            duration = int(duration)
-            mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
-        logger.info(f"voice media_id: {mediaId}")
+        # if self.audio_path is None:
+        #     duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
+        #     duration = int(duration)
+        #     logger.info(f'duration:{duration}')
+        #     mediaId = self.upload2media_id(media_content=audio_content, media_type='voice')
+        # else:
+        #     duration = get_audio_duration(self.audio_path, sample_rate=16000)
+        #     duration = int(duration)
+        #     mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
+        # # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
+        # if self.audio_path is None:
+        #     duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
+        #     duration = int(duration)
+        #     print(f'duration:{duration}')
+        #     mediaId = self.upload2media_id(media_content=tts_instance.BytesIO, media_type='voice')
+        # else:
+        #     duration = get_audio_duration(self.audio_path, sample_rate=16000)
+        #     duration = int(duration)
+        #     mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
+        mediaId = self.upload2media_id(media_content=audio_content, media_type='voice')
+        self.logger.info(f"voice media_id: {mediaId}")
         # 发送voice message:
         # self.reply_voice_http(mediaId, duration, incoming_message)  # http方式发送voice message reqeust格式有误;
         self.reply_voice_SDK(mediaId, duration, incoming_message)
@@ -336,10 +371,10 @@ if __name__ == '__main__':
 
     logger = setup_logger()
     # options = define_options()
-    config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
-    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
-    config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
+    config_path_dtApp = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
+    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
 
     # bot_info = "杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。2008年，凭借古装剧《王昭君》获得第24届中国电视金鹰奖观众喜爱的电视剧女演员奖提名 。2009年，在“80后新生代娱乐大明星”评选中被评为“四小花旦”。2011年，凭借穿越剧《宫锁心玉》赢得广泛关注 ，并获得了第17届上海电视节白玉兰奖观众票选最具人气女演员奖。2012年，不仅成立杨幂工作室，还凭借都市剧《北京爱情故事》获得了多项荣誉 。2015年，主演的《小时代》系列电影票房突破18亿人民币 。2016年，其主演的职场剧《亲爱的翻译官》取得全国年度电视剧收视冠军 。2017年，杨幂主演的神话剧《三生三世十里桃花》获得颇高关注；同年，她还凭借科幻片《逆时营救》获得休斯顿国际电影节最佳女主角奖 。2018年，凭借古装片《绣春刀Ⅱ：修罗战场》获得北京大学生电影节最受大学生欢迎女演员奖 [4]；。2014年1月8日，杨幂与刘恺威在巴厘岛举办了结婚典礼。同年6月1日，在香港产下女儿小糯米。"
     bot_info = "刘亦菲（Crystal Liu,1987年8月25日-）,生于湖北省武汉市,毕业于北京电影学院,美籍华裔女演员、歌手.2002年,因出演电视剧《金粉世家》中白秀珠一角踏入演艺圈.2003年,因主演武侠剧《天龙八部》王语嫣崭露头角.2004年,凭借仙侠剧《仙剑奇侠传》赵灵儿一角获得了高人气.2005年,因在《神雕侠侣》中饰演小龙女受到关注.2006年,发行首张国语专辑《刘亦菲》和日语专辑《All My Words》.2008年起,转战大银幕,凭借好莱坞电影《功夫之王》成为首位荣登IMDB电影新人排行榜榜首的亚洲女星.2020年3月,为电影《花木兰》演唱中文主题曲《自己》；同年9月,主演的电影《花木兰》在Disney+上线,在剧中饰演花木兰；11月,凭借《花木兰》获首届评论家选择超级奖动作电影最佳女演员提名；2022年12月21日,凭借《梦华录》获第十三届澳门国际电视节金莲花最佳女主角奖.9月1日,凭借《梦华录》获得首届金熊猫奖电视剧单元最佳女主角提名.2023年12月28日,凭借《去有风的地方》获得第十四届澳门国际电视节'金莲花'最佳女主角奖"
@@ -347,6 +382,7 @@ if __name__ == '__main__':
     user_info = "喜欢刘亦菲的男孩一枚"
     user_name = "用户"
     voice = 'zhiyan_emo'  # zhiyan的声音,略微的更女性化些;
+    # voice = "voice-f90ed52" # 个性化声音
     today = datetime.datetime.today().strftime('%y%m%d')
     # tts_out_path = f'tts_{voice}_{today}.wav'
     tts_out_path = None
@@ -356,6 +392,8 @@ if __name__ == '__main__':
         zhipuai.api_key = zhipuai_key
         client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id',
                                                option2='client_secret')
+        # client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_HumanoidRobot", option1='client_id',
+        #                                        option2='client_secret')
         credential = dingtalk_stream.Credential(client_id, client_secret)
         client = dingtalk_stream.DingTalkStreamClient(credential)
         if voiceMessage_chat_flag is False:  # 角色扮演机器人, 文本聊天
@@ -371,7 +409,11 @@ if __name__ == '__main__':
                                                               audio_path=tts_out_path, aformat='wav', voice=voice,
                                                               speech_rate=0, pitch_rate=0, wait_complete=False,
                                                               enable_subtitle=False, enable_ptts=False,
-                                                              callbacks=[], logger=logger))
+                                                              callbacks=[], logger=logger,
+                                                              zhipuai=zhipuai,
+                                                              history_prompt=history_prompt, bot_info=bot_info,
+                                                              bot_name=bot_name, user_name=user_name,user_info=user_info,
+                                                              ))
 
     else:  # GLM 办公助手, 文本聊
         client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_chatGLM", option1='client_id',

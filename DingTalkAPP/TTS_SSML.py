@@ -10,6 +10,8 @@ import threading
 import logging
 import io
 import re
+import math
+from pydub import AudioSegment
 
 from aliyunsdkcore.client import AcsClient
 # from aliyunsdkcore.acs_exception.exceptions import ClientException
@@ -109,7 +111,38 @@ def get_audio_duration(audio_file, sample_rate=16000):
     else:
         print("file_path 既不是文件路径,也不是内存BytesIO对象")
 
-    return int(duration)
+    return math.ceil(duration)
+
+def wav2ogg(audio_file):
+    """
+    将wav格式的音频转化成ogg格式,便于手机端传送;
+    audio_file: 本地文件路径,或者BytesIO内存
+    """
+    if isinstance(audio_file, str): # 本地文件
+        # 读取WAV格式的音频文件
+        audio = AudioSegment.from_file(audio_file, format="wav")
+        # # 将音频文件转换为OGG格式
+        # audio.export("output_audio.ogg", format="ogg")
+    elif isinstance(audio_file, io.BytesIO):
+        # 从内存中读取wav文件内容
+        audio_file.seek(0)
+        wav_content = audio_file.read()
+        # 将wav内容转换为AudioSegment对象
+        audio = AudioSegment.from_wav(io.BytesIO(wav_content))
+
+        # 将ogg内容写入内存对象
+        # ogg_memory_file = io.BytesIO()
+        # ogg_memory_file.write(ogg_content)
+
+    try:
+        # 获取音频时长（单位：毫秒）
+        duration = len(audio)
+        # 将AudioSegment对象转换为ogg格式
+        ogg_content = audio.export(format="ogg").read()
+    except Exception as e:
+        print(f"{e};'另:音频输入格式可能错误'")
+
+    return ogg_content, duration
 
 
 def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shanghai', existing_aToken_dict= {}):
@@ -386,6 +419,8 @@ if __name__ == '__main__':
     tts.start(TEXT, ssml_label, 0.5)
     duration = get_audio_duration(tts.BytesIO,)
     print(f'duration:{duration}')
+    ogg, duration = wav2ogg(tts.BytesIO)
+    print(f'durations:{duration} ms')
 
     # 多线程循环:
     # for voice in female_speakers:
