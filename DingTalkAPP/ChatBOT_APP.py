@@ -4,7 +4,7 @@ import re
 import sys
 import time
 import datetime
-import requests
+# import requests
 
 sys.path.append('../GLM')  # 将上一级目录的/GLM目录添加到系统路径中
 # from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
@@ -17,7 +17,7 @@ import configparser
 import zhipuai
 from chatbotClass_utilies import ChatbotMessage_Utilies, ChatbotHandler_utilies, OpenAPI_SendMessage
 
-from TTS_SSML import TTS_threadsRUN, get_audio_duration, emotion_classification
+from TTS_SSML import TTS_threadsRUN, get_audio_duration, emotion_classification, wav2ogg
 
 
 def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID', option2=None):
@@ -275,8 +275,14 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         global history_prompt
         callback_data = callback.data
         incoming_message = ChatbotMessage_Utilies.from_dict(callback_data)
-
-        text = incoming_message.text.content.strip()
+        text = ""
+        # 文本,语音消息分别判断后处理:
+        if incoming_message.message_type == 'text' :
+            text = incoming_message.text.content.strip()
+        elif incoming_message.message_type == 'audio':
+            text = incoming_message.audio_recognition
+            self.reply_text(f"你:{text}", incoming_message)
+        # 判断是否重启对话,并构造prompt
         if change_topic_str_Detect(text):
             history_prompt = []
         prompt = [{"role": "user", "content": text}]
@@ -298,29 +304,32 @@ class VoiceChatHandler(ChatbotHandler_utilies):
                                       enable_subtitle=self.enable_subtitle,
                                       enable_ptts=self.enable_ptts, callbacks=self.callbacks, logger=self.logger)
         # 情绪识别:
-        ssml_label, _, _ = emotion_classification(accessKey_id, accessKey_secret, text)
-        # print(ssml_label, emo_label, s_dict)
+        ssml_label, _, s_dict = emotion_classification(accessKey_id, accessKey_secret, text)
+        logger.info(f"ssml_label:{ssml_label}; 识别情绪:{s_dict}")
         # 将情绪加入到多情感语音合成中去,强度值根据效果调整
-        tts_instance.start(text, ssml_label, ssml_intensity=1.1)
+        tts_instance.start(text, ssml_label, ssml_intensity=1.0)
         while tts_instance.completion_status is False:
             # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
             time.sleep(0.0001) # 如果是是本地硬盘I/O,建议值设为0.05
-        # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
+
+        # 将wav格式的音频转化成ogg格式,便于手机端传送(手机端钉钉在wav格式时,当只有几个字的时间很短时,"语音播放异常,请重试"
+        audio_content, duration = wav2ogg(tts_instance.BytesIO)
         # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
-        if self.audio_path is None:
-            duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
-            duration = int(duration)
-            print(f'duration:{duration}')
-            mediaId = self.upload2media_id(media_content=tts_instance.BytesIO, media_type='voice')
-        else:
-            duration = get_audio_duration(self.audio_path, sample_rate=16000)
-            duration = int(duration)
-            mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
+        # if self.audio_path is None:
+        #     duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
+        #     duration = int(duration)
+        #     logger.info(f'duration:{duration}')
+        #     mediaId = self.upload2media_id(media_content=audio_content, media_type='voice')
+        # else:
+        #     duration = get_audio_duration(self.audio_path, sample_rate=16000)
+        #     duration = int(duration)
+        #     mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
+        mediaId = self.upload2media_id(media_content=audio_content, media_type='voice')
         logger.info(f"voice media_id: {mediaId}")
         # 发送voice message:
         # self.reply_voice_http(mediaId, duration, incoming_message)  # http方式发送voice message reqeust格式有误;
         self.reply_voice_SDK(mediaId, duration, incoming_message)
-        self.reply_text(text, incoming_message)
+        self.reply_text(f"我:{text}", incoming_message)
         self.logger.info(f"assistant:{text}")
         # logger.info(history_prompt)
         return AckMessage.STATUS_OK, 'OK'

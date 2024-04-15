@@ -5,6 +5,11 @@ pip install -U dingtalk-stream
 pip install -U alibabacloud-dingtalk
 pip install -U 
 pip install -U faiss-cpu
+# pydub音频处理,转换ogg格式,需要安装ffmpeg:
+# Linux CLI: 
+# sudo apt-get install ffmpeg
+# ffmpeg -version
+pip install -U pydub
 
 pip install aliyun-python-sdk-core # 安装阿里云 SDK 核心库
 pip install aliyun-python-sdk-nlp-automl # 安装NLP自学习平台SDK
