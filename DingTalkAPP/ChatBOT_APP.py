@@ -251,7 +251,9 @@ class VoiceChatHandler(ChatbotHandler_utilies):
 
     def __init__(self, accessKey_id, accessKey_secret, region_id='cn-shanghai', appKey=None, tts_name=None,
                  audio_path=None, aformat='wav', voice='xiaoyun', speech_rate=0, pitch_rate=0, wait_complete=False,
-                 enable_subtitle=False, enable_ptts=False, callbacks: list = [], logger: logging.Logger = None
+                 enable_subtitle=False, enable_ptts=False, callbacks: list = [], logger: logging.Logger = None,
+                 zhipuai=zhipuai, history_prompt=[], bot_name=None, bot_info=None, user_name=None, user_info=None,
+                 ssml_enabled=False
                  ):
         super(VoiceChatHandler, self).__init__()
         self.accessKey_id = accessKey_id
@@ -271,6 +273,15 @@ class VoiceChatHandler(ChatbotHandler_utilies):
 
         self.logger = logger
 
+        self.zhipuai = zhipuai
+        self.history_prompt = history_prompt
+        self.bot_name = bot_name
+        self.bot_info = bot_info
+        self.user_name = user_name
+        self.user_info = user_info
+        self.ssml_enabled = ssml_enabled
+
+
     async def process(self, callback: dingtalk_stream.CallbackMessage):
         global history_prompt
         callback_data = callback.data
@@ -288,9 +299,11 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         prompt = [{"role": "user", "content": text}]
 
         self.logger.info(f"user:{text}")
-        text = characterGLMAPI_completion_create(zhipuai=zhipuai, prompt=prompt, history_prompt=history_prompt,
-                                                 bot_name=bot_name, bot_info=bot_info, user_name=user_name,
-                                                 user_info=user_info)
+        text = characterGLMAPI_completion_create(zhipuai=self.zhipuai, prompt=prompt,
+                                                 history_prompt=self.history_prompt,
+                                                 bot_name=self.bot_name, bot_info=self.bot_info,
+                                                 user_name=self.user_name,
+                                                 user_info=self.user_info)
         text = re.sub(r'^["]+|[\\n+]|[\n+"]$', '', text)  # 去除字符串中的换行符或者回车符
         # self.logger.info(f"生成的text:{text}")
         history_prompt.extend([{"role": "assistant", "content": text}])
@@ -304,13 +317,16 @@ class VoiceChatHandler(ChatbotHandler_utilies):
                                       enable_subtitle=self.enable_subtitle,
                                       enable_ptts=self.enable_ptts, callbacks=self.callbacks, logger=self.logger)
         # 情绪识别:
-        ssml_label, _, s_dict = emotion_classification(accessKey_id, accessKey_secret, text)
-        logger.info(f"ssml_label:{ssml_label}; 识别情绪:{s_dict}")
-        # 将情绪加入到多情感语音合成中去,强度值根据效果调整
-        tts_instance.start(text, ssml_label, ssml_intensity=1.0)
+        if self.ssml_enabled:
+            ssml_label, _, _ = emotion_classification(self.accessKey_id, self.accessKey_secret, text)
+            # print(ssml_label, emo_label, s_dict)
+            # 将情绪加入到多情感语音合成中去,强度值根据效果调整
+        else:
+            ssml_label = None
+        tts_instance.start(text, ssml_label, ssml_intensity=1.1)
         while tts_instance.completion_status is False:
             # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
-            time.sleep(0.0001) # 如果是是本地硬盘I/O,建议值设为0.05
+            time.sleep(0.0005)  # 如果是是本地硬盘I/O,建议值设为0.05
 
         # 将wav格式的音频转化成ogg格式,便于手机端传送(手机端钉钉在wav格式时,当只有几个字的时间很短时,"语音播放异常,请重试"
         audio_content, duration = wav2ogg(tts_instance.BytesIO)
@@ -324,12 +340,22 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         #     duration = get_audio_duration(self.audio_path, sample_rate=16000)
         #     duration = int(duration)
         #     mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
+        # # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
+        # if self.audio_path is None:
+        #     duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
+        #     duration = int(duration)
+        #     print(f'duration:{duration}')
+        #     mediaId = self.upload2media_id(media_content=tts_instance.BytesIO, media_type='voice')
+        # else:
+        #     duration = get_audio_duration(self.audio_path, sample_rate=16000)
+        #     duration = int(duration)
+        #     mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
         mediaId = self.upload2media_id(media_content=audio_content, media_type='voice')
-        logger.info(f"voice media_id: {mediaId}")
+        self.logger.info(f"voice media_id: {mediaId}")
         # 发送voice message:
         # self.reply_voice_http(mediaId, duration, incoming_message)  # http方式发送voice message reqeust格式有误;
         self.reply_voice_SDK(mediaId, duration, incoming_message)
-        self.reply_text(f"我:{text}", incoming_message)
+        self.reply_text(text, incoming_message)
         self.logger.info(f"assistant:{text}")
         # logger.info(history_prompt)
         return AckMessage.STATUS_OK, 'OK'
@@ -356,6 +382,7 @@ if __name__ == '__main__':
     user_info = "喜欢刘亦菲的男孩一枚"
     user_name = "用户"
     voice = 'zhiyan_emo'  # zhiyan的声音,略微的更女性化些;
+    # voice = "voice-f90ed52" # 个性化声音
     today = datetime.datetime.today().strftime('%y%m%d')
     # tts_out_path = f'tts_{voice}_{today}.wav'
     tts_out_path = None
@@ -380,7 +407,11 @@ if __name__ == '__main__':
                                                               audio_path=tts_out_path, aformat='wav', voice=voice,
                                                               speech_rate=0, pitch_rate=0, wait_complete=False,
                                                               enable_subtitle=False, enable_ptts=False,
-                                                              callbacks=[], logger=logger))
+                                                              callbacks=[], logger=logger,
+                                                              zhipuai=zhipuai,
+                                                              history_prompt=history_prompt, bot_info=bot_info,
+                                                              bot_name=bot_name, user_name=user_name,user_info=user_info,
+                                                              ))
 
     else:  # GLM 办公助手, 文本聊
         client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_chatGLM", option1='client_id',
