@@ -330,16 +330,6 @@ class VoiceChatHandler(ChatbotHandler_utilies):
 
         # 将wav格式的音频转化成ogg格式,便于手机端传送(手机端钉钉在wav格式时,当只有几个字的时间很短时,"语音播放异常,请重试"
         audio_content, duration = wav2ogg(tts_instance.BytesIO)
-        # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
-        # if self.audio_path is None:
-        #     duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
-        #     duration = int(duration)
-        #     logger.info(f'duration:{duration}')
-        #     mediaId = self.upload2media_id(media_content=audio_content, media_type='voice')
-        # else:
-        #     duration = get_audio_duration(self.audio_path, sample_rate=16000)
-        #     duration = int(duration)
-        #     mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
         # # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
         # if self.audio_path is None:
         #     duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)

@@ -18,7 +18,7 @@ def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID',
 
 
 
-config_path = r"L:\Python_WorkSpace\config\Azure_Resources.ini"
+config_path = r"e:\Python_WorkSpace\config\Azure_Resources.ini"
 # Creates an instance of a speech config with specified subscription key and service region.
 key, region = config_read(config_path=config_path, section='Azure_TTS',option1='key', option2='region')
 
@@ -29,9 +29,22 @@ speech_config.speech_synthesis_voice_name = "zh-CN-XiaoxiaoNeural" #"en-US-AvaMu
 
 text = "what a wonderful day神奇的一天"
 ssml_string = """
-<speak version="1.0" xmlns="https://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN">
   <voice name="zh-CN-XiaoxiaoNeural">
-    离离原上草,一岁一枯荣,野火烧不尽,春风吹又生
+        女儿看见父亲走了进来，问道：
+        <mstts:express-as  style="cheerful">
+            “您来的挺快的，怎么过来的？”
+        </mstts:express-as>
+        父亲放下手提包，说：
+        <mstts:express-as role="OlderAdultMale" style="fearful">
+            “刚打车过来的，路上还挺顺畅。”
+        </mstts:express-as>
+        <prosody pitch="high" volume="+80.00%">特别情况</prosody>
+        <prosody contour="(10%,+80%)(20%,+50%)(30%,+10%)(40%,-20%)(50%,-30%)(60%,-60%) (70%,+50%)(80%,+60%)(100%,+80%)" >
+            房间里面有人吗?
+        </prosody>
+        <prosody rate="+50%" volume="+80%">糟糕了,糟糕了,钱包丢了</prosody>
+        <emphasis level="strong">有人</emphasis>
   </voice>
 </speak>
 """
