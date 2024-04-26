@@ -96,7 +96,7 @@ def Write2Excel(DFColumn, Write2Path, Write2Sheet, Write2Row=0, Write2Col=0, Wri
 
 
 def ExcelColumnTranslate(appid, appkey, from_lang='auto', to_lang='en', ExcelPath: str = None,
-                         readSheet=None, readHeader: int = None, readStartRow: int = 1, readCol=None, nrows: int = None,
+                         readSheet=None, readHeader: int = None, readStartRow: int = 1, readCol=1, nrows: int = None,
                          write2Sheet: str = None, write2Row: int = 0, write2Col: int = 1):
     """
     Excel中读取单列,或者block,并调用百度翻译API,翻译后,写入已经存在的Excel,写入指定的sheet, 从指定的行列号追加写入完整的列或者块;
@@ -109,7 +109,7 @@ def ExcelColumnTranslate(appid, appkey, from_lang='auto', to_lang='en', ExcelPat
     readHeader: 待读取标题行行号(Excel的行号,从1开始计数); 缺省None
     readStartRow: 待读取的起始行(Excel的行号,从1开始计数); 缺省1;
         当readHeader不为None时,readStartRow=None表示从readHeader以下开始
-    readCol: 待读取的起始列号;
+    readCol: 待读取的起始列号; (Excel的列号,从1开始计数);缺省为1
     nrows: 待读取行的数量; 初始值None,表示读取整列;
     write2Sheet: 待写入的Excel的sheet名;可以是新sheet;
     write2Row: 写入的起始行,(不包括标题列);默认为1;
@@ -132,8 +132,9 @@ def ExcelColumnTranslate(appid, appkey, from_lang='auto', to_lang='en', ExcelPat
         writeheader = False
         write2Row -= 1
 
-    ExcelData = pd.read_excel(ExcelPath, readSheet, header=readHeader, skiprows=skiprows, usecols=[readCol],
+    ExcelData = pd.read_excel(ExcelPath, readSheet, header=readHeader, skiprows=skiprows, usecols=[readCol-1],
                               nrows=nrows, na_values='')
+    ExcelData.fillna('', inplace=True)
     TransData = DFColumnTranslate(ExcelData, appid, appkey, from_lang, to_lang)
 
     Write2Excel(TransData, ExcelPath, write2Sheet, write2Row, write2Col, writeheader)  # -2 因为index与行号差1
@@ -143,71 +144,22 @@ if __name__ == "__main__":
     # 读取需要翻译的Excel文件,装入DataFrame
     from_lang = 'auto'
     to_lang = 'en'  # 中文: zh;文言文: wyw;日本: jp; --> 伊朗语: ir; 波斯语: per
-    # ExcelDirectory = r"E:/Working Documents/Eastcom/Russia/Igor/专网/LeoTelecom/发货测试验收/"
-    ExcelPath = r"L:/temp/baiduTranslateTest.xlsx"
-    readSheet = 'Sheet1'
-    readHeader = 3
-    readStartRow = None
-    readCol = 1  # 也可以用列表读取多列
-    nrows = 5
-    write2Sheet = 'Sheet3'
-    write2Row = 1
-    write2Col = 1
 
-    config_path = r"L:/Python_WorkSpace/config/baidu_OpenAPI.ini"
+    ExcelPath = r"E:/Working Documents/Eastcom/Russia/Igor/专网/LeoTelecom/发货测试验收/实施需求明细-俄罗斯.xlsx"
+    readSheet = '需提供的对接数据&配置'
+    readHeader = 1
+    readStartRow = None
+    readCol = 2  # 也可以用列表读取多列
+    nrows = None
+    write2Sheet = 'Sheet1'
+    write2Row = readHeader + 1 # 紧接着header写第一行(不包括标题行)
+    write2Col = readCol
+
+    config_path = r"e:/Python_WorkSpace/config/baidu_OpenAPI.ini"
 
     appid, appkey = config_read(config_path, section="baidu_OpenAPI", option1='appid', option2='appkey')
-
-    # if readHeader is not None:
-    #     if readStartRow is None:
-    #         skiprows = None
-    #     else:
-    #         if readStartRow > readHeader:
-    #             skiprows = range(readHeader, readStartRow-1)
-    #         else:
-    #             skiprows = None
-    # else:
-    #     skiprows = range(1, readStartRow)
-    #
-    # ExcelData = pd.read_excel(ExcelPath, readSheet, header=readHeader - 1, skiprows=skiprows, usecols=[readCol],
-    #                           nrows=nrows, na_values='')
-    # pass
 
     ExcelColumnTranslate(appid=appid, appkey=appkey, from_lang=from_lang, to_lang=to_lang, ExcelPath=ExcelPath,
                          readSheet=readSheet, readHeader=readHeader, readStartRow=readStartRow, readCol=readCol,
                          nrows=nrows,
                          write2Sheet=write2Sheet, write2Row=write2Row, write2Col=write2Col)
-    # ExcelData = pd.read_excel(''.join([ExcelDirectory, ExcelName]), ExcelSheet, header=Read_RowHeader,
-    #                           usecols=Read_Column, nrows=10)
-    # # 先处理缺失值,填充为''
-    # ExcelData.fillna('', inplace=True)
-    # # ExcelData[ExcelData.keys()[2]]
-
-    # 单列DataFrame翻译结果,写入已经存在的Excel文件中,指定的Sheet表的指定单元格
-    # WriteDirectory = ExcelDirectory
-    # # WriteExcelName = '个人报销 -翻译测试.xlsx'
-    # WriteExcelName = ExcelName
-    # # WriteSheetName = '20200831'
-    # WriteSheetName = 'Sheet3'
-    # StartRow = 2
-    # Write2Cols = [7,9]
-
-    # 多列循环调用翻译结果写入函数,写入
-    # TranslateDF = pd.DataFrame()
-    # for i in range(0, 1):
-    #     temp = ColumnTranslate(ExcelData[ExcelData.keys()[i]])
-    #     TranslateDF[temp.keys()] = temp
-    #     # print(temp.keys()[0])
-    #     WriteColumnTranslate(TranslateDF, WriteDirectory, WriteExcelName, WriteSheetName, StartRow, StartCol)
-    # TranslateDF
-
-    # with pd.ExcelWriter(WriteDirectory + WriteExcelName, mode='a', engine="openpyxl",
-    #                     if_sheet_exists="overlay") as writer:
-    #     # Workbook = openpyxl.load_workbook(WriteDirectory + WriteExcelName)  # 读取要写入的workbook
-    #     # writer.book = Workbook  # 此时的writer里还只是读写器. 然后将上面读取的Workbook复制给writer
-    #     # writer.sheets = dict((ws.title, ws) for ws in Workbook.worksheets)  # 复制存在的表
-    #     ExcelData.to_excel(writer, WriteSheetName, startrow=StartRow,
-    #                        startcol=StartCol, index=False, )
-    # writer.save()
-    # writer.close()
-    # Write2Excel(ExcelData, ''.join([WriteDirectory, WriteExcelName]), WriteSheetName, StartRow, Write2Cols=Write2Cols)
