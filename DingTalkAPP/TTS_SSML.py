@@ -21,6 +21,8 @@ from aliyunsdkcore.auth.credentials import AccessKeyCredential
 # from aliyunsdkcore.auth.credentials import StsTokenCredential
 from aliyunsdknlp_automl.request.v20191111.RunPreTrainServiceRequest import RunPreTrainServiceRequest
 
+import azure.cognitiveservices.speech as speechsdk
+
 
 # semantic_cls = pipeline(Tasks.text_classification, 'damo/nlp_structbert_emotion-classification_chinese-base', model_revision='v1.0.0')
 
@@ -34,13 +36,21 @@ from aliyunsdknlp_automl.request.v20191111.RunPreTrainServiceRequest import RunP
 #     return label
 
 # 情绪识别 aliyun API :
-def emotion_classification(access_key_id, access_key_secret, text=None, domain=None):
+def emotion_classification(access_key_id, access_key_secret, text=None, domain=None, aliyun_azure=True, ):
     """
-    中文情绪分类: labels': {"抱怨","厌恶","悲伤","投诉","惊讶","恐惧","喜好","高兴","认可","感谢","愤怒"}
-    对应的SSML英文标注: {None,"disgust"(厌恶),"sad"(悲伤),None,"surprise"(惊讶),"fear"(恐惧),None,"happy"(高兴),None,None,"anger"(愤怒),,"neutral"(None)}
+    aliyun情感模型输出的中文情绪分类: labels':
+            {"抱怨","厌恶","悲伤","投诉","惊讶","恐惧","喜好","高兴","认可","感谢","愤怒"}
+    对应的aliyun_TTS定义的SSML英文标注:
+            {None,"disgust"(厌恶),"sad"(悲伤),None,"surprise"(惊讶),"fear"(恐惧),None,"happy"(高兴),None,None,"anger"(愤怒),"neutral"(None)}
+    对应的azure_TTS定义的SSML style:
+        voice: zh-CN-XiaoxiaoNeural
+        style: {affectionate, angry, assistant, calm, chat, chat-casual, cheerful, customerservice, disgruntled, fearful,
+                friendly, gentle, lyrical, newscast, poetry-reading, sad, serious, sorry, whisper}
+                {"disgruntled"(抱怨),"disgruntled"(厌恶),"sad"(悲伤),"serious"(投诉),None(惊讶),"fearful"(恐惧),"friendly"(喜好),"cheerful"(高兴),""(认可),"chat"(感谢),"angry"(愤怒)}
     服务名称（ServiceName）:
         DeepEmotion 高性能版，速度较快，精度略低
         DeepEmotionBert 高精度版，精度较高，速度略慢
+    aliyun_azure: True,表示输出aliyun ssml英文标注; False,表示输出azure voice style
     Return: Best_ssml_label: str, Best_emo_label: str; sentiments:score 字典
     """
     credentials = AccessKeyCredential(access_key_id, access_key_secret)
@@ -68,10 +78,15 @@ def emotion_classification(access_key_id, access_key_secret, text=None, domain=N
 
     # 获得best_ssml_label:
     emo_labels = ["抱怨", "厌恶", "悲伤", "投诉", "惊讶", "恐惧", "喜好", "高兴", "认可", "感谢", "愤怒"]
-    ssml_labels = [None, "disgust", "sad", None, "surprise", "fear", "neutral", "happy", "neutral", None, "anger"]
+    aliyun_ssml_labels = [None, "disgust", "sad", None, "surprise", "fear", "neutral", "happy", "neutral", None,
+                          "anger"]
+    azure_styles = ["disgruntled", "disgruntled", "sad", "serious", None, "fearful", "friendly", "cheerful", None,
+                    "chat", "angry"]
     best_emo_label = list(sent_dict.keys())[0]
-    best_ssml_label = ssml_labels[emo_labels.index(best_emo_label)]
-
+    if aliyun_azure:  # aliyun ssml英文标注:
+        best_ssml_label = aliyun_ssml_labels[emo_labels.index(best_emo_label)]
+    else:
+        best_ssml_label = azure_styles[emo_labels.index(best_emo_label)]
     return best_ssml_label, best_emo_label, sent_dict
 
 
@@ -98,7 +113,7 @@ def get_audio_duration(audio_file, sample_rate=16000):
     duration = 0
     sample_depth = 16  # 假设采样深度为16位
     if isinstance(audio_file, str):
-        sample_size = sample_depth / 8 #  假设采样深度为16位, 即为2字节
+        sample_size = sample_depth / 8  # 假设采样深度为16位, 即为2字节
         file_size = os.path.getsize(audio_file)
         duration = (file_size - 44) / (sample_rate * sample_size) * 1000
     elif isinstance(audio_file, io.BytesIO):
@@ -113,12 +128,13 @@ def get_audio_duration(audio_file, sample_rate=16000):
 
     return math.ceil(duration)
 
+
 def wav2ogg(audio_file):
     """
     将wav格式的音频转化成ogg格式,便于手机端传送;
     audio_file: 本地文件路径,或者BytesIO内存
     """
-    if isinstance(audio_file, str): # 本地文件
+    if isinstance(audio_file, str):  # 本地文件
         # 读取WAV格式的音频文件
         audio = AudioSegment.from_file(audio_file, format="wav")
         # # 将音频文件转换为OGG格式
@@ -145,7 +161,7 @@ def wav2ogg(audio_file):
     return ogg_content, duration
 
 
-def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shanghai', existing_aToken_dict= {}):
+def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shanghai', existing_aToken_dict={}):
     """
     使用阿里云公共SDK获取Token,采用PRC分隔的API调用;获取的token有效期24小时
     existing_aToken_dict : 已经存在的,历史access_token字典,用于判断是否重复获取;
@@ -186,7 +202,7 @@ def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shang
         return e
 
 
-class TTS_threadsRUN():
+class aliyun_TTS_threadsRUN():
     """
             TTS,将音频存入指定目录的文件.
             每次初始化,启动单一thread,可以在多次初始化后,多线程处理密集I/O;
@@ -370,6 +386,50 @@ class TTS_threadsRUN():
         # return con_fig
 
 
+class azure_TTS():
+    """
+    使用azure TTS 实现TTS,输出格式内存对象(流形式),或者缺省扬声器,音频格式为Ogg16Khz16BitMonoOpus
+    :return:
+    """
+
+    def __init__(self, key, region, logger: logging.Logger = None):
+        """
+
+        :param key: azure AI TTS key
+        :param region: azure AI TTS region
+        :param logger:
+        return : 流形式的音频输出在内存对象self.stream中
+        """
+
+        speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+        speech_config.set_speech_synthesis_output_format(
+            speechsdk.SpeechSynthesisOutputFormat.Ogg16Khz16BitMonoOpus
+        )
+        speech_config.speech_synthesis_voice_name = (
+            "zh-CN-XiaoxiaoNeural"  # "en-US-AvaMultilingualNeural"
+        )
+        self.speech_synthesizer = speechsdk.SpeechSynthesizer(
+            speech_config=speech_config, audio_config=None
+        )
+
+        self.logger = logger
+        self.stream = None
+
+    def start(self, text):
+        result = self.speech_synthesizer.speak_text_async(text).get()
+        self.stream = speechsdk.AudioDataStream(result)
+        # stream.save_to_wav_file("path/to/write/file.wav")
+
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            self.logger.info('Speech synthesized completed !')
+
+        elif result.reason == speechsdk.ResultReason.Canceled:
+            cancellation_details = result.cancellation_details
+            self.logger.info("Speech synthesis canceled: {}".format(cancellation_details.reason))
+            if cancellation_details.reason == speechsdk.CancellationReason.Error:
+                self.logger.error("Error details: {}".format(cancellation_details.error_details))
+
+
 if __name__ == '__main__':
     from ChatBOT_APP import config_read, setup_logger
 
@@ -412,12 +472,12 @@ if __name__ == '__main__':
     print(ssml_label, emo_label, s_dict)
     # print(list(emotions.keys())[0])
 
-    tts = TTS_threadsRUN(accessKey_id, accessKey_secret, appkey=appKey, tts_name='测试例子',
-                         audio_path=tts_out_path, voice=voice, wait_complete=False,
-                         enable_subtitle=False, callbacks=[])
+    tts = aliyun_TTS_threadsRUN(accessKey_id, accessKey_secret, appkey=appKey, tts_name='测试例子',
+                                audio_path=tts_out_path, voice=voice, wait_complete=False,
+                                enable_subtitle=False, callbacks=[])
     # nls.enableTrace(True)
     tts.start(TEXT, ssml_label, 0.5)
-    duration = get_audio_duration(tts.BytesIO,)
+    duration = get_audio_duration(tts.BytesIO, )
     print(f'duration:{duration}')
     ogg, duration = wav2ogg(tts.BytesIO)
     print(f'durations:{duration} ms')

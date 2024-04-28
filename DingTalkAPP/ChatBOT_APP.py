@@ -17,7 +17,7 @@ import configparser
 import zhipuai
 from chatbotClass_utilies import ChatbotMessage_Utilies, ChatbotHandler_utilies, OpenAPI_SendMessage
 
-from TTS_SSML import TTS_threadsRUN, get_audio_duration, emotion_classification, wav2ogg
+from TTS_SSML import aliyun_TTS_threadsRUN, get_audio_duration, emotion_classification, wav2ogg
 
 
 def config_read(config_path, section='DingTalkAPP_chatGLM', option1='Client_ID', option2=None):
@@ -309,13 +309,13 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         history_prompt.extend([{"role": "assistant", "content": text}])
 
         # Text To Speech:
-        tts_instance = TTS_threadsRUN(self.accessKey_id, self.accessKey_secret, appkey=self.appKey,
-                                      tts_name=self.tts_name,
-                                      audio_path=self.audio_path, aformat=self.aformat, voice=self.voice,
-                                      speech_rate=self.speech_rate,
-                                      pitch_rate=self.pitch_rate, wait_complete=self.wait_complete,
-                                      enable_subtitle=self.enable_subtitle,
-                                      enable_ptts=self.enable_ptts, callbacks=self.callbacks, logger=self.logger)
+        tts_instance = aliyun_TTS_threadsRUN(self.accessKey_id, self.accessKey_secret, appkey=self.appKey,
+                                             tts_name=self.tts_name,
+                                             audio_path=self.audio_path, aformat=self.aformat, voice=self.voice,
+                                             speech_rate=self.speech_rate,
+                                             pitch_rate=self.pitch_rate, wait_complete=self.wait_complete,
+                                             enable_subtitle=self.enable_subtitle,
+                                             enable_ptts=self.enable_ptts, callbacks=self.callbacks, logger=self.logger)
         # 情绪识别:
         if self.ssml_enabled:
             ssml_label, _, _ = emotion_classification(self.accessKey_id, self.accessKey_secret, text)

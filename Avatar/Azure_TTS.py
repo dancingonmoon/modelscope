@@ -3,8 +3,9 @@ import azure.cognitiveservices.speech as speechsdk
 import configparser
 
 
+
 def config_read(
-    config_path, section="DingTalkAPP_chatGLM", option1="Client_ID", option2=None
+        config_path, section="DingTalkAPP_chatGLM", option1="Client_ID", option2=None
 ):
     """
     option2 = None 时,仅输出第一个option1的值; 否则输出section下的option1与option2两个值
@@ -18,34 +19,6 @@ def config_read(
     else:
         return option1_value
 
-
-def azure_TTS(key, region, text):
-    """
-    使用azure TTS 实现TTS,输出格式内存对象(流形式),或者缺省扬声器,音频格式为Ogg16Khz16BitMonoOpus
-    :return:
-    """
-    speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
-    speech_config.set_speech_synthesis_output_format(
-        speechsdk.SpeechSynthesisOutputFormat.Ogg16Khz16BitMonoOpus
-    )
-    speech_config.speech_synthesis_voice_name = (
-        "zh-CN-XiaoxiaoNeural"  # "en-US-AvaMultilingualNeural"
-    )
-    speech_synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config, audio_config=None
-    )
-    result = speech_synthesizer.speak_text_async(text).get()
-    stream = speechsdk.AudioDataStream(result)
-    # stream.save_to_wav_file("path/to/write/file.wav")
-
-    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-        # print("Speech synthesized for text [{}]".format(text))
-        return stream
-    elif result.reason == speechsdk.ResultReason.Canceled:
-        cancellation_details = result.cancellation_details
-        reason =  "Speech synthesis canceled: {}".format(cancellation_details.reason)
-        if cancellation_details.reason == speechsdk.CancellationReason.Error:
-            reason = "Error details: {}".format(cancellation_details.error_details)
 
 
 
