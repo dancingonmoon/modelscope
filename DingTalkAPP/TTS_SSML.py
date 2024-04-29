@@ -14,12 +14,16 @@ import math
 from pydub import AudioSegment
 
 from aliyunsdkcore.client import AcsClient
+
 # from aliyunsdkcore.acs_exception.exceptions import ClientException
 # from aliyunsdkcore.acs_exception.exceptions import ServerException
 # from aliyunsdknlp_automl.request.v20191111 import GetPredictResultRequest
 from aliyunsdkcore.auth.credentials import AccessKeyCredential
+
 # from aliyunsdkcore.auth.credentials import StsTokenCredential
-from aliyunsdknlp_automl.request.v20191111.RunPreTrainServiceRequest import RunPreTrainServiceRequest
+from aliyunsdknlp_automl.request.v20191111.RunPreTrainServiceRequest import (
+    RunPreTrainServiceRequest,
+)
 
 import azure.cognitiveservices.speech as speechsdk
 
@@ -36,7 +40,13 @@ import azure.cognitiveservices.speech as speechsdk
 #     return label
 
 # 情绪识别 aliyun API :
-def emotion_classification(access_key_id, access_key_secret, text=None, domain=None, aliyun_azure=True, ):
+def emotion_classification(
+    access_key_id,
+    access_key_secret,
+    text=None,
+    domain=None,
+    aliyun_azure=True,
+):
     """
     aliyun情感模型输出的中文情绪分类: labels':
             {"抱怨","厌恶","悲伤","投诉","惊讶","恐惧","喜好","高兴","认可","感谢","愤怒"}
@@ -46,7 +56,7 @@ def emotion_classification(access_key_id, access_key_secret, text=None, domain=N
         voice: zh-CN-XiaoxiaoNeural
         style: {affectionate, angry, assistant, calm, chat, chat-casual, cheerful, customerservice, disgruntled, fearful,
                 friendly, gentle, lyrical, newscast, poetry-reading, sad, serious, sorry, whisper}
-                {"disgruntled"(抱怨),"disgruntled"(厌恶),"sad"(悲伤),"serious"(投诉),None(惊讶),"fearful"(恐惧),"friendly"(喜好),"cheerful"(高兴),""(认可),"chat"(感谢),"angry"(愤怒)}
+                ["disgruntled"(抱怨),"disgruntled"(厌恶),"sad"(悲伤),"serious"(投诉),None(惊讶),"fearful"(恐惧),"friendly"(喜好),"cheerful"(高兴),None(认可),"chat"(感谢),"angry"(愤怒)]
     服务名称（ServiceName）:
         DeepEmotion 高性能版，速度较快，精度略低
         DeepEmotionBert 高精度版，精度较高，速度略慢
@@ -54,34 +64,54 @@ def emotion_classification(access_key_id, access_key_secret, text=None, domain=N
     Return: Best_ssml_label: str, Best_emo_label: str; sentiments:score 字典
     """
     credentials = AccessKeyCredential(access_key_id, access_key_secret)
-    client = AcsClient(region_id='cn-hangzhou', credential=credentials)
+    client = AcsClient(region_id="cn-hangzhou", credential=credentials)
 
     request = RunPreTrainServiceRequest()
-    request.set_accept_format('json')
+    request.set_accept_format("json")
     request.set_ServiceName("DeepEmotionBert")
-    content = {"input":
-                   {"content": text, "domain": None}
-               }
+    content = {"input": {"content": text, "domain": None}}
     request.set_PredictContent(json.dumps(content))
     response = client.do_action_with_exception(request)
     response = json.loads(response)  # json字符串转成json
-    predResult = json.loads(response['PredictResult'])
+    predResult = json.loads(response["PredictResult"])
     # print('predictResult:', predResult.keys())
-    sentiments = predResult['output']['sentiment']  # list
+    sentiments = predResult["output"]["sentiment"]  # list
 
     sent_dict = {}
     for s in sentiments:
-        sent_dict[s['key']] = s['score']
+        sent_dict[s["key"]] = s["score"]
 
     sent_dict = dict(sorted(sent_dict.items(), key=lambda item: item[1], reverse=True))
     # print(sent_dict)
 
     # 获得best_ssml_label:
     emo_labels = ["抱怨", "厌恶", "悲伤", "投诉", "惊讶", "恐惧", "喜好", "高兴", "认可", "感谢", "愤怒"]
-    aliyun_ssml_labels = [None, "disgust", "sad", None, "surprise", "fear", "neutral", "happy", "neutral", None,
-                          "anger"]
-    azure_styles = ["disgruntled", "disgruntled", "sad", "serious", None, "fearful", "friendly", "cheerful", None,
-                    "chat", "angry"]
+    aliyun_ssml_labels = [
+        None,
+        "disgust",
+        "sad",
+        None,
+        "surprise",
+        "fear",
+        "neutral",
+        "happy",
+        "neutral",
+        None,
+        "anger",
+    ]
+    azure_styles = [
+        "disgruntled",
+        "disgruntled",
+        "sad",
+        "serious",
+        None,
+        "fearful",
+        "friendly",
+        "cheerful",
+        None,
+        "chat",
+        "angry",
+    ]
     best_emo_label = list(sent_dict.keys())[0]
     if aliyun_azure:  # aliyun ssml英文标注:
         best_ssml_label = aliyun_ssml_labels[emo_labels.index(best_emo_label)]
@@ -102,6 +132,7 @@ def emotion_classification(access_key_id, access_key_secret, text=None, domain=N
 # zhitian_emo: neutral，happy，angry，sad，fear，hate，surprise
 
 # 使用阿里云公共SDK获取Token，采用RPC风格的API调用:
+
 
 def get_audio_duration(audio_file, sample_rate=16000):
     """
@@ -161,32 +192,34 @@ def wav2ogg(audio_file):
     return ogg_content, duration
 
 
-def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shanghai', existing_aToken_dict={}):
+def get_aliyun_aToken_viaSDK(
+    accessKey_id, accessKey_secret, region_id="cn-shanghai", existing_aToken_dict={}
+):
     """
     使用阿里云公共SDK获取Token,采用PRC分隔的API调用;获取的token有效期24小时
     existing_aToken_dict : 已经存在的,历史access_token字典,用于判断是否重复获取;
                           字典结构:{"accessToken": token, "expireTime": expireTime}
     """
     now = int(time.time())
-    if existing_aToken_dict and now < existing_aToken_dict['expireTime']:
-        return existing_aToken_dict['accessToken']
+    if existing_aToken_dict and now < existing_aToken_dict["expireTime"]:
+        return existing_aToken_dict["accessToken"]
     # 创建AcsClient实例
     client = AcsClient(ak=accessKey_id, secret=accessKey_secret, region_id=region_id)
     # 创建request，并设置参数。
     request = CommonRequest()
-    request.set_method('POST')
-    request.set_domain('nls-meta.cn-shanghai.aliyuncs.com')
-    request.set_version('2019-02-28')
-    request.set_action_name('CreateToken')
+    request.set_method("POST")
+    request.set_domain("nls-meta.cn-shanghai.aliyuncs.com")
+    request.set_version("2019-02-28")
+    request.set_action_name("CreateToken")
 
     try:
         response = client.do_action_with_exception(request)
         # print(response)
 
         jss = json.loads(response)
-        if 'Token' in jss and 'Id' in jss['Token']:
-            token = jss['Token']['Id']
-            expireTime = jss['Token']['ExpireTime']
+        if "Token" in jss and "Id" in jss["Token"]:
+            token = jss["Token"]["Id"]
+            expireTime = jss["Token"]["ExpireTime"]
             # print("token = " + token)
             # #将时间戳转换为struct_time
             # struct_time = time.localtime(expireTime)
@@ -194,25 +227,41 @@ def get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret, region_id='cn-shang
             # str_time = time.strftime("%Y-%m-%d %H:%M:%S", struct_time)
             # print(f"expireTime:{str_time}")
             existing_aToken_dict = {"accessToken": token, "expireTime": expireTime}
-            existing_aToken_dict['expireTime'] = int(time.time()) + existing_aToken_dict['expireTime'] - (
-                    5 * 60)  # reserve 5min buffer time
-            return existing_aToken_dict['accessToken']
+            existing_aToken_dict["expireTime"] = (
+                int(time.time()) + existing_aToken_dict["expireTime"] - (5 * 60)
+            )  # reserve 5min buffer time
+            return existing_aToken_dict["accessToken"]
     except Exception as e:
         # print(e)
         return e
 
 
-class aliyun_TTS_threadsRUN():
+class aliyun_TTS_threadsRUN:
     """
-            TTS,将音频存入指定目录的文件.
-            每次初始化,启动单一thread,可以在多次初始化后,多线程处理密集I/O;
-            """
+    TTS,将音频存入指定目录的文件.
+    每次初始化,启动单一thread,可以在多次初始化后,多线程处理密集I/O;
+    """
 
-    def __init__(self, accessKey_id, accessKey_secret, region_id='cn-shanghai', appkey=None, tts_name=None,
-                 audio_path=None, aformat='wav', voice='xiaoyun',
-                 speech_rate=0, pitch_rate=0, wait_complete=True,
-                 enable_subtitle=False, enable_ptts=False, callbacks: list = [], logger: logging.Logger = None,
-                 completion_status=False, speech_content=None):
+    def __init__(
+        self,
+        accessKey_id,
+        accessKey_secret,
+        region_id="cn-shanghai",
+        appkey=None,
+        tts_name=None,
+        audio_path=None,
+        aformat="wav",
+        voice="xiaoyun",
+        speech_rate=0,
+        pitch_rate=0,
+        wait_complete=True,
+        enable_subtitle=False,
+        enable_ptts=False,
+        callbacks: list = [],
+        logger: logging.Logger = None,
+        completion_status=False,
+        speech_content=None,
+    ):
         """
         appkey: aliyun的appkey,用于语音合成
         tts_name: 一个名字而已,仅用于标识
@@ -225,7 +274,7 @@ class aliyun_TTS_threadsRUN():
         self.__voice = voice
         self.__speech_rate = speech_rate
         self.__pitch_rate = pitch_rate
-        self.__wait_complete = wait_complete,
+        self.__wait_complete = (wait_complete,)
         self.__enable_subtitle = enable_subtitle
         self.__enable_ptts = enable_ptts
         self.__callbacks = callbacks
@@ -241,30 +290,36 @@ class aliyun_TTS_threadsRUN():
 
         self.logger: logging.Logger = logger
 
-    def get_aliyun_aToken_viaSDK(self, ):
+    def get_aliyun_aToken_viaSDK(
+        self,
+    ):
         """
         使用阿里云公共SDK获取Token,采用PRC分隔的API调用;获取的token有效期24小时
         """
         now = int(time.time())
-        if self.__access_token and now < self.__access_token['expireTime']:
-            return self.__access_token['accessToken']
+        if self.__access_token and now < self.__access_token["expireTime"]:
+            return self.__access_token["accessToken"]
         # 创建AcsClient实例
-        client = AcsClient(ak=self.__accessKey_id, secret=self.__accessKey_secret, region_id=self.__region_id)
+        client = AcsClient(
+            ak=self.__accessKey_id,
+            secret=self.__accessKey_secret,
+            region_id=self.__region_id,
+        )
         # 创建request，并设置参数。
         request = CommonRequest()
-        request.set_method('POST')
-        request.set_domain('nls-meta.cn-shanghai.aliyuncs.com')
-        request.set_version('2019-02-28')
-        request.set_action_name('CreateToken')
+        request.set_method("POST")
+        request.set_domain("nls-meta.cn-shanghai.aliyuncs.com")
+        request.set_version("2019-02-28")
+        request.set_action_name("CreateToken")
 
         try:
             response = client.do_action_with_exception(request)
             # print(response)
 
             jss = json.loads(response)
-            if 'Token' in jss and 'Id' in jss['Token']:
-                token = jss['Token']['Id']
-                expireTime = jss['Token']['ExpireTime']
+            if "Token" in jss and "Id" in jss["Token"]:
+                token = jss["Token"]["Id"]
+                expireTime = jss["Token"]["ExpireTime"]
                 # print("token = " + token)
                 # #将时间戳转换为struct_time
                 # struct_time = time.localtime(expireTime)
@@ -272,9 +327,10 @@ class aliyun_TTS_threadsRUN():
                 # str_time = time.strftime("%Y-%m-%d %H:%M:%S", struct_time)
                 # print(f"expireTime:{str_time}")
                 self.__access_token = {"accessToken": token, "expireTime": expireTime}
-                self.__access_token['expireTime'] = int(time.time()) + self.__access_token['expireTime'] - (
-                        5 * 60)  # reserve 5min buffer time
-                return self.__access_token['accessToken']
+                self.__access_token["expireTime"] = (
+                    int(time.time()) + self.__access_token["expireTime"] - (5 * 60)
+                )  # reserve 5min buffer time
+                return self.__access_token["accessToken"]
         except Exception as e:
             # print(e)
             if self.logger is not None:
@@ -289,20 +345,31 @@ class aliyun_TTS_threadsRUN():
         print("thread:{} start..".format(self.__tts_name))
         URL = "wss://nls-gateway.aliyuncs.com/ws/v1"  # 就近地域智能接入,自动根据地域选择shanghai/beijing/shenzhen
         token = self.get_aliyun_aToken_viaSDK()
-        tts = nls.NlsSpeechSynthesizer(url=URL,
-                                       token=token,
-                                       appkey=self.__appkey,
-                                       # on_metainfo=self.fun_on_metainfo,
-                                       on_data=self.fun_on_data,
-                                       # on_completed=self.fun_on_completed,
-                                       on_error=self.fun_on_error,
-                                       on_close=self.fun_on_close,
-                                       callback_args=self.__callbacks)
+        tts = nls.NlsSpeechSynthesizer(
+            url=URL,
+            token=token,
+            appkey=self.__appkey,
+            # on_metainfo=self.fun_on_metainfo,
+            on_data=self.fun_on_data,
+            # on_completed=self.fun_on_completed,
+            on_error=self.fun_on_error,
+            on_close=self.fun_on_close,
+            callback_args=self.__callbacks,
+        )
         if self.logger is not None:
             self.logger.info(f"{self.__tts_name}: session start")
-        r = tts.start(self.__text, aformat=self.__aformat, voice=self.__voice,
-                      speech_rate=self.__speech_rate, pitch_rate=self.__pitch_rate, wait_complete=self.__wait_complete,
-                      ex={"enable_subtitle": self.__enable_subtitle, "enable_ptts": self.__enable_ptts})
+        r = tts.start(
+            self.__text,
+            aformat=self.__aformat,
+            voice=self.__voice,
+            speech_rate=self.__speech_rate,
+            pitch_rate=self.__pitch_rate,
+            wait_complete=self.__wait_complete,
+            ex={
+                "enable_subtitle": self.__enable_subtitle,
+                "enable_ptts": self.__enable_ptts,
+            },
+        )
         if self.logger is not None:
             self.logger.info(f"{self.__tts_name}: tts done with result:{r}")
 
@@ -314,14 +381,16 @@ class aliyun_TTS_threadsRUN():
         ssml_intensity: intensity: [0.01,2.0] 指定情绪强度。默认值为1.0，表示预定义的情绪强度。最小值为0.01，导致目标情绪略有倾向。最大值为2.0，导致目标情绪强度加倍。
         :return:
         """
-        if ssml_label is not None and re.match(r".*emo$", self.__voice):  # 当text中最后含有emo,即表明voice支持多情感:
-            self.__text = "<speak><emotion category='{}' intensity='{}' >'{}'</emotion></speak>".format(ssml_label,
-                                                                                                        ssml_intensity,
-                                                                                                        text)
+        if ssml_label is not None and re.match(
+            r".*emo$", self.__voice
+        ):  # 当text中最后含有emo,即表明voice支持多情感:
+            self.__text = "<speak><emotion category='{}' intensity='{}' >'{}'</emotion></speak>".format(
+                ssml_label, ssml_intensity, text
+            )
         else:
             self.__text = text
         if self.__audio_path is not None:
-            self.__f = open(self.__audio_path, 'wb')
+            self.__f = open(self.__audio_path, "wb")
         self.__thread.start()
 
     def fun_on_metainfo(self, message, *args):
@@ -386,7 +455,7 @@ class aliyun_TTS_threadsRUN():
         # return con_fig
 
 
-class azure_TTS():
+class azure_TTS:
     """
     使用azure TTS 实现TTS,输出格式内存对象(流形式),或者缺省扬声器,音频格式为Ogg16Khz16BitMonoOpus
     :return:
@@ -415,34 +484,60 @@ class azure_TTS():
         self.logger = logger
         self.stream = None
 
-    def start(self, text):
-        result = self.speech_synthesizer.speak_text_async(text).get()
+    def start(
+        self,
+        voice_name="zh-CN-XiaoxiaoNeural",
+        text=None,
+        style: str = None,
+        styledegree: int = 1,
+    ):
+        if style is None:
+            ssml_text = text
+        else:
+            ssml_text = f"""
+<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN">
+  <voice name={voice_name}>
+        <mstts:express-as  style={style} styledegree={styledegree}>
+            {text}
+        </mstts:express-as>        
+  </voice>
+</speak>
+"""
+        result = self.speech_synthesizer.speak_text_async(ssml_text).get()
         self.stream = speechsdk.AudioDataStream(result)
         # stream.save_to_wav_file("path/to/write/file.wav")
 
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            self.logger.info('Speech synthesized completed !')
+            self.logger.info("Speech synthesized completed !")
 
         elif result.reason == speechsdk.ResultReason.Canceled:
             cancellation_details = result.cancellation_details
-            self.logger.info("Speech synthesis canceled: {}".format(cancellation_details.reason))
+            self.logger.info(
+                "Speech synthesis canceled: {}".format(cancellation_details.reason)
+            )
             if cancellation_details.reason == speechsdk.CancellationReason.Error:
-                self.logger.error("Error details: {}".format(cancellation_details.error_details))
+                self.logger.error(
+                    "Error details: {}".format(cancellation_details.error_details)
+                )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from ChatBOT_APP import config_read, setup_logger
 
     # 获取 accessKey_id, accessKey_secret:
     config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
-    accessKey_id, accessKey_secret = config_read(config_path_aliyunsdk, section='aliyunsdkcore', option1='AccessKey_ID',
-                                                 option2='AccessKey_Secret')
+    accessKey_id, accessKey_secret = config_read(
+        config_path_aliyunsdk,
+        section="aliyunsdkcore",
+        option1="AccessKey_ID",
+        option2="AccessKey_Secret",
+    )
 
     # token, expirTime = get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret)
-    appKey = config_read(config_path_aliyunsdk, section='APP_tts', option1='AppKey')
+    appKey = config_read(config_path_aliyunsdk, section="APP_tts", option1="AppKey")
 
     # TEXT = '大壮正想去摘取花瓣，谁知阿丽和阿强突然内讧，阿丽拿去手枪向树干边的阿强射击，两声枪响，阿强直接倒入水中'
-    TEXT = '今天真高兴,我都兴奋死了!!'
+    TEXT = "今天真高兴,我都兴奋死了啦啦!!"
     TEXT_ssml = """<speak>
     相传北宋年间，
     <say-as interpret-as="date">1121-10-10</say-as>，
@@ -456,31 +551,60 @@ if __name__ == '__main__':
     姑娘便拦下第一排的小哥<say-as interpret-as="name">阿发。</say-as>
     </speak>"""
 
-    voice = 'zhiyan_emo'  # zhiyan的声音,略微的更女性化些;
+    voice = "zhiyan_emo"  # zhiyan的声音,略微的更女性化些;
 
     text_emo = emotion_classification(accessKey_id, accessKey_secret, TEXT)
 
-    today = datetime.datetime.today().strftime('%y%m%d_%H%M')
-    tts_out_path = f'./tts_{voice}_{today}.wav'
-    female_speakers = ["zhixiaobai", "zhixiaoxia", "zhixiaomei", "zhigui", "aixia", "zhimiao_emo", "zhiyan_emo",
-                       "zhibei_emo", "zhitian_emo", "xiaoyun", "ruoxi", "sijia", "aiqi", "aijia", "ninger", "ruilin",
-                       "siyue", "aiya", "aimei", "aiyu", "aiyue", "aijing", "xiaomei", "xiaobei", "aiwei", "guijie",
-                       "stella", "xiaoxian", "maoxiaomei", ]
+    today = datetime.datetime.today().strftime("%y%m%d_%H%M")
+    tts_out_path = f"./tts_{voice}_{today}.wav"
+    female_speakers = [
+        "zhixiaobai",
+        "zhixiaoxia",
+        "zhixiaomei",
+        "zhigui",
+        "aixia",
+        "zhimiao_emo",
+        "zhiyan_emo",
+        "zhibei_emo",
+        "zhitian_emo",
+        "xiaoyun",
+        "ruoxi",
+        "sijia",
+        "aiqi",
+        "aijia",
+        "ninger",
+        "ruilin",
+        "siyue",
+        "aiya",
+        "aimei",
+        "aiyu",
+        "aiyue",
+        "aijing",
+        "xiaomei",
+        "xiaobei",
+        "aiwei",
+        "guijie",
+        "stella",
+        "xiaoxian",
+        "maoxiaomei",
+    ]
 
     # 情绪识别:
-    ssml_label, emo_label, s_dict = emotion_classification(accessKey_id, accessKey_secret, TEXT)
+    ssml_label, emo_label, s_dict = emotion_classification(
+        accessKey_id, accessKey_secret, TEXT, aliyun_azure=False
+    )
     print(ssml_label, emo_label, s_dict)
     # print(list(emotions.keys())[0])
-
-    tts = aliyun_TTS_threadsRUN(accessKey_id, accessKey_secret, appkey=appKey, tts_name='测试例子',
-                                audio_path=tts_out_path, voice=voice, wait_complete=False,
-                                enable_subtitle=False, callbacks=[])
-    # nls.enableTrace(True)
-    tts.start(TEXT, ssml_label, 0.5)
-    duration = get_audio_duration(tts.BytesIO, )
-    print(f'duration:{duration}')
-    ogg, duration = wav2ogg(tts.BytesIO)
-    print(f'durations:{duration} ms')
+    # # 阿里云TTS:
+    # tts = aliyun_TTS_threadsRUN(accessKey_id, accessKey_secret, appkey=appKey, tts_name='测试例子',
+    #                             audio_path=tts_out_path, voice=voice, wait_complete=False,
+    #                             enable_subtitle=False, callbacks=[])
+    # # nls.enableTrace(True)
+    # tts.start(TEXT, ssml_label, 0.5)
+    # duration = get_audio_duration(tts.BytesIO, )
+    # print(f'duration:{duration}')
+    # ogg, duration = wav2ogg(tts.BytesIO)
+    # print(f'durations:{duration} ms')
 
     # 多线程循环:
     # for voice in female_speakers:
@@ -493,26 +617,14 @@ if __name__ == '__main__':
     #         if not con_fig:
     #          break
 
-    # 测试media上传, succeed!:
-    # import requests
-    # import dingtalk_stream
-    #
-    # config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
-    # client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_charGLM", option1='client_id',
-    #                                        option2='client_secret')
-    # credential = dingtalk_stream.Credential(client_id, client_secret)
-    # client = dingtalk_stream.DingTalkStreamClient(credential)
-    #
-    # media = ('audio_file.wav', tts.BytesIO, 'audio/wav')
-    # media_type = 'voice'
-    # media_content = {'media': media }
-    # access_token = client.get_access_token()
-    # api = f"https://oapi.dingtalk.com/media/upload?access_token={access_token}&type={media_type}"
-    # response = requests.post(api, files=media_content)
-    # # print(response.text)
-    # text_dict = json.loads(response.text)  # 将str转成dict
-    # media_id = None
-    # if 'media_id' in text_dict:
-    #     media_id = text_dict['media_id']
-    # else:
-    #     print(f"response upon uploading: {text_dict}")
+    # Azure TTS:
+    logger = setup_logger()
+    config_path = r"e:\Python_WorkSpace\config\Azure_Resources.ini"
+    key, region = config_read(
+        config_path=config_path, section="Azure_TTS", option1="key", option2="region"
+    )
+
+    azure_TTS_instance = azure_TTS( key,    region, logger=logger)
+    azure_TTS_instance.start(text=TEXT, style=ssml_label, styledegree=1)
+
+
