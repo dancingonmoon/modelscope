@@ -1,18 +1,25 @@
 # !/usr/bin/env python
 # -*- coding: utf-8 -*-
-from ChatBOT_APP import config_read, setup_logger, VoiceChatHandler, PromptTextHandler, EchoTextHandler
+from ChatBOT_APP import (
+    config_read,
+    setup_logger,
+    VoiceChatHandler,
+    PromptTextHandler,
+    EchoTextHandler,
+)
 import sys
 import zhipuai
 import dingtalk_stream
 from chatbotClass_utilies import ChatbotMessage_Utilies
 
-sys.path.append('../GLM')  # 将上一级目录的/GLM目录添加到系统路径中
+sys.path.append("../GLM")  # 将上一级目录的/GLM目录添加到系统路径中
 # from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
 history_prompt = []  # 初始值定义为空列表,以与后续列表进行extend()拼接
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     characterGLM_chat_flag = True  # True时,characterglm,需要zhipuai库版本<=1.07
     voiceMessage_chat_flag = True
+    aliyun_azure = True # 个性化ptts,目前只在aliyun TTS
 
     if characterGLM_chat_flag is False:
         from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
@@ -23,7 +30,7 @@ if __name__ == '__main__':
     config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
     config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
     config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
-
+    config_path_azure = r"e:/Python_WorkSpace/config/Azure_Resources.ini"
     # bot_info = """
     # 杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。
     # 2008年，凭借古装剧《王昭君》获得第24届中国电视金鹰奖观众喜爱的电视剧女演员奖提名 。2009年，在“80后新生代娱乐大明星”评选中被评为“四小花旦”。
@@ -44,38 +51,82 @@ if __name__ == '__main__':
     tts_out_path = None
 
     if characterGLM_chat_flag:  # 角色扮演机器人聊天
-        zhipuai_key = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key", option2=None)
+        zhipuai_key = config_read(
+            config_path_zhipuai,
+            section="zhipuai_SDK_API",
+            option1="api_key",
+            option2=None,
+        )
         zhipuai.api_key = zhipuai_key
-        client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_HumanoidRobot",
-                                               option1='client_id',
-                                               option2='client_secret')
+        client_id, client_secret = config_read(
+            config_path_dtApp,
+            section="DingTalkAPP_HumanoidRobot",
+            option1="client_id",
+            option2="client_secret",
+        )
         credential = dingtalk_stream.Credential(client_id, client_secret)
         client = dingtalk_stream.DingTalkStreamClient(credential)
         if voiceMessage_chat_flag is False:  # 角色扮演机器人, 文本聊天
-            client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, PromptTextHandler(logger))
+            client.register_callback_handler(
+                dingtalk_stream.chatbot.ChatbotMessage.TOPIC, PromptTextHandler(logger)
+            )
         else:  # 角色扮演机器人,  语音聊天
-            accessKey_id, accessKey_secret = config_read(config_path_aliyunsdk, section='aliyunsdkcore',
-                                                         option1='AccessKey_ID',
-                                                         option2='AccessKey_Secret')
-            appKey = config_read(config_path_aliyunsdk, section='APP_tts', option1='AppKey')
-            client.register_callback_handler(ChatbotMessage_Utilies.TOPIC,
-                                             VoiceChatHandler(accessKey_id, accessKey_secret, region_id='cn-shanghai',
-                                                              appKey=appKey, tts_name='Example',
-                                                              audio_path=tts_out_path, aformat='wav', voice=voice,
-                                                              speech_rate=0, pitch_rate=0, wait_complete=False,
-                                                              enable_subtitle=False, enable_ptts=False,
-                                                              callbacks=[], logger=logger,
-                                                              zhipuai=zhipuai,
-                                                              history_prompt=history_prompt, bot_info=bot_info,
-                                                              bot_name=bot_name, user_name=user_name,
-                                                              user_info=user_info,
-                                                              ))
+            accessKey_id, accessKey_secret = config_read(
+                config_path_aliyunsdk,
+                section="aliyunsdkcore",
+                option1="AccessKey_ID",
+                option2="AccessKey_Secret",
+            )
+            appKey = config_read(
+                config_path_aliyunsdk, section="APP_tts", option1="AppKey"
+            )
+            azure_key, azure_region = config_read(
+                config_path=config_path_azure,
+                section="Azure_TTS",
+                option1="key",
+                option2="region",
+            )
+            client.register_callback_handler(
+                ChatbotMessage_Utilies.TOPIC,
+                VoiceChatHandler(
+                    accessKey_id,
+                    accessKey_secret,
+                    aliyun_region_id="cn-shanghai",
+                    aliyun_appKey=appKey,
+                    tts_name="Example",
+                    audio_path=tts_out_path,
+                    aformat="wav",
+                    aliyun_voice=voice,
+                    speech_rate=0,
+                    pitch_rate=0,
+                    wait_complete=False,
+                    enable_subtitle=False,
+                    enable_ptts=False,
+                    callbacks=[],
+                    aliyun_azure=aliyun_azure,
+                    azure_key=azure_key,
+                    azure_region=azure_region,
+                    logger=logger,
+                    zhipuai=zhipuai,
+                    history_prompt=history_prompt,
+                    bot_info=bot_info,
+                    bot_name=bot_name,
+                    user_name=user_name,
+                    user_info=user_info,
+                ),
+            )
 
     else:  # GLM 办公助手, 文本聊
-        client_id, client_secret = config_read(config_path_dtApp, section="DingTalkAPP_chatGLM", option1='client_id',
-                                               option2='client_secret')
+        client_id, client_secret = config_read(
+            config_path_dtApp,
+            section="DingTalkAPP_chatGLM",
+            option1="client_id",
+            option2="client_secret",
+        )
         credential = dingtalk_stream.Credential(client_id, client_secret)
         client = dingtalk_stream.DingTalkStreamClient(credential)
-        client.register_callback_handler(dingtalk_stream.chatbot.ChatbotMessage.TOPIC, EchoTextHandler(logger))
+        client.register_callback_handler(
+            dingtalk_stream.chatbot.ChatbotMessage.TOPIC, EchoTextHandler(logger)
+        )
 
     client.start_forever()

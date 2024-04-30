@@ -23,7 +23,7 @@ def config_read(
 
 
 
-config_path = r"e:\Python_WorkSpace\config\Azure_Resources.ini"
+config_path = r"e:/Python_WorkSpace/config/Azure_Resources.ini"
 # Creates an instance of a speech config with specified subscription key and service region.
 key, region = config_read(
     config_path=config_path, section="Azure_TTS", option1="key", option2="region"
@@ -57,6 +57,7 @@ ssml_string = """
   </voice>
 </speak>
 """
+
 
 # use the default speaker as audio output.
 speech_synthesizer = speechsdk.SpeechSynthesizer(

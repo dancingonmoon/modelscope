@@ -23,4 +23,7 @@ cd alibabacloud-nls-python-sdk-1.0.0 # 进入压缩文件解压之后的文件�
 python -m pip install -r requirements.txt
 python -m pip install .
 
+# 安装Azure语音合成库:
+pip install --upgrade azure-cognitiveservices-speech
+
 

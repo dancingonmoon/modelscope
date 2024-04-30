@@ -461,13 +461,20 @@ class azure_TTS:
     :return:
     """
 
-    def __init__(self, key, region, logger: logging.Logger = None):
+    def __init__(
+        self,
+        key,
+        region,
+        voice_name: str = "zh-CN-XiaoxiaoNeural",
+        logger: logging.Logger = None,
+    ):
         """
 
         :param key: azure AI TTS key
         :param region: azure AI TTS region
+        :param voice_name: azure AI TTS voice
         :param logger:
-        return : 流形式的音频输出在内存对象self.stream中
+        return : 流形式的音频输出在内存对象self.stream中;同时SpeechSynthesisResult中直接读取audio_data, audio_duration
         """
 
         speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
@@ -475,40 +482,56 @@ class azure_TTS:
             speechsdk.SpeechSynthesisOutputFormat.Ogg16Khz16BitMonoOpus
         )
         speech_config.speech_synthesis_voice_name = (
-            "zh-CN-XiaoxiaoNeural"  # "en-US-AvaMultilingualNeural"
+            voice_name
+            # "zh-CN-XiaoxiaoNeural"  # "en-US-AvaMultilingualNeural"
         )
         self.speech_synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=speech_config, audio_config=None
         )
 
+        self.voice_name = voice_name
         self.logger = logger
         self.stream = None
 
     def start(
         self,
-        voice_name="zh-CN-XiaoxiaoNeural",
         text=None,
         style: str = None,
         styledegree: int = 1,
     ):
+        """
+        style不为None时,将text添加style转成ssml格式,获取ogg格式音频,并在正确完成语音合成后,获得音频长度,单位ms;
+        语音合成成功时, 以流形式输出音频,存放在self.stream属性中.
+        :param text:
+        :param style:
+        :param styledegree: 强度
+        :return:
+        """
         if style is None:
             ssml_text = text
+            result = self.speech_synthesizer.speak_text_async(ssml_text).get()
         else:
             ssml_text = f"""
 <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN">
-  <voice name={voice_name}>
-        <mstts:express-as  style={style} styledegree={styledegree}>
+  <voice name="{self.voice_name}">
+        <mstts:express-as  style="{style}" styledegree="{styledegree}">
             {text}
         </mstts:express-as>        
   </voice>
 </speak>
 """
-        result = self.speech_synthesizer.speak_text_async(ssml_text).get()
-        self.stream = speechsdk.AudioDataStream(result)
+            result = self.speech_synthesizer.speak_ssml_async(ssml_text).get()
+
+        self.stream = speechsdk.AudioDataStream(result) # 流形式内存存放
         # stream.save_to_wav_file("path/to/write/file.wav")
 
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
             self.logger.info("Speech synthesized completed !")
+            # 流形式之外,语音合成结束后,直接读取audio_data, audio_duration;
+            audio_data = result.audio_data
+            audio_duration = result.audio_duration
+            duration = int(audio_duration.total_seconds()*1000) # datetime.timedelta()格式获得秒,再转成ms
+            return audio_data,duration
 
         elif result.reason == speechsdk.ResultReason.Canceled:
             cancellation_details = result.cancellation_details
@@ -524,7 +547,7 @@ class azure_TTS:
 if __name__ == "__main__":
     from ChatBOT_APP import config_read, setup_logger
 
-    # 获取 accessKey_id, accessKey_secret:
+    # 获取 aliyun_accessKey_id, aliyun_accessKey_secret:
     config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
     accessKey_id, accessKey_secret = config_read(
         config_path_aliyunsdk,
@@ -533,7 +556,7 @@ if __name__ == "__main__":
         option2="AccessKey_Secret",
     )
 
-    # token, expirTime = get_aliyun_aToken_viaSDK(accessKey_id, accessKey_secret)
+    # token, expirTime = get_aliyun_aToken_viaSDK(aliyun_accessKey_id, aliyun_accessKey_secret)
     appKey = config_read(config_path_aliyunsdk, section="APP_tts", option1="AppKey")
 
     # TEXT = '大壮正想去摘取花瓣，谁知阿丽和阿强突然内讧，阿丽拿去手枪向树干边的阿强射击，两声枪响，阿强直接倒入水中'
@@ -596,8 +619,8 @@ if __name__ == "__main__":
     print(ssml_label, emo_label, s_dict)
     # print(list(emotions.keys())[0])
     # # 阿里云TTS:
-    # tts = aliyun_TTS_threadsRUN(accessKey_id, accessKey_secret, appkey=appKey, tts_name='测试例子',
-    #                             audio_path=tts_out_path, voice=voice, wait_complete=False,
+    # tts = aliyun_TTS_threadsRUN(aliyun_accessKey_id, aliyun_accessKey_secret, appkey=aliyun_appKey, tts_name='测试例子',
+    #                             audio_path=tts_out_path, voice=aliyun_voice, wait_complete=False,
     #                             enable_subtitle=False, callbacks=[])
     # # nls.enableTrace(True)
     # tts.start(TEXT, ssml_label, 0.5)
@@ -609,7 +632,7 @@ if __name__ == "__main__":
     # 多线程循环:
     # for voice in female_speakers:
     #     con_fig = True
-    #     tts = TTS_threadsRUN(tts_name='测试例子', audio_path=f'./tts_{voice}_out.wav', voice=voice, wait_complete=False,
+    #     tts = TTS_threadsRUN(tts_name='测试例子', audio_path=f'./tts_{voice}_out.wav', voice=aliyun_voice, wait_complete=False,
     #                      enable_subtitle=False, callbacks=[con_fig])
     #     tts.start(TEXT_ssml)
     #     while con_fig:
@@ -624,7 +647,9 @@ if __name__ == "__main__":
         config_path=config_path, section="Azure_TTS", option1="key", option2="region"
     )
 
-    azure_TTS_instance = azure_TTS( key,    region, logger=logger)
-    azure_TTS_instance.start(text=TEXT, style=ssml_label, styledegree=1)
-
-
+    azure_TTS_instance = azure_TTS(key, region, logger=logger)
+    audio_data, audio_duration = azure_TTS_instance.start(text=TEXT, style=ssml_label, styledegree=1)
+    # azure_TTS_instance.stream.save_to_wav_file("./testExample.ogg")
+    # audio_data = azure_TTS_instance.stream.read_data()
+    with open("./testExample_result.ogg",'wb') as f:
+        f.write(audio_data)
