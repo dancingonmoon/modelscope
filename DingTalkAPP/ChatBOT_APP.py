@@ -307,24 +307,6 @@ class VoiceChatHandler(ChatbotHandler_utilies):
 
     def __init__(
         self,
-        aliyun_accessKey_id,
-        aliyun_accessKey_secret,
-        aliyun_region_id="cn-shanghai",
-        aliyun_appKey=None,
-        tts_name=None,
-        audio_path=None,
-        aformat="wav",
-        aliyun_voice="xiaoyun",
-        speech_rate=0,
-        pitch_rate=0,
-        wait_complete=False,
-        enable_subtitle=False,
-        enable_ptts=False,
-        callbacks: list = [],
-        aliyun_azure: bool = True,
-        azure_key=None,
-        azure_region=None,
-        azure_voice: str = "zh-CN-XiaoxiaoNeural",
         logger: logging.Logger = None,
         zhipuai=zhipuai,
         history_prompt=[],
@@ -333,28 +315,21 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         user_name=None,
         user_info=None,
         ssml_enabled=False,
+        TTS_process_instance=None,
     ):
+        """
+
+        :param logger:
+        :param zhipuai:
+        :param history_prompt:
+        :param bot_name:
+        :param bot_info:
+        :param user_name:
+        :param user_info:
+        :param ssml_enabled: 是否使用ssml标记以获得语音style
+        :param TTS_process_instance: 自定义TTS_process类的初始化后的实例,用于实现语音合成,其中aliyun TTS与azure TTS可选
+        """
         super(VoiceChatHandler, self).__init__()
-        # aliyun TTS 参数:
-        self.aliyun_accessKey_id = aliyun_accessKey_id
-        self.aliyun_accessKey_secret = aliyun_accessKey_secret
-        self.aliyun_region_id = aliyun_region_id
-        self.aliyun_appKey = aliyun_appKey
-        self.tts_name = tts_name
-        self.audio_path = audio_path
-        self.aformat = aformat
-        self.aliyun_voice = aliyun_voice
-        self.speech_rate = speech_rate
-        self.pitch_rate = pitch_rate
-        self.wait_complete = wait_complete
-        self.enable_subtitle = enable_subtitle
-        self.enable_ptts = enable_ptts
-        self.callbacks = callbacks
-        # Azure TTS 参数:
-        self.aliyun_azure = aliyun_azure
-        self.azure_key = azure_key
-        self.azure_region = azure_region
-        self.azure_voice = azure_voice
 
         self.logger = logger
 
@@ -365,6 +340,8 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         self.user_name = user_name
         self.user_info = user_info
         self.ssml_enabled = ssml_enabled
+
+        self.TTS_process_instance = TTS_process_instance
 
     async def process(self, callback: dingtalk_stream.CallbackMessage):
         global history_prompt
@@ -396,72 +373,9 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         # self.logger.info(f"生成的text:{text}")
         history_prompt.extend([{"role": "assistant", "content": text}])
 
-        # Text To Speech:
-        TTS_process_instance = TTS_process(
-            aliyun_accessKey_id=self.aliyun_accessKey_id,
-            aliyun_accessKey_secret=self.aliyun_accessKey_secret,
-            aliyun_region_id=self.aliyun_region_id,
-            aliyun_appKey=self.aliyun_appKey,
-            tts_name=self.tts_name,
-            aformat=self.aformat,
-            aliyun_voice=self.aliyun_voice,
-            speech_rate=self.speech_rate,
-            pitch_rate=self.pitch_rate,
-            wait_complete=self.wait_complete,
-            enable_subtitle=self.enable_subtitle,
-            enable_ptts=self.enable_ptts,
-            callbacks=self.callbacks,
-            aliyun_azure=self.aliyun_azure,
-            azure_key=self.azure_key,
-            azure_region=self.azure_region,
-            azure_voice=self.azure_voice,
-            logger=self.logger,
-        )
-        audio_content, duration = TTS_process_instance.start(
+        audio_content, duration = self.TTS_process_instance.start(
             text, ssml_enabled=self.ssml_enabled, ssml_intensity=1, styledegree=1
         )
-        # tts_instance = aliyun_TTS_threadsRUN(
-        #     self.aliyun_accessKey_id,
-        #     self.aliyun_accessKey_secret,
-        #     appkey=self.aliyun_appKey,
-        #     tts_name=self.tts_name,
-        #     audio_path=self.audio_path,
-        #     aformat=self.aformat,
-        #     voice=self.aliyun_voice,
-        #     speech_rate=self.speech_rate,
-        #     pitch_rate=self.pitch_rate,
-        #     wait_complete=self.wait_complete,
-        #     enable_subtitle=self.enable_subtitle,
-        #     enable_ptts=self.enable_ptts,
-        #     callbacks=self.callbacks,
-        #     logger=self.logger,
-        # )
-        # # 情绪识别:
-        # if self.ssml_enabled:
-        #     ssml_label, _, _ = emotion_classification(
-        #         self.aliyun_accessKey_id, self.aliyun_accessKey_secret, text
-        #     )
-        #     # print(ssml_label, emo_label, s_dict)
-        #     # 将情绪加入到多情感语音合成中去,强度值根据效果调整
-        # else:
-        #     ssml_label = None
-        # tts_instance.start(text, ssml_label, ssml_intensity=1.1)
-        # while tts_instance.completion_status is False:
-        #     # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
-        #     time.sleep(0.0005)  # 如果是是本地硬盘I/O,建议值设为0.05
-        #
-        # # 将wav格式的音频转化成ogg格式,便于手机端传送(手机端钉钉在wav格式时,当只有几个字的时间很短时,"语音播放异常,请重试"
-        # audio_content, duration = wav2ogg(tts_instance.BytesIO)
-        # # 1)获取存盘的音频文件的时长; 2)TTS, 上传获取mediaId,:
-        # if self.audio_path is None:
-        #     duration = get_audio_duration(tts_instance.BytesIO, sample_rate=16000)
-        #     duration = int(duration)
-        #     print(f'duration:{duration}')
-        #     mediaId = self.upload2media_id(media_content=tts_instance.BytesIO, media_type='voice')
-        # else:
-        #     duration = get_audio_duration(self.audio_path, sample_rate=16000)
-        #     duration = int(duration)
-        #     mediaId = self.upload2media_id(media_content=self.audio_path, media_type='voice')
         mediaId = self.upload2media_id(media_content=audio_content, media_type="voice")
         self.logger.info(f"uploaded aliyun voice media_id: {mediaId}")
         # 发送voice message:
@@ -498,28 +412,24 @@ class TTS_process:
         self.aliyun_accessKey_id = aliyun_accessKey_id
         self.aliyun_accessKey_secret = aliyun_accessKey_secret
         self.aliyun_region_id = aliyun_region_id
+        self.aliyun_appKey = aliyun_appKey
+        self.tts_name = tts_name
+        self.aformat = aformat
+        self.aliyun_voice = aliyun_voice
+        self.speech_rate = speech_rate
+        self.pitch_rate = pitch_rate
+        self.wait_complete = wait_complete
+        self.enable_subtitle = enable_subtitle
+        self.enable_ptts = enable_ptts
+        self.callbacks = callbacks
+
         self.aliyun_azure = aliyun_azure
 
         self.logger = logger
 
         if aliyun_azure:  # 初始化aliyun　TTS
-            # Text To Speech:
-            self.aliyun_tts_instance = aliyun_TTS_threadsRUN(
-                aliyun_accessKey_id,
-                aliyun_accessKey_secret,
-                aliyun_region_id,
-                appkey=aliyun_appKey,
-                tts_name=tts_name,
-                aformat=aformat,
-                voice=aliyun_voice,
-                speech_rate=speech_rate,
-                pitch_rate=pitch_rate,
-                wait_complete=wait_complete,
-                enable_subtitle=enable_subtitle,
-                enable_ptts=enable_ptts,
-                callbacks=callbacks,
-                logger=logger,
-            )
+            pass  # 由于aliyun_TTS_threadsRUN为多线程,每次初始化一个线程即运行一次调用,所以放在后面start里面初始化
+
         else:  # 初始化 azure TTS:
             self.azure_TTS_instance = azure_TTS(
                 azure_key, azure_region, voice_name=azure_voice, logger=logger
@@ -539,15 +449,31 @@ class TTS_process:
             ssml_label = None
         if aliyun_azure:  # 使用aliyun　TTS
             # Text To Speech:
+            aliyun_tts_instance = aliyun_TTS_threadsRUN(
+                self.aliyun_accessKey_id,
+                self.aliyun_accessKey_secret,
+                self.aliyun_region_id,
+                appkey=self.aliyun_appKey,
+                tts_name=self.tts_name,
+                aformat=self.aformat,
+                voice=self.aliyun_voice,
+                speech_rate=self.speech_rate,
+                pitch_rate=self.pitch_rate,
+                wait_complete=self.wait_complete,
+                enable_subtitle=self.enable_subtitle,
+                enable_ptts=self.enable_ptts,
+                callbacks=self.callbacks,
+                logger=self.logger,
+            )
             # 将情绪加入到多情感语音合成中去,强度值根据效果调整
-            self.aliyun_tts_instance.start(
+            aliyun_tts_instance.start(
                 text, ssml_label, ssml_intensity=ssml_intensity
             )
-            while self.aliyun_tts_instance.completion_status is False:
+            while aliyun_tts_instance.completion_status is False:
                 # self.logger.info(f"tts_instance.completion_status: {tts_instance.completion_status}")
                 time.sleep(0.0005)  # 如果是是本地硬盘I/O,建议值设为0.05
             # 将wav格式的音频转化成ogg格式,便于手机端传送(手机端钉钉在wav格式时,当只有几个字的时间很短时,"语音播放异常,请重试"
-            audio_content, duration = wav2ogg(self.aliyun_tts_instance.BytesIO)
+            audio_content, duration = wav2ogg(aliyun_tts_instance.BytesIO)
 
         else:  # 使用azure TTS:
             audio_content, duration = self.azure_TTS_instance.start(
@@ -561,6 +487,7 @@ if __name__ == "__main__":
     characterGLM_chat_flag = True  # True时,characterglm,需要zhipuai库版本<=1.07
     voiceMessage_chat_flag = True
     aliyun_azure = False  # True:使用aliyun TTS;False:使用azure TTS
+    ssml_enabled = True
 
     if characterGLM_chat_flag is False:
         from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
@@ -605,13 +532,13 @@ if __name__ == "__main__":
                 dingtalk_stream.chatbot.ChatbotMessage.TOPIC, PromptTextHandler(logger)
             )
         else:  # 角色扮演机器人,  语音聊天
-            accessKey_id, accessKey_secret = config_read(
+            aliyun_accessKey_id, aliyun_accessKey_secret = config_read(
                 config_path_aliyunsdk,
                 section="aliyunsdkcore",
                 option1="AccessKey_ID",
                 option2="AccessKey_Secret",
             )
-            appKey = config_read(
+            aliyun_appKey = config_read(
                 config_path_aliyunsdk, section="APP_tts", option1="AppKey"
             )
             azure_key, azure_region = config_read(
@@ -620,26 +547,30 @@ if __name__ == "__main__":
                 option1="key",
                 option2="region",
             )
+
+            TTS_process_instance = TTS_process(
+                aliyun_accessKey_id,
+                aliyun_accessKey_secret,
+                aliyun_region_id="cn-shanghai",
+                aliyun_appKey=aliyun_appKey,
+                tts_name="Example",
+                aformat="wav",
+                aliyun_voice=voice,
+                speech_rate=0,
+                pitch_rate=0,
+                wait_complete=False,
+                enable_subtitle=False,
+                enable_ptts=False,
+                callbacks=[],
+                aliyun_azure=aliyun_azure,
+                azure_key=azure_key,
+                azure_region=azure_region,
+                logger=logger,
+            )
+
             client.register_callback_handler(
                 ChatbotMessage_Utilies.TOPIC,
                 VoiceChatHandler(
-                    accessKey_id,
-                    accessKey_secret,
-                    aliyun_region_id="cn-shanghai",
-                    aliyun_appKey=appKey,
-                    tts_name="Example",
-                    audio_path=tts_out_path,
-                    aformat="wav",
-                    aliyun_voice=voice,
-                    speech_rate=0,
-                    pitch_rate=0,
-                    wait_complete=False,
-                    enable_subtitle=False,
-                    enable_ptts=False,
-                    callbacks=[],
-                    aliyun_azure=aliyun_azure,
-                    azure_key=azure_key,
-                    azure_region=azure_region,
                     logger=logger,
                     zhipuai=zhipuai,
                     history_prompt=history_prompt,
@@ -647,6 +578,8 @@ if __name__ == "__main__":
                     bot_name=bot_name,
                     user_name=user_name,
                     user_info=user_info,
+                    ssml_enabled=ssml_enabled,
+                    TTS_process_instance=TTS_process_instance,
                 ),
             )
 

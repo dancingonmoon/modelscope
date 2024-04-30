@@ -481,10 +481,7 @@ class azure_TTS:
         speech_config.set_speech_synthesis_output_format(
             speechsdk.SpeechSynthesisOutputFormat.Ogg16Khz16BitMonoOpus
         )
-        speech_config.speech_synthesis_voice_name = (
-            voice_name
-            # "zh-CN-XiaoxiaoNeural"  # "en-US-AvaMultilingualNeural"
-        )
+        speech_config.speech_synthesis_voice_name = voice_name
         self.speech_synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=speech_config, audio_config=None
         )
