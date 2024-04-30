@@ -447,7 +447,7 @@ class TTS_process:
             )
         else:
             ssml_label = None
-        if aliyun_azure:  # 使用aliyun　TTS
+        if self.aliyun_azure:  # 使用aliyun　TTS
             # Text To Speech:
             aliyun_tts_instance = aliyun_TTS_threadsRUN(
                 self.aliyun_accessKey_id,

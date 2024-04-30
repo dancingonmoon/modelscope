@@ -6,6 +6,7 @@ from ChatBOT_APP import (
     VoiceChatHandler,
     PromptTextHandler,
     EchoTextHandler,
+    TTS_process,
 )
 import sys
 import zhipuai
@@ -19,17 +20,18 @@ history_prompt = []  # 初始值定义为空列表,以与后续列表进行exten
 if __name__ == "__main__":
     characterGLM_chat_flag = True  # True时,characterglm,需要zhipuai库版本<=1.07
     voiceMessage_chat_flag = True
-    aliyun_azure = True # 个性化ptts,目前只在aliyun TTS
+    aliyun_azure = True  # 个性化ptts,目前只在aliyun TTS
+    ssml_enabled = True
 
     if characterGLM_chat_flag is False:
         from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
 
     logger = setup_logger()
     # options = define_options()
-    config_path_dtApp = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
-    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
-    config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
+    config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
+    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
     config_path_azure = r"e:/Python_WorkSpace/config/Azure_Resources.ini"
     # bot_info = """
     # 杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。
@@ -71,13 +73,13 @@ if __name__ == "__main__":
                 dingtalk_stream.chatbot.ChatbotMessage.TOPIC, PromptTextHandler(logger)
             )
         else:  # 角色扮演机器人,  语音聊天
-            accessKey_id, accessKey_secret = config_read(
+            aliyun_accessKey_id, aliyun_accessKey_secret = config_read(
                 config_path_aliyunsdk,
                 section="aliyunsdkcore",
                 option1="AccessKey_ID",
                 option2="AccessKey_Secret",
             )
-            appKey = config_read(
+            aliyun_appKey = config_read(
                 config_path_aliyunsdk, section="APP_tts", option1="AppKey"
             )
             azure_key, azure_region = config_read(
@@ -86,26 +88,28 @@ if __name__ == "__main__":
                 option1="key",
                 option2="region",
             )
+            TTS_process_instance = TTS_process(
+                aliyun_accessKey_id,
+                aliyun_accessKey_secret,
+                aliyun_region_id="cn-shanghai",
+                aliyun_appKey=aliyun_appKey,
+                tts_name="Example",
+                aformat="wav",
+                aliyun_voice=voice,
+                speech_rate=0,
+                pitch_rate=0,
+                wait_complete=False,
+                enable_subtitle=False,
+                enable_ptts=False,
+                callbacks=[],
+                aliyun_azure=aliyun_azure,
+                azure_key=azure_key,
+                azure_region=azure_region,
+                logger=logger,
+            )
             client.register_callback_handler(
                 ChatbotMessage_Utilies.TOPIC,
                 VoiceChatHandler(
-                    accessKey_id,
-                    accessKey_secret,
-                    aliyun_region_id="cn-shanghai",
-                    aliyun_appKey=appKey,
-                    tts_name="Example",
-                    audio_path=tts_out_path,
-                    aformat="wav",
-                    aliyun_voice=voice,
-                    speech_rate=0,
-                    pitch_rate=0,
-                    wait_complete=False,
-                    enable_subtitle=False,
-                    enable_ptts=False,
-                    callbacks=[],
-                    aliyun_azure=aliyun_azure,
-                    azure_key=azure_key,
-                    azure_region=azure_region,
                     logger=logger,
                     zhipuai=zhipuai,
                     history_prompt=history_prompt,
@@ -113,6 +117,8 @@ if __name__ == "__main__":
                     bot_name=bot_name,
                     user_name=user_name,
                     user_info=user_info,
+                    ssml_enabled=ssml_enabled,
+                    TTS_process_instance=TTS_process_instance,
                 ),
             )
 
