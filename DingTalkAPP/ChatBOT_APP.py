@@ -490,10 +490,10 @@ class TTS_process:
 
 if __name__ == "__main__":
 
-    characterGLM_chat_flag = False  # True时,characterglm,需要zhipuai库版本<=1.07
+    characterGLM_chat_flag = True  # True时,characterglm,需要zhipuai库版本<=1.07
     voiceMessage_chat_flag = True
-    aliyun_azure = False  # True:使用aliyun TTS;False:使用azure TTS
-    ssml_enabled = True
+    aliyun_azure = True  # True:使用aliyun TTS;False:使用azure TTS
+    ssml_enabled = False # True
 
     if characterGLM_chat_flag is False:
         from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
@@ -511,7 +511,8 @@ if __name__ == "__main__":
     bot_name = "茜茜"
     user_info = "喜欢刘亦菲的男孩一枚"
     user_name = "用户"
-    voice = "zhiyan_emo"  # zhiyan的声音,略微的更女性化些;
+    # voice = "zhiyan_emo"  # zhiyan的声音,略微的更女性化些;
+    voice = "zhixiaoxia" # 对话数字人, 不支持多情感; 显然这个voice更适合日常对话, 语气生活化些.
     # voice = "voice-f90ed52" # 个性化声音
     today = datetime.datetime.today().strftime("%y%m%d")
     # tts_out_path = f'tts_{voice}_{today}.wav'
