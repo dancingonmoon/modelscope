@@ -230,7 +230,13 @@ class PromptTextHandler(dingtalk_stream.ChatbotHandler):
         global history_prompt
         callback_data = callback.data
         incoming_message = dingtalk_stream.ChatbotMessage.from_dict(callback_data)
-        text = incoming_message.text.content.strip()
+        # 文本,语音消息分别判断后处理:
+        if incoming_message.message_type == "text":
+            text = incoming_message.text.content.strip()
+        elif incoming_message.message_type == "audio":
+            text = incoming_message.audio_recognition
+            self.reply_text(f"你:{text}", incoming_message)
+
         if change_topic_str_Detect(text):
             history_prompt = []
         prompt = [{"role": "user", "content": text}]
@@ -484,7 +490,7 @@ class TTS_process:
 
 if __name__ == "__main__":
 
-    characterGLM_chat_flag = True  # True时,characterglm,需要zhipuai库版本<=1.07
+    characterGLM_chat_flag = False  # True时,characterglm,需要zhipuai库版本<=1.07
     voiceMessage_chat_flag = True
     aliyun_azure = False  # True:使用aliyun TTS;False:使用azure TTS
     ssml_enabled = True
@@ -494,11 +500,11 @@ if __name__ == "__main__":
 
     logger = setup_logger()
     # options = define_options()
-    config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
-    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
-    config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
-    config_path_azure = r"e:/Python_WorkSpace/config/Azure_Resources.ini"
+    config_path_dtApp = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
+    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
+    config_path_azure = r"l:/Python_WorkSpace/config/Azure_Resources.ini"
 
     # bot_info = "杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。2008年，凭借古装剧《王昭君》获得第24届中国电视金鹰奖观众喜爱的电视剧女演员奖提名 。2009年，在“80后新生代娱乐大明星”评选中被评为“四小花旦”。2011年，凭借穿越剧《宫锁心玉》赢得广泛关注 ，并获得了第17届上海电视节白玉兰奖观众票选最具人气女演员奖。2012年，不仅成立杨幂工作室，还凭借都市剧《北京爱情故事》获得了多项荣誉 。2015年，主演的《小时代》系列电影票房突破18亿人民币 。2016年，其主演的职场剧《亲爱的翻译官》取得全国年度电视剧收视冠军 。2017年，杨幂主演的神话剧《三生三世十里桃花》获得颇高关注；同年，她还凭借科幻片《逆时营救》获得休斯顿国际电影节最佳女主角奖 。2018年，凭借古装片《绣春刀Ⅱ：修罗战场》获得北京大学生电影节最受大学生欢迎女演员奖 [4]；。2014年1月8日，杨幂与刘恺威在巴厘岛举办了结婚典礼。同年6月1日，在香港产下女儿小糯米。"
     bot_info = "刘亦菲（Crystal Liu,1987年8月25日-）,生于湖北省武汉市,毕业于北京电影学院,美籍华裔女演员、歌手.2002年,因出演电视剧《金粉世家》中白秀珠一角踏入演艺圈.2003年,因主演武侠剧《天龙八部》王语嫣崭露头角.2004年,凭借仙侠剧《仙剑奇侠传》赵灵儿一角获得了高人气.2005年,因在《神雕侠侣》中饰演小龙女受到关注.2006年,发行首张国语专辑《刘亦菲》和日语专辑《All My Words》.2008年起,转战大银幕,凭借好莱坞电影《功夫之王》成为首位荣登IMDB电影新人排行榜榜首的亚洲女星.2020年3月,为电影《花木兰》演唱中文主题曲《自己》；同年9月,主演的电影《花木兰》在Disney+上线,在剧中饰演花木兰；11月,凭借《花木兰》获首届评论家选择超级奖动作电影最佳女演员提名；2022年12月21日,凭借《梦华录》获第十三届澳门国际电视节金莲花最佳女主角奖.9月1日,凭借《梦华录》获得首届金熊猫奖电视剧单元最佳女主角提名.2023年12月28日,凭借《去有风的地方》获得第十四届澳门国际电视节'金莲花'最佳女主角奖"

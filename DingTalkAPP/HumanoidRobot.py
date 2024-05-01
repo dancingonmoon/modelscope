@@ -28,11 +28,11 @@ if __name__ == "__main__":
 
     logger = setup_logger()
     # options = define_options()
-    config_path_dtApp = r"e:/Python_WorkSpace/config/DingTalk_APP.ini"
-    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
-    config_path_aliyunsdk = r"e:/Python_WorkSpace/config/aliyunsdkcore.ini"
-    config_path_azure = r"e:/Python_WorkSpace/config/Azure_Resources.ini"
+    config_path_dtApp = r"l:/Python_WorkSpace/config/DingTalk_APP.ini"
+    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
+    config_path_azure = r"l:/Python_WorkSpace/config/Azure_Resources.ini"
     # bot_info = """
     # 杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。
     # 2008年，凭借古装剧《王昭君》获得第24届中国电视金鹰奖观众喜爱的电视剧女演员奖提名 。2009年，在“80后新生代娱乐大明星”评选中被评为“四小花旦”。

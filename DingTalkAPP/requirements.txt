@@ -26,4 +26,9 @@ python -m pip install .
 # 安装Azure语音合成库:
 pip install --upgrade azure-cognitiveservices-speech
 
+# 如果是linux ubuntu, 应安装 ca-certificates 以建立安全的 Websocket 并避免此 WS_OPEN_ERROR_UNDERLYING_IO_OPEN_FAILED 错误。需运行以下 命令：
+# sudo apt-get update
+# sudo apt-get install build-essential libssl-dev ca-certificates libasound2 wget
+
+
 
