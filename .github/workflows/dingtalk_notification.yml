@@ -1,0 +1,17 @@
+yaml
+name: DingTalk Notification
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  send_notification:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification to DingTalk
+        env:
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+        run: |
+          curl -H "Content-Type: application/json" -d '{"msgtype":"text","text":{"content":"New push event on GitHub!"}}' $DINGTALK_WEBHOOK
