@@ -2,6 +2,7 @@ from typing import Union, Annotated
 from fastapi import FastAPI, Path
 from pydantic import BaseModel
 import datetime
+import hashlib
 
 description = """
 ## 微信公众号开发者服务器.🦬
@@ -22,16 +23,29 @@ class Item(BaseModel):
 @app.get("/wx")
 async def token_validation(
         signature:str,
-        timestamp:datetime.datetime,
+        timestamp:int,
         nonce:str,
         echostr:str
 ):
-    item = {"item_id": item_id, "owner_id": user_id}
-    if q:
-        item["q"] = q
-    if not short:
-        item['description'] = "long description"
-    return item
+    try:
+        # if len(data) == 0:
+        #     return "hello, this is handle view"
+        token = "lockup" #请按照公众平台官网\基本配置中信息填写
+
+        list = [token, timestamp, nonce]
+        list.sort()
+        sha1 = hashlib.sha1()
+        map(sha1.update, list)
+        hashcode = sha1.hexdigest()
+        print(f"handle/GET func: hashcode:{hashcode}, signature:{signature}")
+        if hashcode == signature:
+            return echostr
+        else:
+            return ""
+    except Exception, Argument:
+        return Argument
+
+
 
 @app.put("/items/{item_id}")
 async def update_item(
