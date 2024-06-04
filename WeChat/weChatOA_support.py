@@ -91,7 +91,6 @@ def get_signature(token, timestamp, nonce):
     """
     sort_list = [str(token), str(timestamp), str(nonce)]
     sort_list.sort()
-    # sort_list = ''.join(sort_list).encode('utf-8') #将字符串转换成字节串;因为map(sha1,sort_list)需要的是字节串
     sha1 = hashlib.sha1()  # 进行sha1计算签名
     # 将字符串转换为字节
     byte_list = map(lambda x: x.encode("utf-8"), sort_list)
@@ -104,11 +103,11 @@ def get_signature(token, timestamp, nonce):
 
 
 if __name__ == "__main__":
-    config_path = "e:/Python_WorkSpace/config/WeChat_OpenAPI.ini"
+    config_path = "l:/Python_WorkSpace/config/WeChat_OpenAPI.ini"
     AppID, AppSecret = config_read(
         config_path, section="weChatOA", option1="AppID", option2="AppSecret"
     )
-    existing_aToken_dict = {'access_token': '81_g_pW4WO_TXhOqcmTGs4XJZBkmuKwL2Wbkr5FLvCWwPeoGFbc_GdsGzgyWV6BeaCHId-oRFceoE7JeLol0LNHloOxvXqtv8j5lsVWI1E8Sul4F-Mjkqgcp5fvTL8NRCbAHATXI', 'expires_in': 7200, 'expireTime': 1717410212}
+    existing_aToken_dict = {'access_token': '81_Wnxo8BNxkVd6Vbt1-wnTiqBsKNMyuTB6dQBFfaOrZ1RqagH6wnySyC6RIxupy_VtYH_iHIhunk4z8cD3IqlE3edZ9PdYuE76AfX3pLXNoY72Pbmh-LJY5dFW9_kWUDgACADBK', 'expires_in': 7200, 'expireTime': 1717518538}
     access_token = get_WeChat_accessToken(AppID, AppSecret, existing_aToken_dict)
     # token = "lockup"
     # timestamp = 1717401318

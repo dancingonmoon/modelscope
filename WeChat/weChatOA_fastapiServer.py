@@ -2,6 +2,7 @@ from typing import Union, Annotated
 from fastapi import FastAPI, Path
 from pydantic import BaseModel
 from weChatOA_support import get_signature
+import json
 
 description = """
 ## 微信公众号开发者服务器.🦬
@@ -26,22 +27,26 @@ class Item(BaseModel):
 
 
 @app.get("/wx")
-async def token_validation(signature: str, timestamp: int, nonce: int, echostr: str):
+async def token_validation(signature: str, timestamp: int, nonce: int, echostr: bytes):
     """
     每次微信服务器向开发者服务器消息推动,微信服务器会对开发者服务器发起验证，请在提交前按以下方式开发： 微信服务器将发送GET请求到填写的服务器地址URL上， GET请求携带参数如下
-    :param signature: 签名
-    :param timestamp: 时间戳
-    :param nonce: 随机数
-    :param echostr: 随机字符串
-    :return:
+    signature: 签名
+    timestamp: 时间戳
+    nonce: 随机数
+    echostr: 随机字符串
+    :return: echostr
     """
     try:
         token = "lockup"  # 请按照公众平台官网\基本配置中信息填写
 
         hashcode = get_signature(token, timestamp, nonce)
-        print(f"handle/GET func: hashcode:{hashcode}, signature:{signature}")
+        # print(f"handle/GET func: hashcode:{hashcode}, signature:{signature}")
         if hashcode == signature:  # 签名比较合法:构造回包返回微信服务器，回包消息体内容为URL链接中的echostr参数
-            return echostr
+            # response.setContentType("application/json;charset=UTF-8")
+            # response.setCharacterEncoding("UTF-8")
+            # response.getWriter().write(echostr)
+            print(echostr)
+            return echostr  # 将字符串转化为字节串输出
         else:
             return "hashcode!=signature"
     except Exception as Argument:
