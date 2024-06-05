@@ -1,8 +1,9 @@
 from typing import Union, Annotated
-from fastapi import FastAPI, Request
-from pydantic import BaseModel, Json
+from fastapi import FastAPI, Request, Header
+from pydantic import BaseModel
 from weChatOA_support import get_signature
-import json
+import xmltodict
+import time
 
 description = """
 ## 微信公众号开发者服务器.🦬
@@ -16,6 +17,7 @@ app = FastAPI(
 
 
 class MessageBody(BaseModel):
+    URL: str # 开发者服务器地址
     ToUserName: str  # 开发者微信号
     FromUserName: str  # 发送方账号（一个OpenID）
     CreateTime: int  # 消息创建时间 （整型）
@@ -67,29 +69,43 @@ async def token_validation(signature: str, timestamp: int, nonce: int, echostr: 
     except Exception as Argument:
         return Argument
 
-class testvar(BaseModel):
-    message: Json
 @app.post("/wx")
-async def post_message(
-    message: testvar
-):
-    print(message)
-    return message
+async def post_message( request: Request,):
+    xml_message = await request.body()
+    message_dict = xmltodict.parse(xml_message)['xml']
 
-    # if message.MsgType == "text":
-    #     print({"MsgType": message.MsgType, "Content": message.Content})
-    #     return {"MsgType": message.MsgType, "Content": message.Content}
-    # elif message.MsgType == "image":
-    #     print({"MsgType": message.MsgType, "MediaId": message.MediaId})
-    #     return {"MsgType": message.MsgType, "MediaId": message.MediaId}
-    # elif message.MsgType == "voice":
-    #     print({"MsgType": message.MsgType, "MediaId": message.MediaId})
-    #     return {"MsgType": message.MsgType, "MediaId": message.MediaId}
-    # elif message.MsgType == "video":
-    #     print({"MsgType": message.MsgType, "MediaId": message.MediaId})
-    #     return {"MsgType": message.MsgType, "MediaId": message.MediaId}
-    # else:
-    #     return "Invalid MsgType"
+    if message_dict["MsgType"] == "text":
+
+        print(message_dict)
+        ToUserName = message_dict["ToUserName"]
+        FromUserName = message_dict["FromUserName"]
+        Content = f"answer: \n{message_dict['Content']}"
+        XmlForm = """
+                    <xml>
+                        <ToUserName><![CDATA[{ToUserName}]]></ToUserName>
+                        <FromUserName><![CDATA[{FromUserName}]]></FromUserName>
+                        <CreateTime>{CreateTime}</CreateTime>
+                        <MsgType><![CDATA[text]]></MsgType>
+                        <Content><![CDATA[{Content}]]></Content>
+                    </xml>
+                    """
+        # CreatTime = int(time.time())
+        # reply_dict = {"ToUserName": FromUserName, "FromUserName": ToUserName, "CreateTime": CreatTime, "MsgType": "text", "Content": Content}
+        # reply_xml_dict = {'xml': reply_dict}
+        # reply_xml = xmltodict.unparse(reply_xml_dict)
+        reply_xml = XmlForm.format(ToUserName=FromUserName, FromUserName=ToUserName, CreateTime=int(time.time()), Content=Content)
+        return reply_xml
+    elif message_dict["MsgType"] == "image":
+        print({"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]})
+        return {"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]}
+    elif message_dict["MsgType"] == "voice":
+        print({"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]})
+        return {"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]}
+    elif message_dict["MsgType"] == "video":
+        print({"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]})
+        return {"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]}
+    else:
+        return "Invalid MsgType"
 
 class Item(BaseModel):
     name: str

@@ -103,11 +103,11 @@ def get_signature(token, timestamp, nonce):
 
 
 if __name__ == "__main__":
-    config_path = "e:/Python_WorkSpace/config/WeChat_OpenAPI.ini"
+    config_path = "l:/Python_WorkSpace/config/WeChat_OpenAPI.ini"
     AppID, AppSecret = config_read(
         config_path, section="weChatOA", option1="AppID", option2="AppSecret"
     )
-    existing_aToken_dict = {'access_token': '81_LTcb1erP5JuY_1-VTlzjAtEz059NNcHixYqD0eM-qLMGHqQn8TGNECnjPHy8-bgqGMLq7uBSmeDqkzgurgZef-kIClNsHpxP66X6UFhcKaggZG9gpXZ9NF7qUKEMXEcABAHSZ', 'expires_in': 7200, 'expireTime': 1717575666}
+    existing_aToken_dict = {'access_token': '81_z5s4xNwPmXeR1HS6Y-abCMgGQATvHYx9nAi1bt0o9qiQ-xRwuqTRmISmdu7kk35Vk786UtREW4r6ZzMKHTN39H-l9XnHHSzEWP-_Q_lrCKdMP7elwF_5l7kcR5AHTOgACASEZ', 'expires_in': 7200, 'expireTime': 1717592756}
     access_token = get_WeChat_accessToken(AppID, AppSecret, existing_aToken_dict)
     # token = "lockup"
     # timestamp = 1717401318
