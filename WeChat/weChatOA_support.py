@@ -1,9 +1,9 @@
 import requests
-import json
 import logging
 import configparser
 import time
 import hashlib
+import xmltodict
 
 
 def config_read(config_path, section="weChatOA", option1="AppID", option2="AppSecret"):
@@ -102,12 +102,62 @@ def get_signature(token, timestamp, nonce):
     return hashcode
 
 
+def weChatOA_text_reply(message_dict, text_content):
+    """
+    微信公众号向开发者服务器发送消息时，开发者服务器回复指定XML格式消息给微信服务器,微信服务器可以实现消息回复.
+    本函数实现文本消息的回复
+    :message_dict: 微信服务器向开发者服务器发送的POST请求体中,包含了XML格式的消息体;该消息体转换成字典;此处为文本消息的字典
+    :text: 开发者服务器回复的文本消息
+    :return: 微信服务器要求的XML格式,实现文本消息回复
+    """
+    if message_dict["MsgType"] == "text":
+        ToUserName = message_dict["ToUserName"]
+        FromUserName = message_dict["FromUserName"]
+        # Xml文本方式:
+        # XmlForm = """
+        #             <xml>
+        #                 <ToUserName><![CDATA[{ToUserName}]]></ToUserName>
+        #                 <FromUserName><![CDATA[{FromUserName}]]></FromUserName>
+        #                 <CreateTime>{CreateTime}</CreateTime>
+        #                 <MsgType><![CDATA[text]]></MsgType>
+        #                 <Content><![CDATA[{Content}]]></Content>
+        #             </xml>
+        #             """
+        # reply_xml = XmlForm.format(ToUserName=FromUserName, FromUserName=ToUserName, CreateTime=int(time.time()), Content=text_content)
+        # xmltodict库方式:
+        reply_dict = {
+            "ToUserName": FromUserName,
+            "FromUserName": ToUserName,
+            "CreateTime": int(time.time()),
+            "MsgType": "text",
+            "Content": text_content,
+        }
+        reply_xml_dict = {"xml": reply_dict}
+        reply_xml = xmltodict.unparse(reply_xml_dict, )
+        return reply_xml
+    # elif message_dict["MsgType"] == "image":
+    #     print({"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]})
+    #     return {"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]}
+    # elif message_dict["MsgType"] == "voice":
+    #     print({"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]})
+    #     return {"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]}
+    # elif message_dict["MsgType"] == "video":
+    #     print({"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]})
+    #     return {"MsgType": message_dict["MsgType"], "MediaId": message_dict["MediaId"]}
+    # else:
+    #     return "Invalid MsgType"
+
+
 if __name__ == "__main__":
     config_path = "l:/Python_WorkSpace/config/WeChat_OpenAPI.ini"
     AppID, AppSecret = config_read(
         config_path, section="weChatOA", option1="AppID", option2="AppSecret"
     )
-    existing_aToken_dict = {'access_token': '81_z5s4xNwPmXeR1HS6Y-abCMgGQATvHYx9nAi1bt0o9qiQ-xRwuqTRmISmdu7kk35Vk786UtREW4r6ZzMKHTN39H-l9XnHHSzEWP-_Q_lrCKdMP7elwF_5l7kcR5AHTOgACASEZ', 'expires_in': 7200, 'expireTime': 1717592756}
+    existing_aToken_dict = {
+        "access_token": "81_z5s4xNwPmXeR1HS6Y-abCMgGQATvHYx9nAi1bt0o9qiQ-xRwuqTRmISmdu7kk35Vk786UtREW4r6ZzMKHTN39H-l9XnHHSzEWP-_Q_lrCKdMP7elwF_5l7kcR5AHTOgACASEZ",
+        "expires_in": 7200,
+        "expireTime": 1717592756,
+    }
     access_token = get_WeChat_accessToken(AppID, AppSecret, existing_aToken_dict)
     # token = "lockup"
     # timestamp = 1717401318
