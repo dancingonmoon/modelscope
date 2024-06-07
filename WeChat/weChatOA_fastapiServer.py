@@ -1,5 +1,5 @@
 from typing import Union, Annotated
-from fastapi import FastAPI, Request, Header
+from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel
 from weChatOA_support import get_signature, weChatOA_text_reply
 import xmltodict
@@ -85,7 +85,8 @@ async def post_message(
         """
         reply_xml = weChatOA_text_reply(message_dict, text_content)
         print(reply_xml)
-        return reply_xml
+        # headers = {"Content-Type": "text/xml; charset=utf-8"} # text/xml 其实就是html格式
+        return Response(reply_xml, media_type="application/xml", )
 
 
 if __name__ == "__main__":
