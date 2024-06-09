@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from weChatOA_support import get_signature, weChatOA_text_reply, setup_logger, config_read
 import xmltodict
 from zhipuai import ZhipuAI
+import time
 
 import sys
 
@@ -13,7 +14,7 @@ from GLM.GLM_callFunc import GLM_callFunc_SSE
 description = """
 ## 微信公众号开发者服务器.🦬
  + **get 开发者服务器token验证**
- + **get **
+ + **post 微信公众号被动回复**
 """
 app = FastAPI(
     title="微信公众号开发者服务器",
@@ -64,6 +65,21 @@ async def post_message(
         logger.info(f"模型回答: {answer}")
 
         reply_xml = weChatOA_text_reply(message_dict, answer)
+        # headers = {"Content-Type": "text/xml; charset=utf-8"} # text/xml 其实就是html格式
+        return Response(reply_xml, media_type="application/xml", )
+    else:
+        text_content = "受微信被动回复5秒限制,开发非文本消息被动回复,超时概率大,暂停..."
+        ToUserName = message_dict["ToUserName"]
+        FromUserName = message_dict["FromUserName"]
+        reply_dict = {
+            "ToUserName": FromUserName,
+            "FromUserName": ToUserName,
+            "CreateTime": int(time.time()),
+            "MsgType": "text",
+            "Content": text_content,
+        }
+        reply_xml_dict = {"xml": reply_dict}
+        reply_xml = xmltodict.unparse(reply_xml_dict, )
         # headers = {"Content-Type": "text/xml; charset=utf-8"} # text/xml 其实就是html格式
         return Response(reply_xml, media_type="application/xml", )
 
