@@ -6,7 +6,7 @@ import hashlib
 import xmltodict
 
 
-def config_read(config_path, section="weChatOA", option1="AppID", option2="AppSecret"):
+def config_read(config_path, section="weChatOA", option1="AppID", option2=None):
     """
     option2 = None 时,仅输出第一个option1的值; 否则输出section下的option1与option2两个值
     """
@@ -33,7 +33,7 @@ def setup_logger():
     logger.addHandler(console_handler)
 
     # 文件handler:
-    file_handler = logging.FileHandler("log.log")
+    file_handler = logging.FileHandler("log.log", encoding="utf-8")
     file_handler.setFormatter(
         logging.Formatter(
             "%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]"

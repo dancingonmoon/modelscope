@@ -151,7 +151,6 @@ class chatGLM_by_semanticSearch_amid_SerpAPI:
             result = f"An error occurred: {e.args}"
         return result
 
-
     def chatGLM_RAG(self, question, query, glm_model='GLM-4', web_search_enable=False, nearest_examples=None,
                     reference_key='title_snippet', ):
         """
@@ -214,7 +213,7 @@ if __name__ == "__main__":
     # print('-------chatGLM-RAG的回答:--------')
 
     scores, nearest_samples, result, output_text = semantic_search_engine.chatGLM_RAG_oneshot(question, query,
-                                                                                              'GLM-3-Turbo',
+                                                                                              'GLM-4-air',
                                                                                               web_search_enable=True,
                                                                                               k=3, rn=10)
     print(output_text)

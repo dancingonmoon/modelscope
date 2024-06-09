@@ -1,9 +1,14 @@
 from typing import Union, Annotated
 from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel
-from weChatOA_support import get_signature, weChatOA_text_reply
+from weChatOA_support import get_signature, weChatOA_text_reply, setup_logger, config_read
 import xmltodict
+from zhipuai import ZhipuAI
 
+import sys
+
+sys.path.append('../GLM')
+from GLM.GLM_callFunc import GLM_callFunc_SSE
 
 description = """
 ## 微信公众号开发者服务器.🦬
@@ -16,36 +21,6 @@ app = FastAPI(
 )
 
 
-class MessageBody(BaseModel):
-    URL: str  # 开发者服务器地址
-    ToUserName: str  # 开发者微信号
-    FromUserName: str  # 发送方账号（一个OpenID）
-    CreateTime: int  # 消息创建时间 （整型）
-    MsgType: str  # 消息类型，文本为text
-
-    MsgId: int  # 消息id，64位整型
-    MsgDataId: Union[int, None] = None  # 消息的数据ID（消息如果来自文章时才有）
-    Idx: Union[int, None] = None  # 多图文时第几篇文章，从1开始（消息如果来自文章时才有）
-
-
-class TextMessage(MessageBody):
-    Content: str  # 文本消息内容
-
-
-class ImageMessage(MessageBody):
-    PicUrl: str  # 图片链接（由系统生成）
-    MediaId: int  # 	图片消息媒体id，可以调用获取临时素材接口拉取数据。
-
-
-class VoiceMessage(MessageBody):
-    MediaId: int  # 	语音消息媒体id，可以调用获取临时素材接口拉取数据，Format为amr时返回8K采样率amr语音。
-    Format: str  # 	语音格式，如amr，speex等
-    MediaId16K: int  # 	16K采样率语音消息媒体id，可以调用获取临时素材接口拉取数据，返回16K采样率amr/speex语音。
-
-
-class VideoMessage(MessageBody):
-    MediaId: int  # 	视频消息媒体id，可以调用获取临时素材接口拉取数据。
-    ThumbMediaId: int  # 	视频消息缩略图的媒体id，可以调用多媒体文件下载接口拉取数据。
 
 
 @app.get("/wx")
@@ -72,25 +47,38 @@ async def token_validation(signature: str, timestamp: int, nonce: int, echostr: 
 
 @app.post("/wx")
 async def post_message(
-    request: Request,
+        request: Request,
 ):
     xml_message = await request.body()
     message_dict = xmltodict.parse(xml_message)["xml"]
-    print(f"开发者服务器post收到:\n{message_dict}")
+    # logger.info(f"开发者服务器post收到:\n{message_dict}")
 
     if message_dict["MsgType"] == "text":
-        text_content = """
-        你好,我是开发者服务器,
-        期望我做什么?
-        """
-        reply_xml = weChatOA_text_reply(message_dict, text_content)
-        print(reply_xml)
+        question = message_dict["Content"]
+        logger.info(f"收到问题: {question}")
+        query = question
+        out = GLM_callFunc_SSE(zhipuai_client, question, query, LLM_model=LLM_model,
+                               web_search_enable=web_search_enable, web_search_result_show=web_search_result_show,
+                               time_threshold=time_threshold)
+        answer = out[0]
+        logger.info(f"模型回答: {answer}")
+
+        reply_xml = weChatOA_text_reply(message_dict, answer)
         # headers = {"Content-Type": "text/xml; charset=utf-8"} # text/xml 其实就是html格式
         return Response(reply_xml, media_type="application/xml", )
 
 
 if __name__ == "__main__":
     import uvicorn
+
+    logger = setup_logger()
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    zhipu_apiKey = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key")
+    zhipuai_client = ZhipuAI(api_key=zhipu_apiKey)
+    web_search_enable = True
+    web_search_result_show = False
+    time_threshold = 5
+    LLM_model = "glm-4-air"
 
     uvicorn.run(
         app,
