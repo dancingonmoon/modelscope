@@ -9,13 +9,13 @@ from ChatBOT_APP import (
     TTS_process,
 )
 import sys
-import zhipuai
+from zhipuai import ZhipuAI
 import dingtalk_stream
 from chatbotClass_utilies import ChatbotMessage_Utilies
 
 sys.path.append("../GLM")  # 将上一级目录的/GLM目录添加到系统路径中
 # from semantic_search_by_zhipu import chatGLM_by_semanticSearch_amid_SerpAPI
-history_prompt = []  # 初始值定义为空列表,以与后续列表进行extend()拼接
+history_messages = []  # 初始值定义为空列表,以与后续列表进行extend()拼接
 
 if __name__ == "__main__":
     characterGLM_chat_flag = True  # True时,characterglm,需要zhipuai库版本<=1.07
@@ -33,6 +33,9 @@ if __name__ == "__main__":
     config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
     config_path_aliyunsdk = r"l:/Python_WorkSpace/config/aliyunsdkcore.ini"
     config_path_azure = r"l:/Python_WorkSpace/config/Azure_Resources.ini"
+
+    zhipu_apiKey = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key", option2=None)
+    zhipuai_client = ZhipuAI(api_key=zhipu_apiKey)
     # bot_info = """
     # 杨幂,1986年9月12日出生于北京市，中国内地影视女演员、流行乐歌手、影视制片人。2005年，杨幂进入北京电影学院表演系本科班就读。2006年，因出演金庸武侠剧《神雕侠侣》崭露头角。
     # 2008年，凭借古装剧《王昭君》获得第24届中国电视金鹰奖观众喜爱的电视剧女演员奖提名 。2009年，在“80后新生代娱乐大明星”评选中被评为“四小花旦”。
@@ -53,13 +56,7 @@ if __name__ == "__main__":
     tts_out_path = None
 
     if characterGLM_chat_flag:  # 角色扮演机器人聊天
-        zhipuai_key = config_read(
-            config_path_zhipuai,
-            section="zhipuai_SDK_API",
-            option1="api_key",
-            option2=None,
-        )
-        zhipuai.api_key = zhipuai_key
+
         client_id, client_secret = config_read(
             config_path_dtApp,
             section="DingTalkAPP_HumanoidRobot",
@@ -110,9 +107,9 @@ if __name__ == "__main__":
             client.register_callback_handler(
                 ChatbotMessage_Utilies.TOPIC,
                 VoiceChatHandler(
+                    zhipuai_client=zhipuai_client,
                     logger=logger,
-                    zhipuai=zhipuai,
-                    history_prompt=history_prompt,
+                    history_messages=history_messages,
                     bot_info=bot_info,
                     bot_name=bot_name,
                     user_name=user_name,

@@ -1,11 +1,13 @@
+# -*- coding: utf-8 -*-
 import configparser
-# from zhipuai import ZhipuAI
+from zhipuai import ZhipuAI
 
-config_path = r"/mnt/workspace/dingtalk/DingTalk_APP.ini"
+# config_path = r"/mnt/workspace/dingtalk/DingTalk_APP.ini"
+config_path = r"L:/Python_WorkSpace/config/zhipuai_SDK.ini"
 config = configparser.ConfigParser()
 config.read(config_path, encoding='utf-8')
 api_key = config.get('zhipuai_SDK_API', 'api_key')
-# client = ZhipuAI(api_key=api_key)
+client = ZhipuAI(api_key=api_key)
 
 # 1 通用模型 LLM
 # response = client.chat.completions.create(
@@ -21,21 +23,22 @@ api_key = config.get('zhipuai_SDK_API', 'api_key')
 #     print(chunk.choices[0].delta.content)
 
 # 2 角色扮演:
-import zhipuai
+# import zhipuai
 #调用 ChargeLM-3 时，需要使用 1.0.7 版本或更低版本的 SDK。
 
 
-zhipuai.api_key = api_key
-# prompt = [{"role":"user","content":"hi"},
-#              {"role":"assistant","content":"你好呀，我是杨幂，你可以叫我大幂，或者幂幂，很高兴和你聊天。"},
-#              {"role":"user","content":"几岁了?"},
-#              {"role":"assistant","content":"我都 35 岁了，已经是个成熟的大幂幂了，哈哈哈。"},
-#              {"role":"user","content":"结婚了吗?"},
-#             ]
+# zhipuai.api_key = api_key
+prompt = [{"role":"user","content":"hi"},
+             {"role":"assistant","content":"你好呀，我是杨幂，你可以叫我大幂，或者幂幂，很高兴和你聊天。"},
+             {"role":"user","content":"几岁了?"},
+             {"role":"assistant","content":"我都 35 岁了，已经是个成熟的大幂幂了，哈哈哈。"},
+             {"role":"user","content":"结婚了吗?"},
+            ]
 # prompt = []
-response = zhipuai.model_api.sse_invoke(
+response = client.chat.completions.create(
+# response = zhipuai.model_api.sse_invoke(
     model="characterglm",
-    prompt= prompt,
+    messages= prompt,
     temperature= 0.9,
     top_p= 0.7,
     meta = {
@@ -44,16 +47,17 @@ response = zhipuai.model_api.sse_invoke(
         "user_info": "用户",
         "user_name": "用户"
     },
-    incremental=True
+    stream= False
 )
 
-for event in response.events():
-    if event.event == "add":
-        print(event.data, end="")
-    elif event.event == "error" or event.event == "interrupted":
-        print(event.data, end="")
-    elif event.event == "finish":
-        print(event.data)
-        print(event.meta, end="")
-    else:
-        print(event.data, end="")
+# for event in response.events():
+#     if event.event == "add":
+#         print(event.data, end="")
+#     elif event.event == "error" or event.event == "interrupted":
+#         print(event.data, end="")
+#     elif event.event == "finish":
+#         print(event.data)
+#         print(event.meta, end="")
+#     else:
+#         print(event.data, end="")
+print(response.choices[0].message)

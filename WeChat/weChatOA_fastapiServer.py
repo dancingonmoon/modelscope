@@ -9,7 +9,7 @@ import time
 import sys
 
 sys.path.append('../GLM')
-from GLM.GLM_callFunc import GLM_callFunc_SSE
+from GLM.GLM_callFunc import GLM_callFunc_SSE_SYN
 
 description = """
 ## 微信公众号开发者服务器.🦬
@@ -58,9 +58,9 @@ async def post_message(
         question = message_dict["Content"]
         logger.info(f"收到问题: {question}")
         query = question
-        out = GLM_callFunc_SSE(zhipuai_client, question, query, LLM_model=LLM_model,
-                               web_search_enable=web_search_enable, web_search_result_show=web_search_result_show,
-                               time_threshold=time_threshold)
+        out = GLM_callFunc_SSE_SYN(zhipuai_client, question, query, LLM_model=LLM_model,
+                                   web_search_enable=web_search_enable, web_search_result_show=web_search_result_show,
+                                   time_threshold=time_threshold)
         answer = out[0]
         logger.info(f"模型回答: {answer}")
 

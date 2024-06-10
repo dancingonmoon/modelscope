@@ -4,20 +4,18 @@ from serpapi import GoogleSearch, BaiduSearch
 import configparser
 
 
-def get_api_key(config_file_path, section='Serp_API', option='api_key'):
+def config_read(config_path, section='Serp_API', option1='api_key', option2=None):
     """
-    从配置文件config.ini中,读取api_key,api_secret;避免程序代码中明文显示key,secret.
-    args:
-        config_file_path: config.ini的文件路径(包含文件名,即: directory/config.ini)
-        section: config.ini中的section名称;
-        option: config.ini中的option名称;
-    out:
-        返回option对应的value值;此处为api_key
+    option2 = None 时,仅输出第一个option1的值; 否则输出section下的option1与option2两个值
     """
     config = configparser.ConfigParser()
-    config.read(config_file_path, encoding="utf-8")  # utf-8支持中文
-    return config[section][option]
-
+    config.read(config_path, encoding="utf-8")
+    option1_value = config.get(section=section, option=option1)
+    if option2 is not None:
+        option2_value = config.get(section=section, option=option2)
+        return option1_value, option2_value
+    else:
+        return option1_value
 
 def serpapi_GoogleSearch(api_key, query, location='Hong Kong', hl='zh-cn', gl='cn', tbs=None, tbm=None, num=30, ):
     """
@@ -93,7 +91,7 @@ def serpapi_BaiduSearch(api_key, query, ct=1, rn=50, engine='Baidu'):
 
 if __name__ == "__main__":
     config_path = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    api_key = get_api_key(config_path, section='Serp_API', option='api_key')
+    api_key = config_read(config_path, section='Serp_API', option1='api_key')
     query = 'Tucker Carson与普京的会面,都谈了些什么?'
 
     # search_result = serpapi_GoogleSearch(api_key, query, location='Hong Kong',
