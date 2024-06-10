@@ -48,7 +48,6 @@ def config_read(
         return option1_value
 
 
-
 def characterGLMAPI_completion_create(
         zhipuai_client,
         messages: list,
@@ -87,7 +86,7 @@ def characterGLMAPI_completion_create(
                 "user_info": user_info,
                 "user_name": user_name,
             },
-            stream = False
+            stream=False
         )
         # logger.info(response)
         if "error" in response:
@@ -298,7 +297,7 @@ class VoiceChatHandler(ChatbotHandler_utilies):
     def __init__(
             self,
             zhipuai_client,
-            history_messages= [],
+            history_messages=[],
             bot_name=None,
             bot_info=None,
             user_name=None,
@@ -498,9 +497,7 @@ if __name__ == "__main__":
     # voice = "zhiyan_emo"  # zhiyan的声音,略微的更女性化些;
     voice = "zhixiaoxia"  # 对话数字人, 不支持多情感; 显然这个voice更适合日常对话, 语气生活化些.
     # voice = "voice-f90ed52" # 个性化声音
-    today = datetime.datetime.today().strftime("%y%m%d")
-    # tts_out_path = f'tts_{voice}_{today}.wav'
-    tts_out_path = None
+
 
     if characterGLM_chat_flag:  # 角色扮演机器人聊天
         client_id, client_secret = config_read(
@@ -569,8 +566,7 @@ if __name__ == "__main__":
 
     else:  # GLM 办公助手, 文本聊
 
-        semantic_search_engine = chatGLM_by_semanticSearch_amid_SerpAPI(zhipuai_client, serp_key_path=config_path_serp,
-                                                                        )
+        semantic_search_engine = chatGLM_by_semanticSearch_amid_SerpAPI(zhipuai_client, serp_key_path=config_path_serp,)
         client_id, client_secret = config_read(
             config_path_dtApp,
             section="DingTalkAPP_chatGLM",

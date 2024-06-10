@@ -51,9 +51,6 @@ if __name__ == "__main__":
     user_name = "用户"
     # voice = 'zhiyan_emo'  # zhiyan的声音,略微的更女性化些;
     voice = "voice-f90ed52"  # 个性化声音
-    # today = datetime.datetime.today().strftime('%y%m%d')
-    # tts_out_path = f'tts_{voice}_{today}.wav'
-    tts_out_path = None
 
     if characterGLM_chat_flag:  # 角色扮演机器人聊天
 
@@ -120,6 +117,7 @@ if __name__ == "__main__":
             )
 
     else:  # GLM 办公助手, 文本聊
+        semantic_search_engine = chatGLM_by_semanticSearch_amid_SerpAPI(zhipuai_client, serp_key_path=config_path_serp,)
         client_id, client_secret = config_read(
             config_path_dtApp,
             section="DingTalkAPP_chatGLM",
