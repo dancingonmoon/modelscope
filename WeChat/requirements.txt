@@ -1,0 +1,4 @@
+pip install -U fastapi
+pip install "uvicorn[standard]"
+pip install xlmtodict
+pip install -U zhipuai

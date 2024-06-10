@@ -1,5 +1,6 @@
 pip install -U pip
-pip install -U zhipuai==1.0.7
+# pip install -U zhipuai==1.0.7
+pip install -U zhipuai # zhipuai SDK 已经统一characterglm与glm模型用法;
 pip install -U google-search-results
 pip install -U dingtalk-stream
 pip install -U alibabacloud-dingtalk
