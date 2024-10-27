@@ -36,9 +36,10 @@ def inference(message, history):
 
 def vote(data: gr.LikeData):
     if data.liked:
-        print("You upvoted this response: " + data.value["value"])
+        print(f"You upvoted this response:  {data.index}, {data.value} " )
     else:
-        print("You downvoted this response: " + data.value["value"])
+        print("You downvoted this response: " + data.value)
+        print(f"You downvoted this response: {data.index}, {data.value}" )
 
 
 if __name__ == "__main__":
