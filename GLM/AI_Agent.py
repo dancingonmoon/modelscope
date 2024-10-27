@@ -24,8 +24,8 @@ def zhipu_agent(
 
 
 if __name__ == "__main__":
-    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_serp = r"l:/Python_WorkSpace/config/SerpAPI.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
 
     zhipu_apiKey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"

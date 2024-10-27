@@ -94,7 +94,7 @@ if __name__ == "__main__":
     web_search_enable = True
     web_search_result_show = False
     time_threshold = 5
-    LLM_model = "glm-4-air"
+    LLM_model = "glm-4-airX"
 
     uvicorn.run(
         app,
