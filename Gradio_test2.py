@@ -66,14 +66,14 @@ with gr.Blocks() as demo:
     with gr.Tab("File"):
         with gr.Row():
             with gr.Column():
-                image = gr.Image(label="Input Image", source="webcam")
+                image = gr.Image(label="Input Image", sources="webcam")
                 run = gr.Button("Run")
             with gr.Column():
                 output = gr.Image(label="Input Image")
 
-demo.launch()
+# demo.launch()
 
 if __name__ == "__main__":
     demo.queue().launch(
-        debug=True,
+        debug=True, share=True
     )

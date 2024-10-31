@@ -120,7 +120,7 @@ def line_plot_fn(dataset):
         # 而本代码中,LinePlot先行运行一次,然后每次对诸参数进行更新, 此处需要gr.LinePlot.update(),里面放置需要更新的形参;
         # 而gradio文档中, 并不需要update(),而仅仅是gr.LinePlot()里面放置更新的参数,重新运行一遍.
         # 以上问题花费了1天半,找出问题解决
-        return gr.LinePlot.update(
+        return gr.update(
             value=stocks,
             x="date",
             y="price",
