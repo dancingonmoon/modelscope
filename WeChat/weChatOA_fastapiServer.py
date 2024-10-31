@@ -88,13 +88,13 @@ if __name__ == "__main__":
     import uvicorn
 
     logger = setup_logger()
-    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
     zhipu_apiKey = config_read(config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key")
     zhipuai_client = ZhipuAI(api_key=zhipu_apiKey)
-    web_search_enable = True
+    web_search_enable = False
     web_search_result_show = False
     time_threshold = 5
-    LLM_model = "glm-4-air"
+    LLM_model = "glm-4-airX"
 
     uvicorn.run(
         app,
