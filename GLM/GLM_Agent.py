@@ -1,9 +1,11 @@
 from GLM_callFunc import config_read
 from zhipuai import ZhipuAI
+from pathlib import Path
+
 # import zhipuai
 
 
-def zhipu_agent(
+def glm_agentAPI(
     assistant_id, conversation_id=None, prompt=None, attachment=None, metadata=None
 ):
     """
@@ -57,31 +59,64 @@ if __name__ == "__main__":
     ## 6654898292788e88ce9e7f4c 提示词工程师 人人都是提示词工程师，超强清言结构化提示词专家，一键改写提示词。
     ## 668fdd45405f2e3c9f71f832 英文单词语法助手 输入单词，进行单词查询；输入句子，进行语法检查；输入讲解，进行语法解释。
 
-    # AI 搜索：
-    assistant_id = "659e54b1b8006379b4b2abd6"
-    prompt = "请提供杭州未来5天的天气, 并绘制柱状图"
-    generate = zhipu_agent(assistant_id, conversation_id=None, prompt=prompt)
+    # # Agent : AI 搜索
+    # assistant_id = "659e54b1b8006379b4b2abd6"
+    # prompt = "请提供杭州未来5天的天气, 并绘制柱状图"
+    # generate = glm_agentAPI(assistant_id, conversation_id=None, prompt=prompt)
+    #
+    # # output = ""
+    # for resp in generate:
+    #     # print(resp)
+    #     delta = resp.choices[0].delta
+    #     # print(delta)
+    #     # print(type(delta))
+    #     if resp.status != 'completed':
+    #         if delta.role == 'assistant':
+    #             print(delta.content)
+    #             # output += delta.content
+    #             # print(output)
+    #         if delta.role == 'tool':
+    #             # print(resp)
+    #             print(delta.tool_calls[0])
+    #             if hasattr(delta.tool_calls[0], 'web_browser'):
+    #                 if delta.tool_calls[0].web_browser.outputs:
+    #                     print(delta.tool_calls[0].web_browser.outputs)
+    #                 else:
+    #                     print('in process of searching.......')
+    #             if hasattr(delta.tool_calls[0],'code_interpreter'):
+    #                 if delta.tool_calls[0].code_interpreter.outputs:
+    #                     print(delta.tool_calls[0].code_interpreter.outputs)
 
-    # output = ""
-    for resp in generate:
-        # print(resp)
-        delta = resp.choices[0].delta
-        # print(delta)
-        # print(type(delta))
-        if resp.status != 'completed':
-            if delta.role == 'assistant':
-                print(delta.content)
-                # output += delta.content
-                # print(output)
-            if delta.role == 'tool':
-                # print(resp)
-                print(delta.tool_calls[0])
-                if hasattr(delta.tool_calls[0], 'web_browser'):
-                    if delta.tool_calls[0].web_browser.outputs:
-                        print(delta.tool_calls[0].web_browser.outputs)
-                    else:
-                        print('in process of searching.......')
-                if hasattr(delta.tool_calls[0],'code_interpreter'):
-                    if delta.tool_calls[0].code_interpreter.outputs:
-                        print(delta.tool_calls[0].code_interpreter.outputs)
+    # Agent：文件（pdf,jpg)上传，结合prompt文本：
+    pdf_path = r"E:/Working Documents/Eastcom/新业务/刘禹/BPV/test/Испытания пластины редакция сж.pdf"
+    jpg_path = r"C:/Users/danci/Pictures/787.jpeg"
 
+    # 上传用于模型微调、知识库、Batch、文件抽取等功能所使用的文件。
+    # 格式限制：.PDF .DOCX .DOC .XLS .XLSX .PPT .PPTX .PNG .JPG .JPEG .CSV .PY .TXT .MD .BMP .GIF
+    # 文件大小不超过50M，图片大小不超过5M、总数限制为100个文件
+    # file_object = zhipuai_client.files.create(
+    #     file=open(pdf_path, "rb"),
+    #     purpose="file-extract",  # 支持retrieval、batch、fine-tune、file-extract、code-interpreter
+    # )
+    # 或者直接文件路径
+    file_object = zhipuai_client.files.create(file=Path(jpg_path), purpose="file-extract")
+
+    # 文件内容抽取
+    file_content = zhipuai_client.files.content(file_id=file_object.id).content.decode()
+    print(file_content)
+
+    # 请求文件列表
+    result = zhipuai_client.files.list(
+        purpose="file-extract",  # 支持batch、file-extract、fine-tune
+    )
+    print(result)
+
+    # 生成请求消息
+    message_content = f"请对\n{file_content}\n的内容进行分析，并按照原格式转换成Markdown格式，图片请用链接表示。"
+
+    response = zhipuai_client.chat.completions.create(
+        model="glm-4-long",
+        messages=[{"role": "user", "content": message_content}],
+    )
+
+    print(response.choices[0].message)
