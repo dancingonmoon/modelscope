@@ -14,18 +14,28 @@ if __name__ == "__main__":
     genai.configure(api_key=geminiAPI)
 
     # JPG filepath:
-    photo_path = r"C:/Users/shoub/Pictures\ticke2.jpg"
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    photo_path = r"C:/Users/shoub/Pictures/融合通信架构.png"
+    model = genai.GenerativeModel('gemini-1.5-pro')
     photo = PIL.Image.open(photo_path)
-    # response = model.generate_content(["请将图片文字提取,按原格式转成markdown格式", photo])
-    # print(response.text)
+    response = model.generate_content(["请将图片文字提取,按原格式转成markdown格式", photo])
+    print(response.text)
 
     # Upload the file and print a confirmation
-    pdf_file = genai.upload_file(path=r"L:/temp/刘禹/Испытания пластины редакция сж.pdf", display_name="Bullet.pdf")
+    # pdf_file = genai.upload_file(path=r"L:/temp/刘禹/Испытания пластины редакция сж.pdf", display_name="Bullet.pdf")
+    pdf_file = genai.upload_file(path=photo_path, display_name="融合通信架构.pdf")
 
-    print(f"Uploaded file '{pdf_file.display_name}' as: {pdf_file.uri}")
+    # print(f"Uploaded file '{pdf_file.display_name}' as: {pdf_file.uri}")
 
-        # Prompt the model with text and the previously uploaded image.
-    response = model.generate_content([pdf_file, "请将PDF按照原格式翻译成中文,并按照原文档结构输出成Markdown格式"])
+    # Configure a model to use Google Search : Grounding is available to test for free in Google AI Studio.
+    # In the API, developers can access the tool with the paid tier for $35 per 1,000 grounded queries.
+    # response = model.generate_content(
+    #                                     contents="请总结今天中国新闻的头条,并以markdown格式输出",
+    #                                     tools={"google_search_retrieval": {
+    #                                         "dynamic_retrieval_config": {
+    #                                             "mode": "unspecified",
+    #                                             "dynamic_threshold": 0.3}}}
+    #                                         )
+    # Prompt the model with text and the previously uploaded image.
+    response = model.generate_content([pdf_file, "请将图片按照原格式翻译成中文,并按照原文档结构,布局,输出成Markdown格式"])
 
     print(response.text)

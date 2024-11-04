@@ -7,6 +7,8 @@ import base64
 import gradio as gr
 
 
+
+
 def inference(message, history):
     try:
         flattened_history = [item for sublist in history for item in sublist]
@@ -124,19 +126,19 @@ if __name__ == "__main__":
         gr.ChatInterface(
             inference,
             chatbot=chatbot,
-            textbox=gr.Textbox(placeholder="Enter text here...", container=False, scale=5),
-            # multimodal=True,
+            # textbox=gr.Textbox(placeholder="Enter text here...", container=False, scale=5),
+            multimodal=True,
             description=f"""
         CURRENT PROMPT TEMPLATE: {model}.
         An incorrect prompt template will cause performance to suffer.
         Check the API specifications to ensure this format matches the target LLM.""",
             title="Simple Chatbot Test Application",
             examples=["Define 'deep learning' in once sentence."],
-            retry_btn="Retry",
-            undo_btn="Undo",
-            clear_btn="Clear",
-            fill_width=True,
-            stop_btn='Stop',
+            # retry_btn="Retry",
+            # undo_btn="Undo",
+            # clear_btn="Clear",
+            # fill_width=True,
+            # stop_btn='Stop',
             theme="soft",
             )
     demo.queue().launch()
