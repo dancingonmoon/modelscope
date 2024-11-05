@@ -2,32 +2,44 @@ import gradio as gr
 from zhipuai import ZhipuAI
 from GLM.GLM_callFunc import config_read
 
-def test(message,file):
-    return message
 
-def inference(history,message):
+def add_message(history, message):
+    text = message.get("text")
+    file = message.get("file")
+    present_message = {
+        "role": "user",
+        "content": f"{text},请结合文件：{file}回答",  # GLM模型不支持content里面file 或者Path
+    }
+
+    # flattened_history = [item for sublist in history for item in sublist]
+    # flattened_history = [item for item in history]  # 这不是与history相等吗？
+    if text is None and file is not None:
+        present_message = {
+            "role": "user",
+            "content": f"{file}",  # GLM模型不支持content里面file 或者Path
+        }
+    if text is not None and file is None:
+        present_message = {
+            "role": "user",
+            "content": f"{text}",  # GLM模型不支持content里面file 或者Path
+        }
+    history.append(present_message)
+    # return history, gr.MultimodalTextbox(value=None, interactive=False)
+    return history, present_message
+
+
+def inference(history, present_message):
     try:
-        flattened_history = [item for sublist in history for item in sublist]
-        text = message.get("text")
-        file = message.get("file")
-        if text:
-            full_message = " ".join(flattened_history + [text])
-        else:
-            full_message = flattened_history
-        messages_prompt = [
-            {"role": "user", "content": full_message}
-        ]  # litellm message format
-
-        partial_message = ""
-        for chunk in zhipuai_api(messages_prompt):
+        present_response = ""
+        for chunk in zhipuai_api(present_message):
             out = chunk["choices"][0]["delta"]["content"]
             if out:
-                partial_message += out  # extract text from streamed litellm chunks
+                present_response += out  # extract text from streamed litellm chunks
 
-                yield history.append({"role": "assistant", "content": partial_message})
+                yield history.append({"role": "assistant", "content": present_response})
     except Exception as e:
         print("Exception encountered:", str(e))
-        yield history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
+        return history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
 
 
 def zhipuai_api(question):
@@ -57,23 +69,6 @@ def vote(data: gr.LikeData):
         print("You downvoted this response: " + data.value)
         print(f"You downvoted this response: {data.index}, {data.value}")
 
-import gradio as gr
-import time
-
-# Chatbot demo with multimodal input (text, markdown, LaTeX, code blocks, image, audio, & video). Plus shows support for streaming text.
-
-
-def print_like_dislike(x: gr.LikeData):
-    print(x.index, x.value, x.liked)
-
-
-def add_message(history, message):
-    for x in message["files"]:
-        history.append({"role": "user", "content": {"path": x}})
-    if message["text"] is not None:
-        history.append({"role": "user", "content": message["text"]})
-    return history, gr.MultimodalTextbox(value=None, interactive=False)
-
 
 def bot(history: list):
     response = "**That's cool!**"
@@ -84,49 +79,25 @@ def bot(history: list):
         yield history
 
 
-
-
-
-
 if __name__ == "__main__":
-    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
 
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
     )
     zhipuai_client = ZhipuAI(api_key=zhipu_apikey)
 
-    # gradio web:
-    # with (gr.Blocks() as demo):
-    #     chatbot = gr.Chatbot(
-    #         height=400, placeholder=f"<strong>我是大模型:XXX </strong><br>问我吧?"
-    #     )
-    #     chatbot.like(vote, None, None)
-    #     gr.ChatInterface(
-    #         # inference,
-    #         test,
-    #         chatbot=chatbot,
-    #         # textbox=gr.Textbox(placeholder="Enter text here...", container=False, scale=5),
-    #         multimodal=True,
-    #         description=f"""
-    #     多模态模型输入测试.""",
-    #         title="BOT",
-    #         examples=["今天的日期与未来5天杭州天气"],
-    #         # retry_btn="Retry",
-    #         # undo_btn="Undo",
-    #         # clear_btn="Clear",
-    #         # fill_width=True,
-    #         # stop_btn='Stop',
-    #         theme="soft",
-    #     )
-    # demo.queue().launch()
-
     with gr.Blocks() as demo:
-        chatbot = gr.Chatbot(elem_id="chatbot", bubble_full_width=False, type="messages",placeholder="chatbot 占位符：")
+        chatbot = gr.Chatbot(
+            elem_id="chatbot",
+            bubble_full_width=False,
+            type="messages",
+            placeholder="chatbot 占位符：",
+        )
 
         chat_input = gr.MultimodalTextbox(
             # value= {"text": "sample text", "files": [{'path': "files/ file. jpg", 'orig_name': "file. jpg", 'url': "http:// image_url. jpg ", 'size': 100}]},
-            file_types= ['file'],
+            file_types=["file"],
             interactive=True,
             file_count="multiple",
             lines=2,
@@ -137,9 +108,14 @@ if __name__ == "__main__":
         chat_msg = chat_input.submit(
             add_message, [chatbot, chat_input], [chatbot, chat_input]
         )
-        bot_msg = chat_msg.then(inference, [chatbot, chat_input], [chatbot, chat_input], api_name="bot_response")
+        bot_msg = chat_msg.then(
+            inference,
+            [chatbot, chat_input],
+            chatbot,
+            api_name="bot_response",
+        )
         bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
 
-        chatbot.like(print_like_dislike, None, None)
+        chatbot.like(vote, None, None)
 
     demo.queue().launch()
