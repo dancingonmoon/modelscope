@@ -1,6 +1,7 @@
 import gradio as gr
 from zhipuai import ZhipuAI
 from GLM.GLM_callFunc import config_read
+import time
 
 
 def add_message(history, message):
@@ -32,10 +33,9 @@ def inference(history, present_message):
     try:
         present_response = ""
         for chunk in zhipuai_api(present_message):
-            out = chunk["choices"][0]["delta"]["content"]
+            out = chunk.choices[0].delta.content
             if out:
                 present_response += out  # extract text from streamed litellm chunks
-
                 yield history.append({"role": "assistant", "content": present_response})
     except Exception as e:
         print("Exception encountered:", str(e))
@@ -80,7 +80,7 @@ def bot(history: list):
 
 
 if __name__ == "__main__":
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
 
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
