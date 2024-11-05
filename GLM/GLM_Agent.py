@@ -1,9 +1,7 @@
 from GLM_callFunc import config_read
 from zhipuai import ZhipuAI
 from pathlib import Path
-
-# import zhipuai
-
+# from IPython.display import display, Markdown
 
 def glm_agentAPI(
     assistant_id, conversation_id=None, prompt=None, attachment=None, metadata=None
@@ -26,8 +24,7 @@ def glm_agentAPI(
 
 
 if __name__ == "__main__":
-    config_path_serp = r"e:/Python_WorkSpace/config/SerpAPI.ini"
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
 
     zhipu_apiKey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
@@ -89,7 +86,7 @@ if __name__ == "__main__":
 
     # Agent：文件（pdf,jpg)上传，结合prompt文本：
     pdf_path = r"E:/Working Documents/Eastcom/新业务/刘禹/BPV/test/Испытания пластины редакция сж.pdf"
-    jpg_path = r"C:/Users/danci/Pictures/787.jpeg"
+    jpg_path = r"C:/Users/shoub/Pictures/融合通信架构.png"
 
     # 上传用于模型微调、知识库、Batch、文件抽取等功能所使用的文件。
     # 格式限制：.PDF .DOCX .DOC .XLS .XLSX .PPT .PPTX .PNG .JPG .JPEG .CSV .PY .TXT .MD .BMP .GIF
@@ -112,7 +109,7 @@ if __name__ == "__main__":
     print(result)
 
     # 生成请求消息
-    message_content = f"请对\n{file_content}\n的内容进行分析，并按照原格式转换成Markdown格式，图片请用链接表示。"
+    message_content = f"请对\n{file_content}\n的内容进行分析，并按照原格式转换成Markdown格式，图片可以用Markdown语法中的链接表示。"
 
     response = zhipuai_client.chat.completions.create(
         model="glm-4-long",
@@ -120,3 +117,4 @@ if __name__ == "__main__":
     )
 
     print(response.choices[0].message)
+
