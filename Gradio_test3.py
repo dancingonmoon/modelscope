@@ -12,8 +12,6 @@ def add_message(history, message):
         "content": f"{text},请结合文件：{file}回答",  # GLM模型不支持content里面file 或者Path
     }
 
-    # flattened_history = [item for sublist in history for item in sublist]
-    # flattened_history = [item for item in history]  # 这不是与history相等吗？
     if text is None and file is not None:
         present_message = {
             "role": "user",
@@ -22,41 +20,58 @@ def add_message(history, message):
     if text is not None and file is None:
         present_message = {
             "role": "user",
-            "content": f"{text}",  # GLM模型不支持content里面file 或者Path
+            "content": f"{text}",
         }
     history.append(present_message)
-    # return history, gr.MultimodalTextbox(value=None, interactive=False)
-    return history, present_message
+    return history, gr.MultimodalTextbox(value=None, interactive=False)
+    # return history, present_message
 
 
-def inference(history, present_message):
+def inference(
+    history: list,
+):
     try:
+        present_message = history[-1]
         present_response = ""
-        for chunk in zhipuai_api(present_message):
+        history.append({"role": "assistant", "content": present_response})
+        for chunk in zhipuai_api(present_message,model=model):
             out = chunk.choices[0].delta.content
             if out:
                 present_response += out  # extract text from streamed litellm chunks
-                yield history.append({"role": "assistant", "content": present_response})
+                history[-1] = {"role": "assistant", "content": present_response}
+                yield history
     except Exception as e:
         print("Exception encountered:", str(e))
-        return history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
+        history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
+        # print(history)
+        yield history
 
 
-def zhipuai_api(question):
+def zhipuai_api(question:str, model:str):
+    if "alltools" in model:
+        messages = (
+            [{"role": "user", "content": [{"type": "text", "text": question}]}],
+        )
+    else:
+        messages = (
+            [
+                {"role": "user", "content": question},
+            ],
+        )
     response = zhipuai_client.chat.completions.create(
-        model="glm-4-air",  # 填写需要调用的模型名称
-        messages=[
-            {"role": "user", "content": question},
-        ],
-        tools=[
-            {
-                "type": "web_search",
-                "web_search": {
-                    "enable": True,
-                    "search_result": True,
-                },
-            }
-        ],
+        # model="glm-4-alltools",  # 填写需要调用的模型名称
+        model=model,  # 填写需要调用的模型名称
+        messages=messages,
+        # tools=[
+        #     {
+        #         "type": "web_search",
+        #         "web_search": {
+        #             "enable": True,
+        #             # "search_result": True,
+        #         },
+        #     }
+        # ],
+        tools=[{"type": "web_browser"}],
         stream=True,
     )
     return response
@@ -70,29 +85,27 @@ def vote(data: gr.LikeData):
         print(f"You downvoted this response: {data.index}, {data.value}")
 
 
-def bot(history: list):
-    response = "**That's cool!**"
-    history.append({"role": "assistant", "content": ""})
-    for character in response:
-        history[-1]["content"] += character
-        time.sleep(0.05)
-        yield history
-
-
 if __name__ == "__main__":
-    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
-
+    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
     )
     zhipuai_client = ZhipuAI(api_key=zhipu_apikey)
+    model = 'glm-4-alltools'
+    # 测试zhipuai
+    response = zhipuai_api("请联网搜索美国大选最新情况", model=model)
+    for chunk in response:
+        out = chunk.choices[0].delta.content
 
     with gr.Blocks() as demo:
         chatbot = gr.Chatbot(
-            elem_id="chatbot",
+            elem_id="Multimodal Chatbot",
             bubble_full_width=False,
             type="messages",
-            placeholder="chatbot 占位符：",
+            placeholder="**想问点什么?**",
+            show_copy_button=True,
+            show_copy_all_button=True,
+            show_share_button=True,
         )
 
         chat_input = gr.MultimodalTextbox(
@@ -100,18 +113,21 @@ if __name__ == "__main__":
             file_types=["file"],
             interactive=True,
             file_count="multiple",
-            lines=2,
+            lines=1,
             placeholder="Enter message or upload file...",
             show_label=False,
         )
 
         chat_msg = chat_input.submit(
-            add_message, [chatbot, chat_input], [chatbot, chat_input]
+            add_message,
+            [chatbot, chat_input],
+            [chatbot, chat_input],
+            queue=False,
         )
         bot_msg = chat_msg.then(
             inference,
-            [chatbot, chat_input],
-            chatbot,
+            [chatbot],
+            [chatbot],
             api_name="bot_response",
         )
         bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
