@@ -3,6 +3,7 @@ from zhipuai import ZhipuAI
 from GLM.GLM_callFunc import config_read
 from pathlib import Path
 import json
+from typing import Union, List, Dict
 
 
 def add_message(history, message):
@@ -51,14 +52,15 @@ def add_message(history, message):
     return history, gr.MultimodalTextbox(value=None, interactive=False)
 
 
-def inference(
-    history: list,
-):
+def inference(history: list, new_topic: bool):
     try:
-        present_message = history[-1]["content"]
+        if new_topic:
+            present_message = [history[-1]]
+        else:
+            present_message = history
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
-        for chunk in zhipuai_api(present_message, model=model):
+        for chunk in zhipuai_messages_api(present_message, model=model):
             out = chunk.choices[0].delta.content
             if out:
                 present_response += out  # extract text from streamed litellm chunks
@@ -95,6 +97,40 @@ def zhipuai_api(question: str, model: str):
     )
     return response
 
+def zhipuai_messages_api(messages: Union[str,List[Dict]], model: str):
+    prompt = []
+    if "alltools" in model:
+        if isinstance(messages, str):
+            prompt.append([{"role": "user", "content": [{"type": "text", "text": messages}]}])
+        elif isinstance(messages, list) and all(isinstance(message, dict) for message in messages):
+            for message in messages:
+                prompt.append([{"role": "user", "content": [{"type": "text", "text": message["content"]}]}])
+
+        tools = [{"type": "web_browser"}]
+    else:
+        if isinstance(messages, str):
+            prompt.append([{"role": "user", "content": messages}])
+        elif isinstance(messages, list) and all(isinstance(message, dict) for message in messages):
+            prompt = messages
+
+        tools = [
+            {
+                "type": "web_search",
+                "web_search": {
+                    "enable": True
+                    # "search_result": True,
+                },
+            }
+        ]
+
+    response = zhipuai_client.chat.completions.create(
+        model=model,  # 填写需要调用的模型名称
+        tools=tools,
+        messages=prompt,
+        stream=True,
+    )
+    return response
+
 
 def vote(data: gr.LikeData):
     if data.liked:
@@ -105,11 +141,11 @@ def vote(data: gr.LikeData):
 def handle_undo(history, undo_data: gr):
     return history[:undo_data.index], history[undo_data.index]['content']
 
-def on_topicRadio(click):
-    print(click)
+def on_topicRadio(value, evt:gr.EventData):
+    print( f"The {evt.target} component was selected, and its value was {value}.")
 
 if __name__ == "__main__":
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
     )
@@ -138,6 +174,7 @@ if __name__ == "__main__":
         )
         with gr.Row():
             topicRadio = gr.Checkbox(label="新话题",show_label=True,)
+        # topicRadio.select(on_topicRadio,topicRadio,None)
 
 
         chat_input = gr.MultimodalTextbox(
@@ -158,11 +195,12 @@ if __name__ == "__main__":
         )
         bot_msg = chat_msg.then(
             inference,
-            [chatbot],
+            [chatbot,topicRadio],
             [chatbot],
             api_name="bot_response",
         )
         bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
+        bot_msg.then(lambda: gr.Checkbox(value=False), None, [topicRadio])
 
         chatbot.like(vote, None, None)
 
