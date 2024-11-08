@@ -57,7 +57,15 @@ def inference(history: list, new_topic: bool):
         if new_topic:
             present_message = [history[-1]]
         else:
+            # glm模型文件作为prompt，非通过type方式，而是通过件文件内容放在到prompt内
+            # history中连续的{"role": "user", "content"：""},是文件内容的删除
             present_message = history
+            for message in present_message:
+                if message["role"] == "user" and isinstance(message["content"],dict):
+                    if 'path' in message["content"]:
+                        present_message.remove(message)
+
+
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
         for chunk in zhipuai_messages_api(present_message, model=model):
@@ -145,7 +153,7 @@ def on_topicRadio(value, evt:gr.EventData):
     print( f"The {evt.target} component was selected, and its value was {value}.")
 
 if __name__ == "__main__":
-    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
     )
