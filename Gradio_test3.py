@@ -5,7 +5,6 @@ from pathlib import Path
 import json
 from typing import Union, List, Dict
 
-
 def add_message(history, message):
     text = message.get("text")
     files = message.get("files")
@@ -22,17 +21,28 @@ def add_message(history, message):
             # 文件处理
             # 格式限制：.PDF .DOCX .DOC .XLS .XLSX .PPT .PPTX .PNG .JPG .JPEG .CSV .PY .TXT .MD .BMP .GIF
             # 大小：单个文件50M、总数限制为100个文件
-            file_object = zhipuai_client.files.create(
-                file=Path(file), purpose="file-extract"
-            )
-            # 获取文本内容
-            file_content = json.loads(
-                zhipuai_client.files.content(file_id=file_object.id).content
-            )["content"]
-            # files_content.append(file_content)
+            try:
+                file_object = zhipuai_client.files.create(
+                    file=Path(file), purpose="file-extract"
+                )
+                # 获取文本内容
+                file_content = json.loads(
+                    zhipuai_client.files.content(file_id=file_object.id).content
+                )["content"]
+            except Exception as e:
+                print(e.args)
+                present_message = {
+                    "role": "assistant",
+                    "content": e.args[0],
+                }
+                history.append(present_message)
+                return history, gr.MultimodalTextbox(value=None, interactive=False) # 因此此处输出的仅仅是错误，但不影响后续程序执行，导致模型输入部分是空值，出错
 
-            files_prompt += f"第{file_No+1}个文件或图片内容如下：\n" f"{file_content}\n\n"
-        if text is None:
+            if file_content is None or file_content == "":
+                files_prompt += f"第{file_No+1}个文件或图片内容无可提取之内容\n\n"
+            else:
+                files_prompt += f"第{file_No+1}个文件或图片内容如下：\n" f"{file_content}\n\n"
+        if text is None or text == "":
             present_message = {
                 "role": "user",
                 "content": files_prompt,  # GLM模型不支持content里面file 或者Path
@@ -58,12 +68,14 @@ def inference(history: list, new_topic: bool):
             present_message = [history[-1]]
         else:
             # glm模型文件作为prompt，非通过type方式，而是通过件文件内容放在到prompt内
-            # history中连续的{"role": "user", "content"：""},是文件内容的删除
-            present_message = history
-            for message in present_message:
-                if message["role"] == "user" and isinstance(message["content"],dict):
-                    if 'path' in message["content"]:
-                        present_message.remove(message)
+            # history中连续的{"role": "user", "content"：""},是文件链接或内容的删除
+            present_message = [message for message in history if
+                               not (message["role"] == "user" and isinstance(message["content"], tuple))]
+
+            # present_message = history # 变量赋值，只会对同一个对象指定两个变量名
+            # for message in present_message:
+            #     if message["role"] == "user" and isinstance(message["content"],tuple):
+            #         present_message.remove(message)
 
 
         present_response = ""
@@ -153,7 +165,7 @@ def on_topicRadio(value, evt:gr.EventData):
     print( f"The {evt.target} component was selected, and its value was {value}.")
 
 if __name__ == "__main__":
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
     )
@@ -175,6 +187,7 @@ if __name__ == "__main__":
             show_copy_button=True,
             show_copy_all_button=True,
             show_share_button=True,
+            render_markdown=True,
             avatar_images=(
                 None,
                 "https://em-content.zobj.net/source/twitter/376/hugging-face_1f917.png",
@@ -182,7 +195,7 @@ if __name__ == "__main__":
         )
         with gr.Row():
             topicRadio = gr.Checkbox(label="新话题",show_label=True,)
-        # topicRadio.select(on_topicRadio,topicRadio,None)
+
 
 
         chat_input = gr.MultimodalTextbox(
@@ -207,9 +220,12 @@ if __name__ == "__main__":
             [chatbot],
             api_name="bot_response",
         )
-        bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
         bot_msg.then(lambda: gr.Checkbox(value=False), None, [topicRadio])
+        bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
 
         chatbot.like(vote, None, None)
 
     demo.queue().launch()
+
+
+
