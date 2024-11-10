@@ -158,8 +158,15 @@ def vote(data: gr.LikeData):
     else:
         print("You downvoted this response: " + data.value)
         print(f"You downvoted this response: {data.index}, {data.value}")
-def handle_undo(history, undo_data: gr):
+def handle_undo(history, undo_data: gr.UndoData):
     return history[:undo_data.index], history[undo_data.index]['content']
+
+def handle_retry(history: str|list[dict], new_topic:bool, retry_data: gr.RetryData):
+    new_history = history[:retry_data.index]
+    previous_prompt = history[retry_data.index]
+    new_history.append(previous_prompt)
+
+    yield from inference(new_history, new_topic)
 
 def on_topicRadio(value, evt:gr.EventData):
     print( f"The {evt.target} component was selected, and its value was {value}.")
@@ -193,9 +200,9 @@ if __name__ == "__main__":
                 "https://em-content.zobj.net/source/twitter/376/hugging-face_1f917.png",
             ),
         )
+
         with gr.Row():
             topicRadio = gr.Checkbox(label="新话题",show_label=True,)
-
 
 
         chat_input = gr.MultimodalTextbox(
@@ -207,6 +214,8 @@ if __name__ == "__main__":
             placeholder="Enter message or upload file...",
             show_label=False,
         )
+        chatbot.undo(handle_undo, chatbot,[chatbot,chat_input])
+        chatbot.retry(handle_retry, [chatbot,topicRadio],[chatbot])
 
         chat_msg = chat_input.submit(
             add_message,
