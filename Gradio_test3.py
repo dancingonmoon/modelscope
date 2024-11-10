@@ -184,13 +184,13 @@ if __name__ == "__main__":
     #     out = chunk.choices[0].delta.content
 
     with gr.Blocks() as demo:
-        gr.Markdown("# 试试这个多模态输入 🤗")
+        gr.Markdown("# 多模态Robot 🤗")
         chatbot = gr.Chatbot(
             elem_id="Multimodal Chatbot",
-            label="**理想王国**",
+            label="聊天框",
             bubble_full_width=False,
             type="messages",
-            placeholder="**想问点什么?**",
+            placeholder="# **想问点什么?**",
             show_copy_button=True,
             show_copy_all_button=True,
             show_share_button=True,
