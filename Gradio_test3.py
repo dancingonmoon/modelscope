@@ -1,9 +1,9 @@
-import gradio as gr
+import gradio as gr # gradio 5.5.0 需要python 3.10以上
 from zhipuai import ZhipuAI
 from GLM.GLM_callFunc import config_read
 from pathlib import Path
 import json
-from typing import Union, List, Dict
+
 
 def add_message(history, message):
     text = message.get("text")
@@ -117,7 +117,7 @@ def zhipuai_api(question: str, model: str):
     )
     return response
 
-def zhipuai_messages_api(messages: Union[str,List[Dict]], model: str):
+def zhipuai_messages_api(messages: str|list[dict], model: str):
     prompt = []
     if "alltools" in model:
         if isinstance(messages, str):
