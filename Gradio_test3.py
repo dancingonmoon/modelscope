@@ -61,10 +61,10 @@ def add_message(history, message):
                 "content": f"{text}",
             }
     history.append(present_message)
-    return history, gr.MultimodalTextbox(value=None, interactive=False)
+    return history, gr.MultimodalTextbox(value=None, interactive=False), gr.Button(value="停止推理", interactive=True, visible=True)
 
 
-def inference(history: list, new_topic: bool, model: str, stop_inference:str):
+def glm_inference(history: list, new_topic: bool, model: str, stop_inference:str):
     try:
         if new_topic:
             present_message = [history[-1]]
@@ -189,7 +189,7 @@ def handle_retry(history: str | list[dict], new_topic: bool, model:str,retry_dat
     previous_prompt = history[retry_data.index]
     new_history.append(previous_prompt)
 
-    yield from inference(new_history, new_topic,model)
+    yield from glm_inference(new_history, new_topic, model)
 
 
 def on_topicRadio(value, evt: gr.EventData):
@@ -197,7 +197,7 @@ def on_topicRadio(value, evt: gr.EventData):
 
 
 if __name__ == "__main__":
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
     )
@@ -226,7 +226,7 @@ if __name__ == "__main__":
             ),
         )
         # 用于中止推理,仅仅在推理过程中显现作用
-        stop_inference = gr.Button(value='停止推理',variant='secondary',size='sm',visible=False,interactive=True,)
+        stop_inference = gr.Button(value='执行推理',variant='secondary',size='sm',visible=False,interactive=False,)
 
         with gr.Row():
             topicCheckbox = gr.Checkbox(
@@ -259,21 +259,24 @@ if __name__ == "__main__":
 
         chatbot.undo(handle_undo, chatbot, [chatbot, chat_input])
         chatbot.retry(handle_retry, [chatbot, topicCheckbox, models_dropdown], [chatbot])
+        chatbot.like(vote, None, None)
+
         chat_msg = chat_input.submit(
             add_message,
             [chatbot, chat_input],
-            [chatbot, chat_input],
+            [chatbot, chat_input, stop_inference],
             queue=False,
         )
         bot_msg = chat_msg.then(
-            inference,
-            [chatbot, topicCheckbox, models_dropdown],
+            glm_inference,
+            [chatbot, topicCheckbox, models_dropdown, stop_inference],
             [chatbot],
             api_name="bot_response",
         )
         bot_msg.then(lambda: gr.Checkbox(value=False), None, [topicCheckbox])
         bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
+        bot_msg.then(lambda: gr.Button(value="执行推理",visible=False,interactive=False), None, [stop_inference])
 
-        chatbot.like(vote, None, None)
+
 
     demo.queue().launch()
