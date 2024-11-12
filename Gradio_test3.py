@@ -64,7 +64,7 @@ def add_message(history, message):
     return history, gr.MultimodalTextbox(value=None, interactive=False)
 
 
-def inference(history: list, new_topic: bool, model: str):
+def inference(history: list, new_topic: bool, model: str, stop_inference:str):
     try:
         if new_topic:
             present_message = [history[-1]]
@@ -88,6 +88,8 @@ def inference(history: list, new_topic: bool, model: str):
         history.append({"role": "assistant", "content": present_response})
         for chunk in zhipuai_messages_api(present_message, model=model):
             out = chunk.choices[0].delta.content
+            if stop_inference == "停止推理": # 这里的判断值是Button的Label值,Button.click输出该值
+                break # 这里需要再修改本函数的输入和输出
             if out:
                 present_response += out  # extract text from streamed litellm chunks
                 history[-1] = {"role": "assistant", "content": present_response}
@@ -224,7 +226,7 @@ if __name__ == "__main__":
             ),
         )
         # 用于中止推理,仅仅在推理过程中显现作用
-        stop_inference = gr.Button(value='停止推理',variant='secondary',size='sm',visible=True,interactive=True,)
+        stop_inference = gr.Button(value='停止推理',variant='secondary',size='sm',visible=False,interactive=True,)
 
         with gr.Row():
             topicCheckbox = gr.Checkbox(
