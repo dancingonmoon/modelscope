@@ -1,4 +1,4 @@
-import gradio as gr # gradio 5.5.0 需要python 3.10以上
+import gradio as gr  # gradio 5.5.0 需要python 3.10以上
 from zhipuai import ZhipuAI
 from GLM.GLM_callFunc import config_read
 from pathlib import Path
@@ -36,7 +36,9 @@ def add_message(history, message):
                     "content": e.args[0],
                 }
                 history.append(present_message)
-                return history, gr.MultimodalTextbox(value=None, interactive=False) # 因此此处输出的仅仅是错误，但不影响后续程序执行，导致模型输入部分是空值，出错
+                return history, gr.MultimodalTextbox(
+                    value=None, interactive=False
+                )  # 因此此处输出的仅仅是错误，但不影响后续程序执行，导致模型输入部分是空值，出错
 
             if file_content is None or file_content == "":
                 files_prompt += f"第{file_No+1}个文件或图片内容无可提取之内容\n\n"
@@ -62,21 +64,25 @@ def add_message(history, message):
     return history, gr.MultimodalTextbox(value=None, interactive=False)
 
 
-def inference(history: list, new_topic: bool):
+def inference(history: list, new_topic: bool, model: str):
     try:
         if new_topic:
             present_message = [history[-1]]
         else:
             # glm模型文件作为prompt，非通过type方式，而是通过件文件内容放在到prompt内
             # history中连续的{"role": "user", "content"：""},是文件链接或内容的删除
-            present_message = [message for message in history if
-                               not (message["role"] == "user" and isinstance(message["content"], tuple))]
+            present_message = [
+                message
+                for message in history
+                if not (
+                    message["role"] == "user" and isinstance(message["content"], tuple)
+                )
+            ]
 
             # present_message = history # 变量赋值，只会对同一个对象指定两个变量名
             # for message in present_message:
             #     if message["role"] == "user" and isinstance(message["content"],tuple):
             #         present_message.remove(message)
-
 
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
@@ -117,20 +123,32 @@ def zhipuai_api(question: str, model: str):
     )
     return response
 
-def zhipuai_messages_api(messages: str|list[dict], model: str):
+
+def zhipuai_messages_api(messages: str | list[dict], model: str):
     prompt = []
     if "alltools" in model:
         if isinstance(messages, str):
-            prompt.append([{"role": "user", "content": [{"type": "text", "text": messages}]}])
-        elif isinstance(messages, list) and all(isinstance(message, dict) for message in messages):
+            prompt.append(
+                [{"role": "user", "content": [{"type": "text", "text": messages}]}]
+            )
+        elif isinstance(messages, list) and all(
+            isinstance(message, dict) for message in messages
+        ):
             for message in messages:
-                prompt.append([{"role": "user", "content": [{"type": "text", "text": message["content"]}]}])
+                prompt.append(
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": message["content"]}],
+                        }
+                )
 
         tools = [{"type": "web_browser"}]
     else:
         if isinstance(messages, str):
             prompt.append([{"role": "user", "content": messages}])
-        elif isinstance(messages, list) and all(isinstance(message, dict) for message in messages):
+        elif isinstance(messages, list) and all(
+            isinstance(message, dict) for message in messages
+        ):
             prompt = messages
 
         tools = [
@@ -158,27 +176,32 @@ def vote(data: gr.LikeData):
     else:
         print("You downvoted this response: " + data.value)
         print(f"You downvoted this response: {data.index}, {data.value}")
-def handle_undo(history, undo_data: gr.UndoData):
-    return history[:undo_data.index], history[undo_data.index]['content']
 
-def handle_retry(history: str|list[dict], new_topic:bool, retry_data: gr.RetryData):
-    new_history = history[:retry_data.index]
+
+def handle_undo(history, undo_data: gr.UndoData):
+    return history[: undo_data.index], history[undo_data.index]["content"]
+
+
+def handle_retry(history: str | list[dict], new_topic: bool, model:str,retry_data: gr.RetryData):
+    new_history = history[: retry_data.index]
     previous_prompt = history[retry_data.index]
     new_history.append(previous_prompt)
 
-    yield from inference(new_history, new_topic)
+    yield from inference(new_history, new_topic,model)
 
-def on_topicRadio(value, evt:gr.EventData):
-    print( f"The {evt.target} component was selected, and its value was {value}.")
+
+def on_topicRadio(value, evt: gr.EventData):
+    print(f"The {evt.target} component was selected, and its value was {value}.")
+
 
 if __name__ == "__main__":
-    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
     )
     zhipuai_client = ZhipuAI(api_key=zhipu_apikey)
-    model = "glm-4-flash"
     # # 测试zhipuai
+    # model = "glm-4-flash"
     # response = zhipuai_api("请联网搜索，回答：美国大选最新情况", model=model)
     # for chunk in response:
     #     out = chunk.choices[0].delta.content
@@ -187,7 +210,7 @@ if __name__ == "__main__":
         gr.Markdown("# 多模态Robot 🤗")
         chatbot = gr.Chatbot(
             elem_id="Multimodal Chatbot",
-            label="聊天框",
+            label="Hi,look at here!",
             bubble_full_width=False,
             type="messages",
             placeholder="# **想问点什么?**",
@@ -200,23 +223,40 @@ if __name__ == "__main__":
                 "https://em-content.zobj.net/source/twitter/376/hugging-face_1f917.png",
             ),
         )
+        # 用于中止推理,仅仅在推理过程中显现作用
+        stop_inference = gr.Button(value='停止推理',variant='secondary',size='sm',visible=True,interactive=True,)
 
         with gr.Row():
-            topicRadio = gr.Checkbox(label="新话题",show_label=True,)
+            topicCheckbox = gr.Checkbox(
+                label="新话题", show_label=True, scale=1, min_width=90
+            )
+            chat_input = gr.MultimodalTextbox(
+                # value= {"text": "sample text", "files": [{'path': "files/ file. jpg", 'orig_name': "file. jpg", 'url': "http:// image_url. jpg ", 'size': 100}]},
+                file_types=["file"],
+                interactive=True,
+                file_count="multiple",
+                lines=1,
+                placeholder="Enter message or upload file...",
+                show_label=False,
+                scale=20,
+            )
+            models_dropdown = gr.Dropdown(
+                choices=[
+                    "glm-4-flash",
+                    "glm-4-air",
+                    "glm-4-plus",
+                    "glm-4-alltools",
+                    "gemini-1.5-pro",
+                ],
+                value="glm-4-flash",
+                multiselect=False,
+                scale=1,
+                show_label=False,
+                label="models",
+            )
 
-
-        chat_input = gr.MultimodalTextbox(
-            # value= {"text": "sample text", "files": [{'path': "files/ file. jpg", 'orig_name': "file. jpg", 'url': "http:// image_url. jpg ", 'size': 100}]},
-            file_types=["file"],
-            interactive=True,
-            file_count="multiple",
-            lines=1,
-            placeholder="Enter message or upload file...",
-            show_label=False,
-        )
-        chatbot.undo(handle_undo, chatbot,[chatbot,chat_input])
-        chatbot.retry(handle_retry, [chatbot,topicRadio],[chatbot])
-
+        chatbot.undo(handle_undo, chatbot, [chatbot, chat_input])
+        chatbot.retry(handle_retry, [chatbot, topicCheckbox, models_dropdown], [chatbot])
         chat_msg = chat_input.submit(
             add_message,
             [chatbot, chat_input],
@@ -225,16 +265,13 @@ if __name__ == "__main__":
         )
         bot_msg = chat_msg.then(
             inference,
-            [chatbot,topicRadio],
+            [chatbot, topicCheckbox, models_dropdown],
             [chatbot],
             api_name="bot_response",
         )
-        bot_msg.then(lambda: gr.Checkbox(value=False), None, [topicRadio])
+        bot_msg.then(lambda: gr.Checkbox(value=False), None, [topicCheckbox])
         bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
 
         chatbot.like(vote, None, None)
 
     demo.queue().launch()
-
-
-
