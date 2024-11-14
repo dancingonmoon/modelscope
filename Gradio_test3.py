@@ -185,6 +185,8 @@ def handle_retry(
 
 
 def on_stop_inference_button():
+    stop_inference_bool.value = True
+    print("Stop inference button clicked. stop_inference_bool set to True.")
     return gr.State(value=True)
 
 
@@ -193,7 +195,7 @@ def on_topicRadio(value, evt: gr.EventData):
 
 
 if __name__ == "__main__":
-    config_path_zhipuai = r"e:/Python_WorkSpace/config/zhipuai_SDK.ini"
+    config_path_zhipuai = r"l:/Python_WorkSpace/config/zhipuai_SDK.ini"
     zhipu_apikey = config_read(
         config_path_zhipuai, section="zhipuai_SDK_API", option1="api_key"
     )
@@ -231,7 +233,7 @@ if __name__ == "__main__":
             interactive=True,
             min_width=100,
         )
-        stop_inference_bool = gr.State(value=False,)
+        stop_inference_bool = gr.State(value=False)
 
         with gr.Row():
             topicCheckbox = gr.Checkbox(
