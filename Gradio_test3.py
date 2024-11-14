@@ -71,7 +71,7 @@ def add_message(history, message):
 
 
 def glm_inference(
-    history: list, new_topic: bool, model: str, stop_inference_bool: bool
+    history: list, new_topic: bool, model: str, stop_inference_flag: bool
 ):
     try:
         if new_topic:
@@ -87,15 +87,11 @@ def glm_inference(
                 )
             ]
 
-            # present_message = history # 变量赋值，只会对同一个对象指定两个变量名
-            # for message in present_message:
-            #     if message["role"] == "user" and isinstance(message["content"],tuple):
-            #         present_message.remove(message)
-
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
         for chunk in zhipuai_messages_api(present_message, model=model):
-            if stop_inference_bool: # 没有发挥作用,当stop_inference_button.click()时，代码没有执行或者没有响应.
+            if stop_inference_flag == True : # 没有发挥作用,当stop_inference_button.click()时，代码没有执行或者没有响应.
+                # break
                 return history
             out = chunk.choices[0].delta.content
             if out:
@@ -178,8 +174,14 @@ def handle_retry(
     new_history = history[: retry_data.index]
     previous_prompt = history[retry_data.index]
     new_history.append(previous_prompt)
+    stop_inference_flag = stop_inference_bool
+    if isinstance(stop_inference_bool,gr.components.state.State):
+        stop_inference_flag = stop_inference_bool.value
+    elif isinstance(stop_inference_bool,bool):
+        stop_inference_flag = stop_inference_bool
+
     # yield gr.Button(visible=True)
-    yield from glm_inference(new_history, new_topic, model, stop_inference_bool)
+    yield from glm_inference(new_history, new_topic, model, stop_inference_flag)
 
 
 def on_stop_inference_button():
@@ -226,12 +228,10 @@ if __name__ == "__main__":
             variant="secondary",
             size="sm",
             visible=False,
-            interactive=False,
+            interactive=True,
             min_width=100,
         )
-        stop_inference_bool = gr.State(
-            value=False,
-        )
+        stop_inference_bool = gr.State(value=False,)
 
         with gr.Row():
             topicCheckbox = gr.Checkbox(
@@ -288,10 +288,10 @@ if __name__ == "__main__":
         bot_msg.then(lambda: gr.Checkbox(value=False), None, [topicCheckbox])
         bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
         bot_msg.then(
-            lambda: gr.Button(visible=False, interactive=False),
+            lambda: gr.Button(visible=False, interactive=True),
             None,
             [stop_inference_button],
         )
-        bot_msg.then(lambda: gr.State(value=False), None, [stop_inference_button])
+        bot_msg.then(lambda: gr.State(value=False), None, [stop_inference_bool])
 
     demo.queue().launch()
