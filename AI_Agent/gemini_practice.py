@@ -16,13 +16,13 @@ if __name__ == "__main__":
     # JPG filepath:
     photo_path = r"C:/Users/shoub/Pictures/融合通信架构.png"
     model = genai.GenerativeModel('gemini-1.5-pro')
-    photo = PIL.Image.open(photo_path)
-    response = model.generate_content(["请将图片文字提取,按原格式转成markdown格式", photo])
-    print(response.text)
+    # photo = PIL.Image.open(photo_path)
+    # response = model.generate_content(["请将图片文字提取,按原格式转成markdown格式", photo])
+    # print(response.text)
 
     # Upload the file and print a confirmation
     # pdf_file = genai.upload_file(path=r"L:/temp/刘禹/Испытания пластины редакция сж.pdf", display_name="Bullet.pdf")
-    pdf_file = genai.upload_file(path=photo_path, display_name="融合通信架构.pdf")
+    # pdf_file = genai.upload_file(path=photo_path, display_name="融合通信架构.pdf")
 
     # print(f"Uploaded file '{pdf_file.display_name}' as: {pdf_file.uri}")
 
@@ -36,6 +36,18 @@ if __name__ == "__main__":
     #                                             "dynamic_threshold": 0.3}}}
     #                                         )
     # Prompt the model with text and the previously uploaded image.
-    response = model.generate_content([pdf_file, "请将图片按照原格式翻译成中文,并按照原文档结构,布局,输出成Markdown格式"])
+    # response = model.generate_content([pdf_file, "请将图片按照原格式翻译成中文,并按照原文档结构,布局,输出成Markdown格式"])
 
-    print(response.text)
+    # print(response.text)
+
+    # 聊天流式传输，直播聊天功能：
+    chat = model.start_chat(
+        history=None, )
+    for i in range(10):
+        message = input("请输入提示词：")
+        response = chat.send_message(message, stream=True)
+        for chunk in response:
+            print(chunk.text)
+            print("_" * 80)
+        print(chat.history)
+
