@@ -9,6 +9,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 
 
 def add_message(history, message):
+    global model
     present_message = {
         "role": "user",
         "content": "",
@@ -30,7 +31,7 @@ def add_message(history, message):
                     # Gemini 1.5 Pro 和 1.5 Flash 最多支持 3,600 个文档页面。文档页面必须采用以下文本数据 MIME 类型之一：
                     # PDF - application/pdf,JavaScript - application/x-javascript、text/javascript,Python - application/x-python、text/x-python,
                     # TXT - text/plain,HTML - text/html, CSS - text/css,Markdown - text/md,CSV - text/csv,XML - text/xml,RTF - text/rtf
-                    file_object = genai.upload_file(path=Path(file), )
+                    file_object = genai.upload_file(path=file)
                     files_object.append(file_object)
                 elif 'glm' in model:
                     # 格式限制：.PDF .DOCX .DOC .XLS .XLSX .PPT .PPTX .PNG .JPG .JPEG .CSV .PY .TXT .MD .BMP .GIF
