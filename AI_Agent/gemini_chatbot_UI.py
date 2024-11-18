@@ -4,12 +4,11 @@ from GLM.GLM_callFunc import config_read
 from pathlib import Path
 import json
 import google.generativeai as genai
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
-# 全局变量
-stop_inference_flag = False
-
-def gemini_add_message(history, message):
+def add_message(history, message):
     present_message = {
         "role": "user",
         "content": "",
@@ -19,21 +18,38 @@ def gemini_add_message(history, message):
     text = message.get("text")
     files = message.get("files")
     if files:
-        files_object = []
+        files_prompt = "请结合以下文件或图片内容回答：\n\n"  # for glm
+        files_object = []  # for gemini
         for file_No, file in enumerate(files):
             history.append(
                 {"role": "user", "content": {"path": file}}
             )  # chatbot上先显示该图片
             # 文件处理
-            # Gemini 1.5 Pro 和 1.5 Flash 最多支持 3,600 个文档页面。文档页面必须采用以下文本数据 MIME 类型之一：
-            # PDF - application/pdf,JavaScript - application/x-javascript、text/javascript,Python - application/x-python、text/x-python,
-            # TXT - text/plain,HTML - text/html, CSS - text/css,Markdown - text/md,CSV - text/csv,XML - text/xml,RTF - text/rtf
             try:
-                file_object = genai.upload_file(path=Path(file),)
-                files_object.append(file_object)
+                if 'gemini' in model:
+                    # Gemini 1.5 Pro 和 1.5 Flash 最多支持 3,600 个文档页面。文档页面必须采用以下文本数据 MIME 类型之一：
+                    # PDF - application/pdf,JavaScript - application/x-javascript、text/javascript,Python - application/x-python、text/x-python,
+                    # TXT - text/plain,HTML - text/html, CSS - text/css,Markdown - text/md,CSV - text/csv,XML - text/xml,RTF - text/rtf
+                    file_object = genai.upload_file(path=Path(file), )
+                    files_object.append(file_object)
+                elif 'glm' in model:
+                    # 格式限制：.PDF .DOCX .DOC .XLS .XLSX .PPT .PPTX .PNG .JPG .JPEG .CSV .PY .TXT .MD .BMP .GIF
+                    # 大小：单个文件50M、总数限制为100个文件
+                    file_object = zhipuai_client.files.create(
+                        file=Path(file), purpose="file-extract"
+                    )
+                    # 获取文本内容
+                    file_content = json.loads(
+                        zhipuai_client.files.content(file_id=file_object.id).content
+                    )["content"]
+
+                    if file_content is None or file_content == "":
+                        files_prompt += f"第{file_No + 1}个文件或图片内容无可提取之内容\n\n"
+                    else:
+                        files_prompt += f"第{file_No + 1}个文件或图片内容如下：\n" f"{file_content}\n\n"
 
             except Exception as e:
-                print(e.args)
+                logging.error(e.args)
                 present_message = {
                     "role": "assistant",
                     "content": e.args[0],
@@ -43,17 +59,28 @@ def gemini_add_message(history, message):
                     value=None, interactive=False
                 )  # 因此此处输出的仅仅是错误，但不影响后续程序执行，导致模型输入部分是空值，出错
 
-
         if text is None or text == "":
-            present_message = {
-                "role": "user",
-                "content": files_object,  # GLM模型不支持content里面file 或者Path
-            }
+            if 'gemini' in model:
+                present_message = {
+                    "role": "user",
+                    "content": files_object}
+            elif 'glm' in model:
+                present_message = {
+                    "role": "user",
+                    "content": files_prompt,  # GLM模型不支持content里面file 或者Path
+                }
+
         else:
-            present_message = {
-                "role": "user",
-                "content": [text,files_object[:]],
-            }
+            if 'gemini' in model:
+                present_message = {
+                    "role": "user",
+                    "content": [text, files_object[:]],
+                }
+            elif 'glm' in model:
+                present_message = {
+                    "role": "user",
+                    "content": f"{text},{files_prompt}",  # GLM模型不支持content里面file 或者Path
+                }
     else:
         if text is not None:
             present_message = {
@@ -66,6 +93,8 @@ def gemini_add_message(history, message):
         gr.MultimodalTextbox(value=None, interactive=False),
         gr.Button(interactive=True, visible=True),
     )
+
+
 def glm_add_message(history, message):
     present_message = {
         "role": "user",
@@ -93,7 +122,7 @@ def glm_add_message(history, message):
                     zhipuai_client.files.content(file_id=file_object.id).content
                 )["content"]
             except Exception as e:
-                print(e.args)
+                logging.error(e.args)
                 present_message = {
                     "role": "assistant",
                     "content": e.args[0],
@@ -104,9 +133,9 @@ def glm_add_message(history, message):
                 )  # 因此此处输出的仅仅是错误，但不影响后续程序执行，导致模型输入部分是空值，出错
 
             if file_content is None or file_content == "":
-                files_prompt += f"第{file_No+1}个文件或图片内容无可提取之内容\n\n"
+                files_prompt += f"第{file_No + 1}个文件或图片内容无可提取之内容\n\n"
             else:
-                files_prompt += f"第{file_No+1}个文件或图片内容如下：\n" f"{file_content}\n\n"
+                files_prompt += f"第{file_No + 1}个文件或图片内容如下：\n" f"{file_content}\n\n"
         if text is None or text == "":
             present_message = {
                 "role": "user",
@@ -130,14 +159,22 @@ def glm_add_message(history, message):
         gr.Button(interactive=True, visible=True),
     )
 
+
+def inference(history: list, new_topic: bool):
+    if 'gemini' in model:
+        yield from gemini_inference(history, new_topic)
+    elif 'glm' in model:
+        yield from glm_inference(history, new_topic)
+
+
 def gemini_inference(
-    history: list, new_topic: bool, model: str, ):
+        history: list, new_topic: bool, ):
+    global streaming_chat
     try:
         if new_topic:
-            global streming_chat
             gemeni_model = genai.GenerativeModel(model)
             streaming_chat = gemeni_model.start_chat(history=None, )
-            
+
         present_message = history[-1]['content']
         response = streaming_chat.send_message(present_message, stream=True)
 
@@ -146,7 +183,7 @@ def gemini_inference(
         for chunk in response:
             if stop_inference_flag:
                 # print(f"return之前history:{history}")
-                yield history # 先yield 再return ; 直接return history会导致history不输出
+                yield history  # 先yield 再return ; 直接return history会导致history不输出
                 return
             out = chunk.text
             if out:
@@ -154,12 +191,14 @@ def gemini_inference(
                 history[-1] = {"role": "assistant", "content": present_response}
                 yield history
     except Exception as e:
-        print("Exception encountered:", str(e))
+        logging.error("Exception encountered:", str(e))
         history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
         # print(history)
         yield history
+
+
 def glm_inference(
-    history: list, new_topic: bool, model: str, ):
+        history: list, new_topic: bool):
     try:
         if new_topic:
             present_message = [history[-1]]
@@ -170,7 +209,7 @@ def glm_inference(
                 message
                 for message in history
                 if not (
-                    message["role"] == "user" and isinstance(message["content"], tuple)
+                        message["role"] == "user" and isinstance(message["content"], tuple)
                 )
             ]
 
@@ -178,8 +217,8 @@ def glm_inference(
         history.append({"role": "assistant", "content": present_response})
         for chunk in zhipuai_messages_api(present_message, model=model):
             if stop_inference_flag:
-                print(f"return之前history:{history}")
-                yield history # 先yield 再return ; 直接return history会导致history不输出
+                # print(f"return之前history:{history}")
+                yield history  # 先yield 再return ; 直接return history会导致history不输出
                 return
             out = chunk.choices[0].delta.content
             if out:
@@ -187,7 +226,7 @@ def glm_inference(
                 history[-1] = {"role": "assistant", "content": present_response}
                 yield history
     except Exception as e:
-        print("Exception encountered:", str(e))
+        logging.error("Exception encountered:", str(e))
         history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
         # print(history)
         yield history
@@ -201,7 +240,7 @@ def zhipuai_messages_api(messages: str | list[dict], model: str):
                 [{"role": "user", "content": [{"type": "text", "text": messages}]}]
             )
         elif isinstance(messages, list) and all(
-            isinstance(message, dict) for message in messages
+                isinstance(message, dict) for message in messages
         ):
             for message in messages:
                 prompt.append(
@@ -216,7 +255,7 @@ def zhipuai_messages_api(messages: str | list[dict], model: str):
         if isinstance(messages, str):
             prompt.append([{"role": "user", "content": messages}])
         elif isinstance(messages, list) and all(
-            isinstance(message, dict) for message in messages
+                isinstance(message, dict) for message in messages
         ):
             prompt = messages
 
@@ -241,10 +280,10 @@ def zhipuai_messages_api(messages: str | list[dict], model: str):
 
 def vote(data: gr.LikeData):
     if data.liked:
-        print(f"You upvoted this response:  {data.index}, {data.value} ")
+        logging.error(f"You upvoted this response:  {data.index}, {data.value} ")
     else:
-        print("You downvoted this response: " + data.value)
-        print(f"You downvoted this response: {data.index}, {data.value}")
+        logging.error("You downvoted this response: " + data.value)
+        logging.error(f"You downvoted this response: {data.index}, {data.value}")
 
 
 def handle_undo(history, undo_data: gr.UndoData):
@@ -252,42 +291,47 @@ def handle_undo(history, undo_data: gr.UndoData):
 
 
 def handle_retry(
-    history: str | list[dict],
-    new_topic: bool,
-    model: str,
-    retry_data: gr.RetryData,
-    ):
+        history: str | list[dict],
+        new_topic: bool,
+        retry_data: gr.RetryData,
+):
     new_history = history[: retry_data.index]
     previous_prompt = history[retry_data.index]
     new_history.append(previous_prompt)
-    yield from glm_inference(new_history, new_topic, model)
+    if 'glm' in model:
+        yield from glm_inference(new_history, new_topic)
+    elif 'gemini' in model:
+        yield from gemini_inference(new_history, new_topic)
 
 
 def stop_inference_flag_True():
     global stop_inference_flag
     stop_inference_flag = True
 
+
 def stop_inference_flag_False():
     global stop_inference_flag
     stop_inference_flag = False
-    return
 
-def on_selectDropdown(evt:gr.SelectData):
+
+
+def on_selectDropdown(evt: gr.SelectData)-> None:
     global streaming_chat
-    model_selected = evt.value
-    print(f"下拉菜单选择了{evt.value},当前状态是evt.selected:{evt.selected}")
-    if 'gemini' in model_selected:
+    global model
+    model = evt.value
+    logging.error(f"下拉菜单选择了{evt.value},当前状态是evt.selected:{evt.selected}")
+    if 'gemini' in model:
         try:
-            gemeni_model = genai.GenerativeModel(model_selected)
+            gemeni_model = genai.GenerativeModel(model)
             streaming_chat = gemeni_model.start_chat(history=None, )
         except Exception as e:
-            print(e.args)
-    return
+            logging.error(e.args)
+
 
 
 
 def on_topicRadio(value, evt: gr.EventData):
-    print(f"The {evt.target} component was selected, and its value was {value}.")
+    logging.error(f"The {evt.target} component was selected, and its value was {value}.")
 
 
 if __name__ == "__main__":
@@ -307,6 +351,11 @@ if __name__ == "__main__":
     geminiAPI = config_read(config_path_gemini, section="gemini_API", option1="api_key")
     genai.configure(api_key=geminiAPI)
     # genai.types.GenerationConfig()
+
+    # 全局变量
+    stop_inference_flag = False  #停止推理初始值，全局变量
+    model = 'glm-4-flash'  # 初始假定值，作为全局变量
+    streaming_chat = None  # gemini直播聊天对象；全局变量
 
     with gr.Blocks() as demo:
         gr.Markdown("# 多模态Robot 🤗")
@@ -355,7 +404,7 @@ if __name__ == "__main__":
                     "glm-4-air",
                     "glm-4-plus",
                     "glm-4-alltools",
-                   " gemini-1.5-flash",
+                    "gemini-1.5-flash",
                     "gemini-1.5-pro",
                 ],
                 value="glm-4-flash",
@@ -363,27 +412,28 @@ if __name__ == "__main__":
                 scale=1,
                 show_label=False,
                 label="models",
+                interactive=True,
             )
 
-        models_dropdown.select(on_selectDropdown, None,None)
+        models_dropdown.select(on_selectDropdown, None, None)
         stop_inference_button.click(stop_inference_flag_True, None, None)
         chatbot.undo(handle_undo, chatbot, [chatbot, chat_input])
         chatbot.like(vote, None, None)
         chatbot.retry(
             handle_retry,
-            [chatbot, topicCheckbox, models_dropdown],
+            [chatbot, topicCheckbox],
             [chatbot],
         )
 
         chat_msg = chat_input.submit(
-            glm_add_message,
+            add_message,
             [chatbot, chat_input],
             [chatbot, chat_input, stop_inference_button],
             queue=False,
         )
         bot_msg = chat_msg.then(
-            glm_inference,
-            [chatbot, topicCheckbox, models_dropdown],
+            inference,
+            [chatbot, topicCheckbox],
             [chatbot],
             api_name="bot_response",
         )
