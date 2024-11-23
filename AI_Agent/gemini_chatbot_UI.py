@@ -33,6 +33,7 @@ def add_message(history, message):
                     # TXT - text/plain,HTML - text/html, CSS - text/css,Markdown - text/md,CSV - text/csv,XML - text/xml,RTF - text/rtf
                     file_object = genai.upload_file(path=file)
                     files_object.append(file_object)
+
                 elif 'glm' in model:
                     # 格式限制：.PDF .DOCX .DOC .XLS .XLSX .PPT .PPTX .PNG .JPG .JPEG .CSV .PY .TXT .MD .BMP .GIF
                     # 大小：单个文件50M、总数限制为100个文件
