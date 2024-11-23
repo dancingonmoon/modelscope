@@ -9,6 +9,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 
 
 def add_message(history, message):
+    global present_message
     global model
     present_message = {
         "role": "user",
@@ -23,7 +24,7 @@ def add_message(history, message):
         files_object = []  # for gemini
         for file_No, file in enumerate(files):
             history.append(
-                {"role": "user", "content": {"path": file}}
+                {"role": "user", "content": {"path": file, "alt_text": file}}
             )  # chatbot上先显示该图片
             # 文件处理
             try:
@@ -57,9 +58,11 @@ def add_message(history, message):
                     "content": e.args[0],
                 }
                 history.append(present_message)
-                return history, gr.MultimodalTextbox(
+                return (history, gr.MultimodalTextbox(
                     value=None, interactive=False
-                )  # 因此此处输出的仅仅是错误，但不影响后续程序执行，导致模型输入部分是空值，出错
+                ),
+                None ) # 因此此处输出的仅仅是错误，但不影响后续程序执行，导致模型输入部分是空值，出错
+
 
         if text is None or text == "":
             if 'gemini' in model:
@@ -76,7 +79,7 @@ def add_message(history, message):
             if 'gemini' in model:
                 present_message = {
                     "role": "user",
-                    "content": [text, files_object[:]],
+                    "content": [text] + files_object, # 列表合并
                 }
             elif 'glm' in model:
                 present_message = {
@@ -89,72 +92,11 @@ def add_message(history, message):
                 "role": "user",
                 "content": f"{text}",
             }
-    history.append(present_message)
-    return (
-        history,
-        gr.MultimodalTextbox(value=None, interactive=False),
-        gr.Button(interactive=True, visible=True),
-    )
-
-
-def glm_add_message(history, message):
-    present_message = {
-        "role": "user",
-        "content": "",
-    }
-    if history is None:
-        history = [present_message]
-    text = message.get("text")
-    files = message.get("files")
-    if files:
-        files_prompt = "请结合以下文件或图片内容回答：\n\n"
-        for file_No, file in enumerate(files):
-            history.append(
-                {"role": "user", "content": {"path": file}}
-            )  # chatbot上先显示该图片
-            # 文件处理
-            # 格式限制：.PDF .DOCX .DOC .XLS .XLSX .PPT .PPTX .PNG .JPG .JPEG .CSV .PY .TXT .MD .BMP .GIF
-            # 大小：单个文件50M、总数限制为100个文件
-            try:
-                file_object = zhipuai_client.files.create(
-                    file=Path(file), purpose="file-extract"
-                )
-                # 获取文本内容
-                file_content = json.loads(
-                    zhipuai_client.files.content(file_id=file_object.id).content
-                )["content"]
-            except Exception as e:
-                logging.error(e.args)
-                present_message = {
-                    "role": "assistant",
-                    "content": e.args[0],
-                }
-                history.append(present_message)
-                return history, gr.MultimodalTextbox(
-                    value=None, interactive=False
-                )  # 因此此处输出的仅仅是错误，但不影响后续程序执行，导致模型输入部分是空值，出错
-
-            if file_content is None or file_content == "":
-                files_prompt += f"第{file_No + 1}个文件或图片内容无可提取之内容\n\n"
-            else:
-                files_prompt += f"第{file_No + 1}个文件或图片内容如下：\n" f"{file_content}\n\n"
-        if text is None or text == "":
-            present_message = {
-                "role": "user",
-                "content": files_prompt,  # GLM模型不支持content里面file 或者Path
-            }
-        else:
-            present_message = {
-                "role": "user",
-                "content": f"{text},{files_prompt}",  # GLM模型不支持content里面file 或者Path
-            }
-    else:
-        if text is not None:
-            present_message = {
+    # history.append(present_message)
+    history.append({
                 "role": "user",
                 "content": f"{text}",
-            }
-    history.append(present_message)
+            }) # chatbot上只显示text ,不显示files_prompt,以及files_boject
     return (
         history,
         gr.MultimodalTextbox(value=None, interactive=False),
@@ -177,8 +119,8 @@ def gemini_inference(
             gemeni_model = genai.GenerativeModel(model)
             streaming_chat = gemeni_model.start_chat(history=None, )
 
-        present_message = history[-1]['content']
-        response = streaming_chat.send_message(present_message, stream=True)
+        # present_message = history[-1]['content'] # present_message取自全局变量
+        response = streaming_chat.send_message(present_message['content'], stream=True)
 
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
@@ -201,23 +143,26 @@ def gemini_inference(
 
 def glm_inference(
         history: list, new_topic: bool):
+    global present_message
     try:
         if new_topic:
-            present_message = [history[-1]]
+            # present_message = [history[-1]]
+            glm_prompt = [present_message] # 取自全局变量
         else:
             # glm模型文件作为prompt，非通过type方式，而是通过件文件内容放在到prompt内
             # history中连续的{"role": "user", "content"：""},是文件链接或内容的删除
-            present_message = [
+            glm_prompt = [
                 message
-                for message in history
+                for message in history[:-1] # 最后一条直接取自全局变量present_message
                 if not (
                         message["role"] == "user" and isinstance(message["content"], tuple)
                 )
             ]
+            glm_prompt.append(present_message)
 
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
-        for chunk in zhipuai_messages_api(present_message, model=model):
+        for chunk in zhipuai_messages_api(glm_prompt, model=model):
             if stop_inference_flag:
                 # print(f"return之前history:{history}")
                 yield history  # 先yield 再return ; 直接return history会导致history不输出
@@ -358,6 +303,7 @@ if __name__ == "__main__":
     stop_inference_flag = False  #停止推理初始值，全局变量
     model = 'glm-4-flash'  # 初始假定值，作为全局变量
     streaming_chat = None  # gemini直播聊天对象；全局变量
+    present_message = None  # 当前消息，全局变量;因为chatbot显示的message与送入模型的message会有所不同;
 
     with gr.Blocks() as demo:
         gr.Markdown("# 多模态Robot 🤗")
