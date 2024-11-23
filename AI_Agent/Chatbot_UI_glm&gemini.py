@@ -316,6 +316,8 @@ if __name__ == "__main__":
             show_copy_button=True,
             show_copy_all_button=True,
             show_share_button=True,
+            autoscroll=True,
+            height=600,
             render_markdown=True,
             avatar_images=(
                 None,
