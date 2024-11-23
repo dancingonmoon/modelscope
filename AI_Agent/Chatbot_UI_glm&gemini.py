@@ -356,6 +356,8 @@ if __name__ == "__main__":
                     "glm-4-alltools",
                     "gemini-1.5-flash",
                     "gemini-1.5-pro",
+                    "gemini-1.5-flash-latest",
+                    "gemini-1.5-pro-latest",
                 ],
                 value="glm-4-flash",
                 multiselect=False,
