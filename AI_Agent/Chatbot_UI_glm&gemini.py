@@ -266,7 +266,7 @@ def on_selectDropdown(evt: gr.SelectData)-> None:
     global streaming_chat
     global model
     model = evt.value
-    logging.error(f"下拉菜单选择了{evt.value},当前状态是evt.selected:{evt.selected}")
+    logging.info(f"下拉菜单选择了{evt.value},当前状态是evt.selected:{evt.selected}")
     if 'gemini' in model:
         try:
             gemeni_model = genai.GenerativeModel(model)
