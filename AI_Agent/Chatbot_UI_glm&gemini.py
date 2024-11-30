@@ -317,7 +317,7 @@ if __name__ == "__main__":
             show_copy_all_button=True,
             show_share_button=True,
             autoscroll=True,
-            height=600,
+            height=400,
             render_markdown=True,
             avatar_images=(
                 None,
@@ -398,4 +398,4 @@ if __name__ == "__main__":
         )
         bot_msg.then(stop_inference_flag_False, None, None)
 
-    demo.queue().launch()
+    demo.queue().launch(server_name='0.0.0.0')
