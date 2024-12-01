@@ -12,6 +12,8 @@ conda activate myenv
 conda update -n base -c defaults conda
 
 # pip install -q -U google-generativeai
+# pip install -U gradio
+# pip install -U zhipuai
 
 # 允许某个端口可以被外部访问；
 sudo ufw allow 7860
