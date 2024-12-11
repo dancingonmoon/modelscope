@@ -32,3 +32,5 @@ service ntpd start
 bash <(wget -qO- -o- https://git.io/v2ray.sh)
 
 #现在可以尝试一下输入 v2ray 回车，即可管理 V2Ray
+
+# 查看某个IP地址下的指定端口，全球访问情况：https://tcp.ping.pe/45.76.163.104:80
