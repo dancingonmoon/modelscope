@@ -30,3 +30,5 @@ service ntpd start
 
 #执行V2Ray一键安装脚本
 bash <(wget -qO- -o- https://git.io/v2ray.sh)
+
+#现在可以尝试一下输入 v2ray 回车，即可管理 V2Ray
