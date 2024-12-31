@@ -164,7 +164,7 @@ class AudioLoop:
             # So empty out the audio queue because it may have loaded much more audio than has played yet.
             # 模型本身是支持被打断，即上一个回答还在持续输出的时候，提出新问题，模型会中止上个提问的输出，开始新问题的输出；
             # 所以，self.audio_queue队列中缓存的之前的回答需要清除，否则，就会将缓存中所有内容都播放
-            # 因为是模型被打断的时候，会是一个新的输出，所以，在async for循环外面清除
+            # 因为是模型被打断的时候，会是一个新的输出，所以，在async for循环外面,不断重复的取出(移出)最后一个数据,直到队列为空
             while not self.audio_queue.empty():  # 当加上这句块，有掉字的情况
                 self.audio_queue.get_nowait()
 
