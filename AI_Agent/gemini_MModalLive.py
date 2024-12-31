@@ -1,7 +1,6 @@
 import asyncio
 from google import genai
 import wave
-from async_iterate_audioPlay import async_play_audio
 import logging
 import traceback
 import pyaudio
@@ -84,9 +83,8 @@ class AudioLoop:
     The recv method collects audio chunks in a loop. It breaks out of the loop once the model sends a turn_complete method, and then plays the audio.
     """
 
-    def __init__(self,  config=None):
-        """
-        """
+    def __init__(self, config=None):
+        """ """
         self.session = None
         if config is None:
             config = {"generation_config": {"response_modalities": ["AUDIO"]}}
@@ -120,14 +118,6 @@ class AudioLoop:
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
 
-            # async for sent_txt in self.send():
-            #     # Ideally send and recv would be separate tasks.
-            #     logger.info(f"sent: {sent_txt}")
-            #
-            #     async for audio_response in self.recv():
-            #         yield audio_response
-
-
     async def send(self):
         """
         持续不断的user input提示,直到exit退出
@@ -146,10 +136,11 @@ class AudioLoop:
         Background task to reads from the websocket and write pcm chunks to the output queue
         """
         while True:
-
             logger.debug("receive")
             # read chunks from the socket
             turn = self.session.receive()
+            # async for n, response in async_enumerate(turn):
+            #     logger.debug(f"got chunk: {str(response)}")
             async for response in turn:
                 if data := response.data:
                     self.audio_queue.put_nowait(data)
@@ -159,34 +150,23 @@ class AudioLoop:
                     if text := response.text:
                         print(text, end="")
 
+            #     if n == 0:
+            #         print(
+            #             response.server_content.model_turn.parts[
+            #                 0
+            #             ].inline_data.mime_type
+            #         )
+            #     print(".", end="")
+            #
+            # print("\n")
+
             # If you interrupt the model, it sends a turn_complete.For interruptions to work, we need to stop playback.
             # So empty out the audio queue because it may have loaded much more audio than has played yet.
             # 模型本身是支持被打断，即上一个回答还在持续输出的时候，提出新问题，模型会中止上个提问的输出，开始新问题的输出；
             # 所以，self.audio_queue队列中缓存的之前的回答需要清除，否则，就会将缓存中所有内容都播放
             # 因为是模型被打断的时候，会是一个新的输出，所以，在async for循环外面清除
-            while not self.audio_queue.empty(): # 当加上这句块，有掉字的情况
+            while not self.audio_queue.empty():  # 当加上这句块，有掉字的情况
                 self.audio_queue.get_nowait()
-
-        # logger.debug("receive")
-        #
-        # # Read chunks from the socket.
-        # turn = self.session.receive()
-        # async for n, response in async_enumerate(turn):
-        #     logger.debug(f"got chunk: {str(response)}")
-        #
-        #     if response.data is None:
-        #         logger.debug(f"Unhandled server message! - {response}")
-        #     else:
-        #         audio_response = response.data
-        #         self.audio_queue.put_nowait(response.data)
-        #         yield audio_response
-        #     if n == 0:
-        #         print(response.server_content.model_turn.parts[0].inline_data.mime_type)
-        #     print(".", end="")
-        #
-        # print("\n")
-        #
-        # await asyncio.sleep(2)
 
     async def play_audio(self):
         stream = await asyncio.to_thread(
