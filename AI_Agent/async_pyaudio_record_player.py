@@ -36,11 +36,14 @@ class Pyaudio_Record_Player:
                 self.stop_stream = False
                 self.logger.info(f"User input:{user_input}")
             elif user_input in ["q", "quit", "stop", "exit"]:
-                self.pause_stream=False
+                self.pause_stream = False
                 self.stop_stream = True
                 self.logger.info(f"User input:{user_input}")
                 break
+            else:
+                self.logger.info(f"invalid User input:{user_input}")
 
+            await asyncio.sleep(0.1)
 
     async def audiofile_read(self, file_path: str, chunk_size: int = 1024):
         """
@@ -60,7 +63,10 @@ class Pyaudio_Record_Player:
             # 将音频片段转换为字节
             data = chunk.raw_data
             await self.audio_queue.put(data)  # 写入Queue
-            # yield data  # 输出音频内容
+            if self.stop_stream:
+                break
+        if not self.stop_stream:
+            await self.audio_queue.put(None)  # signal the end of the audio
 
     async def async_play_audio(
         self,
@@ -119,6 +125,7 @@ class Pyaudio_Record_Player:
 
         while True:
             if self.pause_stream:
+                # await asyncio.sleep(.1)
                 continue
             elif not self.stop_stream:
                 data = await asyncio.to_thread(audio_stream.read, chunk_size, **kwargs)
