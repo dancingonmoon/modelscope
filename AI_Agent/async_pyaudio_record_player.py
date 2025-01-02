@@ -5,15 +5,8 @@ import traceback
 from typing import AsyncIterator
 import logging
 
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-IN_SAMPLE_RATE = 44100
-OUT_SAMPLE_RATE = 44100
-CHUNK_SIZE = 1024
+# pyaudio_instance = pyaudio.PyAudio()
 
-pyaudio_instance = pyaudio.PyAudio()
-# audio_in_queue = asyncio.Queue()
-# audio_out_queue = asyncio.Queue()
 
 
 class pyaudio_record_player:
@@ -39,81 +32,83 @@ class pyaudio_record_player:
         sample_rate = audio.frame_rate
         self.logger.info(f"音频文件信息: 通道数:{channel},采样率:{sample_rate}")
         # 计算帧数
-        nframes = len(audio)
-        for i in range(0, nframes, chunk_size):  # 假设每次读取1024帧
+        n_frames = len(audio)
+        for i in range(0, n_frames, chunk_size):  # 假设每次读取1024帧
             # 获取音频片段
             chunk = audio[i : i + chunk_size]
             # 将音频片段转换为字节
             data = chunk.raw_data
-            await self.audio_out_queue.put(data)
-            yield data  # 输出音频内容
+            await self.audio_in_queue.put(data)   # 写入Queue
+            # yield data  # 输出音频内容
 
 
-async def async_play_audio(
-    pyaudio_instance: pyaudio.PyAudio,
-    gen: AsyncIterator | asyncio.Queue,
-    sample_width: int = 2,
-    channels: int = 2,
-    rate: int = 44100,
-):
+    async def async_play_audio(self,
+        sample_width: int = 2,
+        channels: int = 2,
+        rate: int = 44100,
+    ):
 
-    # stream = pyaudio_instance.open(format=pyaudio_instance.get_format_from_width(2),
-    #                   channels=channels,
-    #                   rate=rate,
-    #                   output=True)
-    stream = await asyncio.to_thread(
-        pyaudio_instance.open,
-        format=pyaudio_instance.get_format_from_width(sample_width),
-        channels=channels,
-        rate=rate,
-        output=True,
-    )
-    try:
-        while True:
-            if isinstance(gen, AsyncIterator):
-                # async for audio_data in gen:
-                #     stream.write(audio_data)
-                #     await asyncio.sleep(0)  # 让出控制权，使其他任务能够运行
-                await asyncio.to_thread(stream.write, gen)
-            elif isinstance(gen, asyncio.Queue):
-                audio_data = await gen.get()  # asyncio.Queue是一个异步操作,需要await
+        # stream = pyaudio_instance.open(format=pyaudio_instance.get_format_from_width(2),
+        #                   channels=channels,
+        #                   rate=rate,
+        #                   output=True)
+        stream = await asyncio.to_thread(
+            self.pyaudio_instance.open,
+            format=self.pyaudio_instance.get_format_from_width(sample_width),
+            channels=channels,
+            rate=rate,
+            output=True,
+        )
+        try:
+            while True:
+                audio_data = await self.audio_out_queue.get()  # asyncio.Queue是一个异步操作,需要await
                 await asyncio.to_thread(stream.write, audio_data)
-    finally:  #  无论while循环如何结束,以下终将释放资源
-        stream.stop_stream()
-        stream.close()
-        # pyaudio_instance.terminate()
+        finally:   # 无论while循环如何结束,以下终将释放资源
+            stream.stop_stream()
+            stream.close()
+            # self.pyaudio_instance.terminate()
 
 
-async def listen_audio(
-    pyaudio_instance: pyaudio.PyAudio,
-    sample_width: int = 2,
-    channels: int = 2,
-    rate: int = 44100,
-    chunk_size: int = 1024,
-):
-    """
-    持续不断的从麦克风读取音频数据
-    """
-    mic_info = pyaudio_instance.get_default_input_device_info()
-    audio_stream = await asyncio.to_thread(
-        pyaudio_instance.open,
-        format=pyaudio_instance.get_format_from_width(sample_width),
-        channels=channels,
-        rate=rate,
-        input=True,
-        input_device_index=mic_info["index"],
-        frames_per_buffer=chunk_size,
-    )
-    if __debug__:  # 这是一个条件语句，用于检查当前是否处于调试模式。
-        kwargs = {
-            "exception_on_overflow": False
-        }  # 如果处于调试模式，kwargs 被设置为一个字典，这意味着在调试模式下，当音频流溢出（即缓冲区满，无法再接收更多数据）时，不会抛出异常。
-    else:
-        kwargs = {}  # 如果当前不是调试模式，这意味着在生产模式下，当音频流溢出时，可能会抛出异常，这通常是为了确保程序能够及时处理错误情况
-    while True:
-        data = await asyncio.to_thread(audio_stream.read, chunk_size, **kwargs)
-        # yield {"data": data, "mime_type": "audio/pcm"}
-        yield data
+    async def listen_audio(self,
+        sample_width: int = 2,
+        channels: int = 1,
+        rate: int = 44100,
+        chunk_size: int = 1024,
+    ):
+        """
+        持续不断的从麦克风读取音频数据
+        """
+        mic_info = self.pyaudio_instance.get_default_input_device_info()
+        audio_stream = await asyncio.to_thread(
+            self.pyaudio_instance.open,
+            format=self.pyaudio_instance.get_format_from_width(sample_width),
+            channels=channels,
+            rate=rate,
+            input=True,
+            input_device_index=mic_info["index"],
+            frames_per_buffer=chunk_size,
+        )
+        if __debug__:  # 这是一个条件语句，用于检查当前是否处于调试模式。
+            kwargs = {
+                "exception_on_overflow": False
+            }  # 如果处于调试模式，kwargs 被设置为一个字典，这意味着在调试模式下，当音频流溢出（即缓冲区满，无法再接收更多数据）时，不会抛出异常。
+        else:
+            kwargs = {}  # 如果当前不是调试模式，这意味着在生产模式下，当音频流溢出时，可能会抛出异常，这通常是为了确保程序能够及时处理错误情况
+        try:
+            while True:
+                data = await asyncio.to_thread(audio_stream.read, chunk_size, **kwargs)
+                # await self.audio_in_queue.put({"data": data, "mime_type": "audio/pcm"})
+                await self.audio_in_queue.put(data)
+                # yield data
+        finally:   # 无论while循环如何结束,以下终将释放资源
+            audio_stream.stop_stream()
+            audio_stream.close()
+            # self.pyaudio_instance.terminate()
+
+    async def audiofile_player(self,file_path: str):
+        with asyncio.TaskGroup() as tg:
+            tg.create_task(self.audiofile_read(file_path,))
+            tg.create_task(self.async_play_audio())
 
 
 async def main(file_path: str, chunk_size: int = 1024):
