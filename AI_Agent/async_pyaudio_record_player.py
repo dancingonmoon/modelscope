@@ -129,7 +129,7 @@ class Pyaudio_Record_Player:
         chunk_size: int = 1024,
     ):
         """
-        持续不断的从麦克风读取音频数据
+        持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑.
         """
         mic_info = self.pyaudio_instance.get_default_input_device_info()
         audio_stream = await asyncio.to_thread(
