@@ -3,7 +3,8 @@ import pyaudio  # pyaudio 是一个跨平台的音频输入/输出库，主要�
 from pydub import AudioSegment  # pydub 库本身不直接播放音频文件，但它可以将多种格式的音频文件转换为 WAV 格式
 import traceback
 import logging
-import sys
+import webrtcvad
+import numpy as np
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -15,7 +16,7 @@ logging.basicConfig(level=logging.INFO,
 
 class Pyaudio_Record_Player:
     def __init__(
-        self, pyaudio_instance: pyaudio.PyAudio, logger: logging.Logger = None
+            self, pyaudio_instance: pyaudio.PyAudio, logger: logging.Logger = None
     ):
         self.pyaudio_instance = pyaudio_instance
         self.audio_queue = asyncio.Queue()
@@ -56,12 +57,13 @@ class Pyaudio_Record_Player:
                 else:
                     self.logger.info(f"invalid User input: {user_input}")
 
-                await asyncio.sleep(0.1) # 避免运行阻塞在user_command,其它异步线程停滞
+                await asyncio.sleep(0.1)  # 避免运行阻塞在user_command,其它异步线程停滞
         # except ValueError:
         #     self.logger.info("Standard input stream closed, user command exiting.")
         # 存在问题未解： 当正常播放结束，asyncio.to_thread(input)异步线程等待键盘输入，程序无法关闭
         except asyncio.CancelledError:
             self.logger.info("user_command task cancelled.")
+
     async def audiofile_read(self, file_path: str, chunk_size: int = 1024):
         """
         1. 非wav格式文件,音频转成wav;
@@ -77,7 +79,7 @@ class Pyaudio_Record_Player:
         n_frames = len(audio)
         for i in range(0, n_frames, chunk_size):  # 假设每次读取1024ms
             # 获取音频片段
-            chunk = audio[i : i + chunk_size]
+            chunk = audio[i: i + chunk_size]
             # 将音频片段转换为字节
             data = chunk.raw_data
             await self.audio_queue.put(data)  # 写入Queue
@@ -87,10 +89,10 @@ class Pyaudio_Record_Player:
             await self.audio_queue.put(None)  # signal the end of the audio
 
     async def async_play_audio(
-        self,
-        sample_width: int = 2,
-        channels: int = 2,
-        rate: int = 44100,
+            self,
+            sample_width: int = 2,
+            channels: int = 2,
+            rate: int = 44100,
     ):
         stream = await asyncio.to_thread(
             self.pyaudio_instance.open,
@@ -105,9 +107,7 @@ class Pyaudio_Record_Player:
                 await asyncio.sleep(.1)  # 避免运行因长循环，滞留在此处，导致user_command阻塞
                 continue
             elif not self.pause_stream and not self.stop_stream:
-                audio_data = (
-                    await self.audio_queue.get()
-                )  # asyncio.Queue是一个异步操作,需要await
+                audio_data = await self.audio_queue.get()  # asyncio.Queue是一个异步操作,需要await
                 if audio_data is None:
                     self.stop_stream = True
                     stream.stop_stream()
@@ -122,15 +122,18 @@ class Pyaudio_Record_Player:
                 break
 
     async def microphone_read(
-        self,
-        sample_width: int = 2,
-        channels: int = 1,
-        rate: int = 44100,
-        chunk_size: int = 1024,
+            self,
+            sample_width: int = 2,
+            channels: int = 1,
+            rate: int = 16000,
+            chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
+            vad_mode: int = 2,  # vad 模式，0-3，3最敏感
     ):
         """
-        持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑.
+        持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
+        实现了回声抑制(经过vad判断is_speech,静音填充)
         """
+        vad = webrtcvad.Vad(vad_mode)
         mic_info = self.pyaudio_instance.get_default_input_device_info()
         audio_stream = await asyncio.to_thread(
             self.pyaudio_instance.open,
@@ -156,7 +159,16 @@ class Pyaudio_Record_Player:
                 elif not self.stop_stream:
                     try:
                         data = await asyncio.to_thread(audio_stream.read, chunk_size, **kwargs)
-                        await self.audio_queue.put(data)
+                        data_np = np.frombuffer(data, dtype=np.int16)
+                        # 使用VAD检测是否是语音
+                        is_speech = vad.is_speech(data_np.tobytes(), rate)
+                        if is_speech:
+                            audio_vad = data
+                        else:
+                            # 填补静音数据
+                            silent_frame = np.zeros(chunk_size, dtype=np.int16)
+                            audio_vad = silent_frame.tobytes()
+                        await self.audio_queue.put(audio_vad)
                     except OSError as e:
                         self.logger.error(f"麦克风读取发生操作系统错误: {e}")
                         break  # 发生错误时退出循环
@@ -169,13 +181,11 @@ class Pyaudio_Record_Player:
             traceback.print_exception(EG)
             self.logger.info(f"麦克风初始化或读取发生错误: {EG}")
 
-
-
     async def audiofile_player(
-        self,
-        file_path: str,
-        sample_width: int = 2,
-        chunk_size: int = 1024,
+            self,
+            file_path: str,
+            sample_width: int = 2,
+            chunk_size: int = 1024,
     ):
         """
         存在问题未解： 当正常播放结束，asyncio.to_thread(input)异步线程等待键盘输入，程序无法关闭
@@ -198,11 +208,13 @@ class Pyaudio_Record_Player:
             self.pyaudio_instance.terminate()  # 在程序结束时调用一次
             self.logger.info("播放器已清理资源")
             # sys.stdin.close()  # 当播放正常结束时，asyncio.to_thread(input)有个异步线程等待input
+
     async def microphone_test(self,
-        sample_width: int = 2,
-        channels: int = 1,
-        rate: int = 44100,
-        chunk_size: int = 1024,):
+                              sample_width: int = 2,
+                              channels: int = 1,
+                              rate: int = 16000,
+                              chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
+                              ):
         """
         麦克风收音,3秒后回放;user_command控制;
         """
@@ -219,7 +231,6 @@ class Pyaudio_Record_Player:
             self.logger.info("pyaudio实例已清理资源")
 
 
-
 if __name__ == "__main__":
     logger = logging.getLogger("Pyaudio_Record_Player")
     logger.setLevel("INFO")
@@ -230,4 +241,4 @@ if __name__ == "__main__":
         pya,
     )
     # asyncio.run(player.audiofile_player(file_path))
-    asyncio.run(player.microphone_test())
+    asyncio.run(player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=480))
