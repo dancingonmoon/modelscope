@@ -131,7 +131,7 @@ class Pyaudio_Record_Player:
     ):
         """
         持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
-        实现了回声抑制(经过vad判断is_speech,静音填充)
+        实现了回声抑制(经过vad判断is_speech,静音填充) [注: 可能有vad算法的原因,回声抑制效果不是最佳,可以考虑更换回声抑制算法库]
         """
         vad = webrtcvad.Vad(vad_mode)
         mic_info = self.pyaudio_instance.get_default_input_device_info()
