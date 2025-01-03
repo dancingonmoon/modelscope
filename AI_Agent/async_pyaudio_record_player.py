@@ -3,6 +3,7 @@ import pyaudio  # pyaudio 是一个跨平台的音频输入/输出库，主要�
 from pydub import AudioSegment  # pydub 库本身不直接播放音频文件，但它可以将多种格式的音频文件转换为 WAV 格式
 import traceback
 import logging
+import sys
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -20,6 +21,7 @@ class Pyaudio_Record_Player:
         self.audio_queue = asyncio.Queue()
         self.pause_stream = False
         self.stop_stream = False
+        # self.playback_end = False
         self.channels = 2
         self.sample_rate = 44100
         self.logger = logger
@@ -33,34 +35,40 @@ class Pyaudio_Record_Player:
         """
         控制音频播放: pause/p: 暂停; stop/q/quit: 停止; 'c/continue: 继续;
         """
-        while True:
-            user_input = await asyncio.to_thread(
-                input, "pause/p: 暂停; c/continue: 继续; stop/q/quit: 停止: "
-            )
-            if user_input in ["pause", "p"]:
-                self.pause_stream = True
-                self.stop_stream = False
-                self.logger.info(f"User input: {user_input}")
-            elif user_input in ["c", "continue"]:
-                self.pause_stream = False
-                self.stop_stream = False
-                self.logger.info(f"User input: {user_input}")
-            elif user_input in ["q", "quit", "stop", "exit"]:
-                self.pause_stream = False
-                self.stop_stream = True
-                self.logger.info(f"User input: {user_input}")
-                break
-            else:
-                self.logger.info(f"invalid User input: {user_input}")
+        try:
+            while True:
+                user_input = await asyncio.to_thread(
+                    input, "pause/p: 暂停; c/continue: 继续; stop/q/quit: 停止: "
+                )
+                if user_input in ["pause", "p"]:
+                    self.pause_stream = True
+                    self.stop_stream = False
+                    self.logger.info(f"User input: {user_input}")
+                elif user_input in ["c", "continue"]:
+                    self.pause_stream = False
+                    self.stop_stream = False
+                    self.logger.info(f"User input: {user_input}")
+                elif user_input in ["q", "quit", "stop", "exit"]:
+                    self.pause_stream = False
+                    self.stop_stream = True
+                    self.logger.info(f"User input: {user_input}")
+                    break
+                else:
+                    self.logger.info(f"invalid User input: {user_input}")
 
-            await asyncio.sleep(0.1) # 避免运行阻塞在user_command,其它异步线程停滞
-
+                await asyncio.sleep(0.1) # 避免运行阻塞在user_command,其它异步线程停滞
+        # except ValueError:
+        #     self.logger.info("Standard input stream closed, user command exiting.")
+        # 存在问题未解： 当正常播放结束，asyncio.to_thread(input)异步线程等待键盘输入，程序无法关闭
+        except asyncio.CancelledError:
+            self.logger.info("user_command task cancelled.")
     async def audiofile_read(self, file_path: str, chunk_size: int = 1024):
         """
         1. 非wav格式文件,音频转成wav;
         2. 输出byte类型raw data
         """
         # 使用 pydub 将音频文件转换为 WAV 格式
+        # self.playback_end = False
         audio = AudioSegment.from_file(file_path)
         self.channels = audio.channels
         self.sample_rate = audio.frame_rate
@@ -101,6 +109,7 @@ class Pyaudio_Record_Player:
                     await self.audio_queue.get()
                 )  # asyncio.Queue是一个异步操作,需要await
                 if audio_data is None:
+                    self.stop_stream = True
                     stream.stop_stream()
                     stream.close()
                     self.logger.info('音频播放结束')
@@ -109,7 +118,6 @@ class Pyaudio_Record_Player:
             elif self.stop_stream:
                 stream.stop_stream()
                 stream.close()
-                self.pyaudio_instance.terminate()
                 self.logger.info('user_command终止')
                 break
 
@@ -169,19 +177,26 @@ class Pyaudio_Record_Player:
         sample_width: int = 2,
         chunk_size: int = 1024,
     ):
+        """
+        存在问题未解： 当正常播放结束，asyncio.to_thread(input)异步线程等待键盘输入，程序无法关闭
+        正常播放结束,需要键盘手动输入stop/q/quit程序才会关闭.
+        """
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self.audiofile_read(file_path, chunk_size))
                 user_command_task = tg.create_task(self.user_command())
                 tg.create_task(self.async_play_audio(sample_width, self.channels, self.sample_rate))
+                # while not self.stop_stream:
+                #     await asyncio.sleep(.1)
+                # user_command_task.cancel(f'stop_stream:{self.stop_stream}')
 
-                # await user_command_task
-                # raise asyncio.CancelledError("停止播放") # async_play_audio中已经在user_command==quit时，break
+
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
         finally:
             self.pyaudio_instance.terminate()  # 在程序结束时调用一次
             self.logger.info("播放器已清理资源")
+            # sys.stdin.close()  # 当播放正常结束时，asyncio.to_thread(input)有个异步线程等待input
     async def microphone_test(self,
         sample_width: int = 2,
         channels: int = 1,
@@ -204,8 +219,8 @@ if __name__ == "__main__":
     logger = logging.getLogger("Pyaudio_Record_Player")
     logger.setLevel("INFO")
     pya = pyaudio.PyAudio()
-    # file_path = r"F:/Music/color of the world.mp3"
-    file_path = r"H:/music/Music/color of the world.mp3"
+    file_path = r"F:/Music/放牛班的春天10.mp3"
+    # file_path = r"H:/music/Music/color of the world.mp3"
     player = Pyaudio_Record_Player(
         pya,
     )
