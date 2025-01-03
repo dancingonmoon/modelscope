@@ -180,6 +180,7 @@ class Pyaudio_Record_Player:
         """
         存在问题未解： 当正常播放结束，asyncio.to_thread(input)异步线程等待键盘输入，程序无法关闭
         正常播放结束,需要键盘手动输入stop/q/quit程序才会关闭.
+        尽管async_play_audio在音频结束时,关闭了该函数,但是已经等待用户输入的input()无法由程序控制来关闭,
         """
         try:
             async with asyncio.TaskGroup() as tg:
@@ -202,9 +203,13 @@ class Pyaudio_Record_Player:
         channels: int = 1,
         rate: int = 44100,
         chunk_size: int = 1024,):
+        """
+        麦克风收音,3秒后回放;user_command控制;
+        """
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self.microphone_read(sample_width, channels, rate, chunk_size))
+                tg.create_task(self.user_command())
                 await asyncio.sleep(3)
                 tg.create_task(self.async_play_audio(sample_width, channels, rate))
         except ExceptionGroup as EG:
@@ -224,5 +229,5 @@ if __name__ == "__main__":
     player = Pyaudio_Record_Player(
         pya,
     )
-    asyncio.run(player.audiofile_player(file_path))
-    # asyncio.run(player.microphone_test())
+    # asyncio.run(player.audiofile_player(file_path))
+    asyncio.run(player.microphone_test())
