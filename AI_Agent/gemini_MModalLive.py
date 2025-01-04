@@ -19,13 +19,13 @@ client = genai.Client(
     http_options={"api_version": "v1alpha"}
 )  # api_key直接从环境变量中名称为GOOGLE_API_KEY获取
 
-logger = logging.getLogger("Gemini Live Stream")
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
                     handlers=[
                         logging.StreamHandler(),  # 输出到控制台
                         # logging.FileHandler("app.log")  # 输出到文件
                     ])
+logger = logging.getLogger("Gemini Live Stream")
 
 
 async def txt2txt():
@@ -74,14 +74,27 @@ class GeminiLiveStream:
     The recv method collects audio chunks in a loop. It breaks out of the loop once the model sends a turn_complete method, and then plays the audio.
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, pyaudio_instance: pyaudio.PyAudio = None, logger: logging.Logger = None):
         """ """
-        self.session = None
         if config is None:
             config = {"generation_config": {"response_modalities": ["AUDIO"]}}
-            self.config = config
+        self.config = config
 
-        self.audio_queue = None
+        if pyaudio_instance is None:
+            pyaudio_instance = pyaudio.PyAudio()
+        self.pyaudio_instance = pyaudio_instance
+
+        self.session = None
+        self.audio_out_queue = asyncio.Queue()  # 缓存,模型audio 输出;
+        self.in_queue = asyncio.Queue()  # 缓存,模型输入: microphone audio, screen video, camera video,
+        self.pause_stream = False
+        self.stop_stream = False
+
+        if logger is None:
+            logger = logging.getLogger("Pyaudio_Record_Player")
+            logger.setLevel("INFO")
+        self.logger = logger
+
 
     async def run(self):
         logger.debug("connect")
@@ -91,7 +104,7 @@ class GeminiLiveStream:
                 asyncio.TaskGroup() as tg,
             ):
                 self.session = session
-                self.audio_queue = asyncio.Queue()
+                self.audio_out_queue = asyncio.Queue()
 
                 send_txt_task = tg.create_task(self.send())
                 tg.create_task(self.recv())
@@ -134,7 +147,7 @@ class GeminiLiveStream:
             #     logger.debug(f"got chunk: {str(response)}")
             async for response in turn:
                 if data := response.data:
-                    self.audio_queue.put_nowait(data)
+                    self.audio_out_queue.put_nowait(data)
                     # await self.audio_queue.put(data) # 使用await，可以保证，put操作是同步的，不会出现阻塞;
                 else:
                     logger.debug(f"Unhandled server message! - {response}")
@@ -157,9 +170,41 @@ class GeminiLiveStream:
             # 所以，self.audio_queue队列中缓存的之前的回答需要清除，否则，就会将缓存中所有内容都播放
             # 因为是模型被打断的时候，会是一个新的输出，所以，在async for循环外面,不断重复的取出(移出)最后一个数据,直到队列为空
             # 潜在的问题也是:当for response in turn循环完毕,播放没有完成的话,后面的数据会被自动empty掉
-            while not self.audio_queue.empty():  # 当加上这句块，有掉字的情况
-                self.audio_queue.get_nowait()
+            while not self.audio_out_queue.empty():  # 当加上这句块，有掉字的情况
+                self.audio_out_queue.get_nowait()
 
+    async def async_play_audio(
+            self,
+            sample_width: int = 2,
+            channels: int = 1,
+            rate: int = 24000,
+    ):
+        stream = await asyncio.to_thread(
+            self.pyaudio_instance.open,
+            format=self.pyaudio_instance.get_format_from_width(sample_width),
+            channels=channels,
+            rate=rate,
+            output=True,
+        )
+
+        while True:
+            if self.pause_stream and not self.stop_stream:
+                await asyncio.sleep(.1)  # 避免运行因长循环，滞留在此处，导致user_command阻塞
+                continue
+            elif not self.pause_stream and not self.stop_stream:
+                audio_data = await self.audio_out_queue.get()  # asyncio.Queue是一个异步操作,需要await
+                if audio_data is None:
+                    self.stop_stream = True
+                    stream.stop_stream()
+                    stream.close()
+                    self.logger.info('音频播放结束')
+                    break
+                await asyncio.to_thread(stream.write, audio_data)
+            elif self.stop_stream:
+                stream.stop_stream()
+                stream.close()
+                self.logger.info('user_command终止')
+                break
     async def play_audio(self):
         stream = await asyncio.to_thread(
             pya.open,
@@ -169,7 +214,7 @@ class GeminiLiveStream:
             output=True,
         )
         while True:
-            bytestream = await self.audio_queue.get()
+            bytestream = await self.audio_out_queue.get()
             await asyncio.to_thread(stream.write, bytestream)
 
 
