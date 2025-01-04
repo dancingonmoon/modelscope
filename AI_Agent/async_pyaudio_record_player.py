@@ -22,9 +22,8 @@ class Pyaudio_Record_Player:
         self.audio_queue = asyncio.Queue()
         self.pause_stream = False
         self.stop_stream = False
-        # self.playback_end = False
-        self.channels = 2
-        self.sample_rate = 44100
+        self.audio_play_channels = None  # 用于音频文件播放，从文件中提取
+        self.audio_play_sample_rate = None   # 用于音频文件播放，从文件中提取
         self.logger = logger
 
         if not logger:
@@ -72,9 +71,9 @@ class Pyaudio_Record_Player:
         # 使用 pydub 将音频文件转换为 WAV 格式
         # self.playback_end = False
         audio = AudioSegment.from_file(file_path)
-        self.channels = audio.channels
-        self.sample_rate = audio.frame_rate
-        self.logger.info(f"音频文件信息: 通道数:{self.channels},采样率:{self.sample_rate}")
+        self.audio_play_channels = audio.channels
+        self.audio_play_sample_rate = audio.frame_rate
+        self.logger.info(f"音频文件信息: 通道数:{self.audio_play_channels},采样率:{self.audio_play_sample_rate}")
         # 计算帧数
         n_frames = len(audio)
         for i in range(0, n_frames, chunk_size):  # 假设每次读取1024ms
@@ -85,10 +84,9 @@ class Pyaudio_Record_Player:
             await self.audio_queue.put(data)  # 写入Queue
             if self.stop_stream:
                 break
-        if not self.stop_stream:
-            await self.audio_queue.put(None)  # signal the end of the audio
+        await self.audio_queue.put(None)  # signal the end of the audio
 
-    async def async_play_audio(
+    async def async_audio_play(
             self,
             sample_width: int = 2,
             channels: int = 2,
@@ -196,12 +194,11 @@ class Pyaudio_Record_Player:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self.audiofile_read(file_path, chunk_size))
                 user_command_task = tg.create_task(self.user_command())
-                tg.create_task(self.async_play_audio(sample_width, self.channels, self.sample_rate))
+                await asyncio.sleep(.1)  # 等待self.channels, self.sample_rate被赋值完成;否则会导致self.channels=None, self.sample_rate=None
+                tg.create_task(self.async_audio_play(sample_width, self.audio_play_channels, self.audio_play_sample_rate))
                 # while not self.stop_stream:
                 #     await asyncio.sleep(.1)
                 # user_command_task.cancel(f'stop_stream:{self.stop_stream}')
-
-
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
         finally:
@@ -223,7 +220,7 @@ class Pyaudio_Record_Player:
                 tg.create_task(self.microphone_read(sample_width, channels, rate, chunk_size))
                 tg.create_task(self.user_command())
                 await asyncio.sleep(3)
-                tg.create_task(self.async_play_audio(sample_width, channels, rate))
+                tg.create_task(self.async_audio_play(sample_width, channels, rate))
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
         finally:
@@ -235,10 +232,10 @@ if __name__ == "__main__":
     logger = logging.getLogger("Pyaudio_Record_Player")
     logger.setLevel("INFO")
     pya = pyaudio.PyAudio()
-    file_path = r"F:/Music/放牛班的春天10.mp3"
-    # file_path = r"H:/music/Music/color of the world.mp3"
+    # file_path = r"F:/Music/放牛班的春天10.mp3"
+    file_path = r"H:/music/Music/color of the world.mp3"
     player = Pyaudio_Record_Player(
-        pya,
+        pya,logger
     )
     # asyncio.run(player.audiofile_player(file_path))
     asyncio.run(player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=480))

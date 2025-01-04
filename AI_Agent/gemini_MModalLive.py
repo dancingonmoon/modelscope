@@ -19,8 +19,13 @@ client = genai.Client(
     http_options={"api_version": "v1alpha"}
 )  # api_key直接从环境变量中名称为GOOGLE_API_KEY获取
 
-logger = logging.getLogger("Live")
-logger.setLevel("INFO")
+logger = logging.getLogger("Gemini Live Stream")
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.StreamHandler(),  # 输出到控制台
+                        # logging.FileHandler("app.log")  # 输出到文件
+                    ])
 
 
 async def txt2txt():
@@ -43,20 +48,6 @@ async def txt2txt():
                 print(response.text, end="")
 
 
-def wave_file(filename, channels=1, rate=24000, sample_width=2):
-    """
-    is to write it out to a .wav file. So here is a simple wave file writer
-    Multimodal Live API 支持以下音频格式：
-    输入音频格式：16kHz 小端字节序的原始 16 位 PCM 音频
-    输出音频格式：24kHz 小端字节序的原始 24 位 PCM 音频
-    """
-    with wave.open(filename, "wb") as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(sample_width)
-        wf.setframerate(rate)
-        yield wf
-
-
 async def async_enumerate(it):
     """
     对生成器迭代内容,进行异步的enumerate,即输出迭代内容的序列号,以及迭代内容本身
@@ -69,7 +60,7 @@ async def async_enumerate(it):
         n += 1
 
 
-class AudioLoop:
+class GeminiLiveStream:
     """
     implements the interaction with the Live API：
     run - The main loop
@@ -77,7 +68,7 @@ class AudioLoop:
     Opens a websocket connecting to the Live API.Calls the initial setup method.
     Then enters the main loop where it alternates between send and recv until send returns False.
     send - Sends input text to the api
-    The send method collects input text from the user, wraps it in a client_content message (an instance of BidiGenerateContentClientContent), and sends it to the model.
+    The send method collects input text from the user, wraps it in a client_content message, and sends it to the model.
     If the user sends a q this method returns False to signal that it's time to quit.
     recv - Collects audio from the API and plays it
     The recv method collects audio chunks in a loop. It breaks out of the loop once the model sends a turn_complete method, and then plays the audio.
@@ -184,5 +175,5 @@ class AudioLoop:
 
 if __name__ == "__main__":
     # asyncio.run(txt2txt())
-    audioloop_instance = AudioLoop()
+    audioloop_instance = GeminiLiveStream()
     asyncio.run(audioloop_instance.run())
