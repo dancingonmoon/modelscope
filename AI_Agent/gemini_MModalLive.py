@@ -131,7 +131,7 @@ class GeminiLiveStream:
                 input,
                 "message > ",
             )
-            if text.lower() == "exit":
+            if text.lower() in ['q', 'quit', 'exit']:
                 break
             await self.session.send(text or ".", end_of_turn=True)
 
