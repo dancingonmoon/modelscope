@@ -6,12 +6,12 @@ import traceback
 import pyaudio
 
 CHANNELS = 1
-SEND_SAMPLE_RATE = 16000  # 输入音频格式：16kHz 小端字节序的原始 16 位 PCM 音频
-RECEIVE_SAMPLE_RATE = 24000  # 输出音频格式：24kHz 小端字节序的原始 24 位 PCM 音频
+RECEIVE_SAMPLE_RATE = 16000  # 输入音频格式：16kHz 小端字节序的原始 16 位 PCM 音频
+SEND_SAMPLE_RATE = 24000  # 输出音频格式：24kHz 小端字节序的原始 24 位 PCM 音频
 CHUNK_SIZE = 1024
 
 pya = pyaudio.PyAudio()
-FORMAT = pya.get_format_from_width(2)  # paInt16, 16bit
+FORMAT = 2  # paInt16, 16bit
 
 MODEL = "models/gemini-2.0-flash-exp"
 CONFIG = {"generation_config": {"response_modalities": ["AUDIO"]}}
@@ -19,12 +19,14 @@ client = genai.Client(
     http_options={"api_version": "v1alpha"}
 )  # api_key直接从环境变量中名称为GOOGLE_API_KEY获取
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.StreamHandler(),  # 输出到控制台
-                        # logging.FileHandler("app.log")  # 输出到文件
-                    ])
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),  # 输出到控制台
+        # logging.FileHandler("app.log")  # 输出到文件
+    ],
+)
 logger = logging.getLogger("Gemini Live Stream")
 
 
@@ -74,8 +76,15 @@ class GeminiLiveStream:
     The recv method collects audio chunks in a loop. It breaks out of the loop once the model sends a turn_complete method, and then plays the audio.
     """
 
-    def __init__(self, config=None, pyaudio_instance: pyaudio.PyAudio = None, logger: logging.Logger = None):
+    def __init__(
+        self,
+        config=None,
+        pyaudio_instance: pyaudio.PyAudio = None,
+        logger: logging.Logger = None,
+        model: str = "models/gemini-2.0-flash-exp"
+    ):
         """ """
+        self.model = model
         if config is None:
             config = {"generation_config": {"response_modalities": ["AUDIO"]}}
         self.config = config
@@ -86,7 +95,9 @@ class GeminiLiveStream:
 
         self.session = None
         self.audio_out_queue = asyncio.Queue()  # 缓存,模型audio 输出;
-        self.in_queue = asyncio.Queue()  # 缓存,模型输入: microphone audio, screen video, camera video,
+        self.in_queue = (
+            asyncio.Queue()
+        )  # 缓存,模型输入: microphone audio, screen video, camera video,
         self.pause_stream = False
         self.stop_stream = False
 
@@ -95,20 +106,24 @@ class GeminiLiveStream:
             logger.setLevel("INFO")
         self.logger = logger
 
-
-    async def run(self):
-        logger.debug("connect")
+    async def run(
+        self,
+        sample_width: int = 2,
+        channels: int = 1,
+        rate: int = 24000,
+    ):
+        self.logger.debug("connect")
         try:
             async with (
-                client.aio.live.connect(model=MODEL, config=self.config) as session,
+                client.aio.live.connect(model=self.model, config=self.config) as session,
                 asyncio.TaskGroup() as tg,
             ):
                 self.session = session
-                self.audio_out_queue = asyncio.Queue()
-
                 send_txt_task = tg.create_task(self.send())
                 tg.create_task(self.recv())
-                tg.create_task(self.play_audio())
+                tg.create_task(
+                    self.play_audio(sample_width, channels, rate)
+                )
 
                 # 此处等待send_txt_task结束，而实际上self.send()函数是无限循环的input,除非user输入了exit，主动退出；
                 # self.send()函数中的break，会退出self.send()函数，而不会退出async with 语句块;
@@ -124,45 +139,46 @@ class GeminiLiveStream:
 
     async def send(self):
         """
-        持续不断的user input提示,直到exit退出
+        持续不断的user input提示,直到q/quit/exit退出
         """
         while True:
             text = await asyncio.to_thread(
                 input,
                 "message > ",
             )
-            if text.lower() in ['q', 'quit', 'exit']:
+            if text in ["pause", "p"]:
+                self.pause_stream = True
+                self.stop_stream = False
+                self.logger.info(f"User input: {text}")
+            elif text in ["c", "continue"]:
+                self.pause_stream = False
+                self.stop_stream = False
+                self.logger.info(f"User input: {text}")
+            elif text in ["q", "quit", "exit"]:
+                self.pause_stream = False
+                self.stop_stream = True
+                self.logger.info(f"User input: {text}")
                 break
+
             await self.session.send(text or ".", end_of_turn=True)
+            await asyncio.sleep(0.1)
 
     async def recv(self):
         """
         Background task to reads from the websocket and write pcm chunks to the output queue
         """
         while True:
-            logger.debug("receive")
+            self.logger.debug("receive")
             # read chunks from the socket
             turn = self.session.receive()
-            # async for n, response in async_enumerate(turn):
-            #     logger.debug(f"got chunk: {str(response)}")
             async for response in turn:
                 if data := response.data:
                     self.audio_out_queue.put_nowait(data)
                     # await self.audio_queue.put(data) # 使用await，可以保证，put操作是同步的，不会出现阻塞;
                 else:
-                    logger.debug(f"Unhandled server message! - {response}")
+                    self.logger.debug(f"Unhandled server message! - {response}")
                     if text := response.text:
                         print(text, end="")
-
-            #     if n == 0:
-            #         print(
-            #             response.server_content.model_turn.parts[
-            #                 0
-            #             ].inline_data.mime_type
-            #         )
-            #     print(".", end="")
-            #
-            # print("\n")
 
             # If you interrupt the model, it sends a turn_complete.For interruptions to work, we need to stop playback.
             # So empty out the audio queue because it may have loaded much more audio than has played yet.
@@ -173,11 +189,11 @@ class GeminiLiveStream:
             while not self.audio_out_queue.empty():  # 当加上这句块，有掉字的情况
                 self.audio_out_queue.get_nowait()
 
-    async def async_play_audio(
-            self,
-            sample_width: int = 2,
-            channels: int = 1,
-            rate: int = 24000,
+    async def play_audio(
+        self,
+        sample_width: int = 2,
+        channels: int = 1,
+        rate: int = 24000,
     ):
         stream = await asyncio.to_thread(
             self.pyaudio_instance.open,
@@ -189,33 +205,24 @@ class GeminiLiveStream:
 
         while True:
             if self.pause_stream and not self.stop_stream:
-                await asyncio.sleep(.1)  # 避免运行因长循环，滞留在此处，导致user_command阻塞
+                await asyncio.sleep(0.1)  # 避免运行因长循环，滞留在此处，导致user_command阻塞
                 continue
             elif not self.pause_stream and not self.stop_stream:
-                audio_data = await self.audio_out_queue.get()  # asyncio.Queue是一个异步操作,需要await
+                audio_data = (
+                    await self.audio_out_queue.get()
+                )  # asyncio.Queue是一个异步操作,需要await
                 if audio_data is None:
                     self.stop_stream = True
                     stream.stop_stream()
                     stream.close()
-                    self.logger.info('音频播放结束')
+                    self.logger.info("音频播放结束")
                     break
                 await asyncio.to_thread(stream.write, audio_data)
             elif self.stop_stream:
                 stream.stop_stream()
                 stream.close()
-                self.logger.info('user_command终止')
+                self.logger.info("user_command终止")
                 break
-    async def play_audio(self):
-        stream = await asyncio.to_thread(
-            pya.open,
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=RECEIVE_SAMPLE_RATE,
-            output=True,
-        )
-        while True:
-            bytestream = await self.audio_out_queue.get()
-            await asyncio.to_thread(stream.write, bytestream)
 
 
 if __name__ == "__main__":
