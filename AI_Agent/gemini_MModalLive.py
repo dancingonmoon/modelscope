@@ -14,8 +14,6 @@ CHANNELS = 1
 RECEIVE_SAMPLE_RATE = 16000  # 输入音频格式：16kHz 小端字节序的原始 16 位 PCM 音频
 SEND_SAMPLE_RATE = 24000  # 输出音频格式：24kHz 小端字节序的原始 24 位 PCM 音频
 CHUNK_SIZE = 1024
-
-pya = pyaudio.PyAudio()
 FORMAT = 2  # paInt16, 16bit
 
 MODEL = "models/gemini-2.0-flash-exp"
@@ -32,8 +30,6 @@ logging.basicConfig(
         # logging.FileHandler("app.log")  # 输出到文件
     ],
 )
-logger = logging.getLogger("Gemini Live Stream")
-
 
 async def txt2txt():
     """
@@ -233,9 +229,9 @@ class GeminiLiveStream:
         image_bytes = image_io.read()
         mime_type = "image/jpeg"
         return {
-                "mime_type": mime_type,
-                "data": base64.b64encode(image_bytes).decode(),
-            }
+            "mime_type": mime_type,
+            "data": base64.b64encode(image_bytes).decode(),
+        }
 
     async def get_screen(self):
 
@@ -253,12 +249,12 @@ class GeminiLiveStream:
             await self.session.send(msg)
 
     async def microphone_audio(
-            self,
-            sample_width: int = 2,
-            channels: int = 1,
-            rate: int = 16000,
-            chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
-            vad_mode: int = 2,  # vad 模式，0-3，3最敏感
+        self,
+        sample_width: int = 2,
+        channels: int = 1,
+        rate: int = 16000,
+        chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
+        vad_mode: int = 2,  # vad 模式，0-3，3最敏感
     ):
         """
         持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
@@ -285,11 +281,13 @@ class GeminiLiveStream:
         try:
             while True:
                 if self.pause_stream:
-                    await asyncio.sleep(.1)
+                    await asyncio.sleep(0.1)
                     continue
                 elif not self.stop_stream:
                     try:
-                        data = await asyncio.to_thread(audio_stream.read, chunk_size, **kwargs)
+                        data = await asyncio.to_thread(
+                            audio_stream.read, chunk_size, **kwargs
+                        )
                         data_np = np.frombuffer(data, dtype=np.int16)
                         # 使用VAD检测是否是语音
                         is_speech = vad.is_speech(data_np.tobytes(), rate)
@@ -306,7 +304,7 @@ class GeminiLiveStream:
                 elif self.stop_stream:
                     audio_stream.stop_stream()
                     audio_stream.close()
-                    self.logger.info('麦克风停止录音')
+                    self.logger.info("麦克风停止录音")
                     break
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
@@ -314,6 +312,9 @@ class GeminiLiveStream:
 
 
 if __name__ == "__main__":
+    logger = logging.getLogger("gemini_MultiModal_Live")
+    logger.setLevel("INFO")
+    pya = pyaudio.PyAudio()
     # asyncio.run(txt2txt())
-    audioloop_instance = GeminiLiveStream()
+    audioloop_instance = GeminiLiveStream(pya)
     asyncio.run(audioloop_instance.run())
