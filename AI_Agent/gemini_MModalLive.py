@@ -74,7 +74,6 @@ class GeminiLiveStream:
             logger: logging.Logger = None,
             model: str = "models/gemini-2.0-flash-exp",
     ):
-        """ """
         self.model = model
         if config is None:
             config = {"generation_config": {"response_modalities": ["AUDIO"]}}
@@ -89,6 +88,7 @@ class GeminiLiveStream:
         self.in_queue = None  # 缓存,模型输入: microphone audio, screen video, camera video,
         self.pause_stream = False
         self.stop_stream = False
+        self.exit_request = asyncio.Event()  # 创建等待事件对象
 
         if logger is None:
             logger = logging.getLogger("Pyaudio_Record_Player")
@@ -130,6 +130,8 @@ class GeminiLiveStream:
                 await send_txt_task
                 raise asyncio.CancelledError("User requested exit")
 
+                # self.exit_request.wait()  # exit_request等待事件处于等待（block），当set时，该等待进程被唤醒，block解除
+
         except asyncio.CancelledError:
             logger.info("user requested exit")
         except ExceptionGroup as EG:
@@ -155,11 +157,12 @@ class GeminiLiveStream:
             elif text in ["q", "quit", "exit"]:
                 self.pause_stream = False
                 self.stop_stream = True
+                self.exit_request.set()
                 self.logger.info(f"User input: {text}")
                 break
 
             await self.session.send(text or ".", end_of_turn=True)
-            await asyncio.sleep(0.1)
+            # await asyncio.sleep(0.1)
 
     async def recv(self):
         """
