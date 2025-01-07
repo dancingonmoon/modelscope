@@ -127,13 +127,17 @@ class GeminiLiveStream:
                 # self.send()函数中的break，会退出self.send()函数，而不会退出async with 语句块;
                 # 所以，当await send_txt_task 等待完成，即用户请求退出，需要将这个异步进程，以及后面的task都要cancell，
                 # 所以，手动raise asyncio.CancelledError("User requested exit")
-                await send_txt_task
-                raise asyncio.CancelledError("User requested exit")
+                # await send_txt_task
+                # raise asyncio.CancelledError("User requested exit")
 
-                # self.exit_request.wait()  # exit_request等待事件处于等待（block），当set时，该等待进程被唤醒，block解除
+                # 当exit_event被设置时，TaskGroup会等待所有任务完成，并自动取消所有任务;当有
+                # exit_request等待事件处于等待（block），当set时，该等待进程被唤醒，block解除
+                # TaskGroup的目的是管理一组相互依赖的任务，这些任务应该一起启动和结束。
+                # 当一个任务完成时，TaskGroup认为整个任务组的工作已经完成，因此会尝试取消其他所有任务
+                await self.exit_request.wait()
 
         except asyncio.CancelledError:
-            logger.info("user requested exit")
+            logger.info("wait()事件被set, user requested exit")
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
 
