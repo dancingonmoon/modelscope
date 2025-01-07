@@ -244,7 +244,7 @@ class GeminiLiveStream:
             # i = sct.grab(monitor)  # 捕获指定显示器的截图
             screen_shot = sct.shot()  # 捕获活动屏幕的截图
 
-        image_bytes = mss.tools.to_png(screenshot.rgb, screenshot.size)  # raw data
+        image_bytes = mss.tools.to_png(screen_shot.rgb, screen_shot.size)  # raw data
         img = Image.open(io.BytesIO(image_bytes))  # image data bytes
         # 写入 文件格式的内存对象
         image_io = io.BytesIO()
