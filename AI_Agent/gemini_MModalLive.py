@@ -4,7 +4,7 @@ import logging
 import traceback
 import pyaudio
 import mss
-from mss import tools, screenshot
+from mss import tools
 from PIL import Image
 import io
 import base64
