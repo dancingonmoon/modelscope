@@ -18,7 +18,15 @@ CHUNK_SIZE = 1024
 FORMAT = 2  # paInt16, 16bit
 
 MODEL = "models/gemini-2.0-flash-exp"
-CONFIG = {"generation_config": {"response_modalities": ["AUDIO"]}}
+# Multimodal Live API 支持以下语音：Aoede、Charon、Fenrir、Kore 和 Puck;
+VOICE_NAME = ["Aoede", "Charon", "Fenrir", "Kore", "Puck"][3]
+SPEECH_CONFIG = {
+    "voice_config": {
+        "prebuilt_voice_config ": {"voice_name": f"<var>{VOICE_NAME}</var>"}
+    }
+}
+CONFIG = {"generation_config": {"response_modalities": ["AUDIO"],
+                                "speech_config": SPEECH_CONFIG}}
 client = genai.Client(
     http_options={"api_version": "v1alpha"}
 )  # api_key直接从环境变量中名称为GOOGLE_API_KEY获取
@@ -68,11 +76,11 @@ class GeminiLiveStream:
     """
 
     def __init__(
-            self,
-            config=None,
-            pyaudio_instance: pyaudio.PyAudio = None,
-            logger: logging.Logger = None,
-            model: str = "models/gemini-2.0-flash-exp",
+        self,
+        config=None,
+        pyaudio_instance: pyaudio.PyAudio = None,
+        logger: logging.Logger = None,
+        model: str = "models/gemini-2.0-flash-exp",
     ):
         self.model = model
         if config is None:
@@ -96,13 +104,13 @@ class GeminiLiveStream:
         self.logger = logger
 
     async def run(
-            self,
-            sample_width: int = 2,
-            channels: int = 1,
-            in_rate: int = 16000,
-            out_rate: int = 24000,
-            in_chunk_size: int = 480,
-            vad_mode: int = 2
+        self,
+        sample_width: int = 2,
+        channels: int = 1,
+        in_rate: int = 16000,
+        out_rate: int = 24000,
+        in_chunk_size: int = 480,
+        vad_mode: int = 2,
     ):
         self.logger.debug("connect")
         try:
@@ -114,12 +122,16 @@ class GeminiLiveStream:
             ):
                 self.session = session
                 self.audio_out_queue = asyncio.Queue()  # 缓存,模型audio 输出;
-                self.in_queue = (
-                    asyncio.Queue(maxsize=5)
+                self.in_queue = asyncio.Queue(
+                    maxsize=5
                 )  # 缓存,模型输入: microphone audio, screen video, camera video,
                 send_txt_task = tg.create_task(self.send())
                 tg.create_task((self.send_realtime()))
-                tg.create_task(self.microphone_audio(sample_width, channels, in_rate, in_chunk_size, vad_mode))
+                tg.create_task(
+                    self.microphone_audio(
+                        sample_width, channels, in_rate, in_chunk_size, vad_mode
+                    )
+                )
                 tg.create_task(self.recv())
                 tg.create_task(self.play_audio(sample_width, channels, out_rate))
 
@@ -196,10 +208,10 @@ class GeminiLiveStream:
                 self.audio_out_queue.get()
 
     async def play_audio(
-            self,
-            sample_width: int = 2,
-            channels: int = 1,
-            rate: int = 24000,
+        self,
+        sample_width: int = 2,
+        channels: int = 1,
+        rate: int = 24000,
     ):
         stream = await asyncio.to_thread(
             self.pyaudio_instance.open,
@@ -210,7 +222,7 @@ class GeminiLiveStream:
         )
 
         while not self.stop_stream.is_set():
-            if self.pause_stream :
+            if self.pause_stream:
                 await asyncio.sleep(0.1)  # 避免运行因长循环，滞留在此处，导致user_command阻塞
                 continue
             audio_data = await self.audio_out_queue.get()
@@ -261,12 +273,12 @@ class GeminiLiveStream:
             await self.session.send(msg)
 
     async def microphone_audio(
-            self,
-            sample_width: int = 2,
-            channels: int = 1,
-            rate: int = 16000,
-            chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
-            vad_mode: int = 2,  # vad 模式，0-3，3最敏感
+        self,
+        sample_width: int = 2,
+        channels: int = 1,
+        rate: int = 16000,
+        chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
+        vad_mode: int = 2,  # vad 模式，0-3，3最敏感
     ):
         """
         持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
@@ -308,7 +320,9 @@ class GeminiLiveStream:
                         # 填补静音数据
                         silent_frame = np.zeros(chunk_size, dtype=np.int16)
                         audio_vad = silent_frame.tobytes()
-                    await self.in_queue.put({"data": audio_vad, "mime_type": "audio/pcm"})
+                    await self.in_queue.put(
+                        {"data": audio_vad, "mime_type": "audio/pcm"}
+                    )
                 except OSError as e:
                     self.logger.error(f"麦克风读取发生操作系统错误: {e}")
                     break  # 发生错误时退出循环
@@ -326,10 +340,16 @@ if __name__ == "__main__":
     logger.setLevel("INFO")
     pya = pyaudio.PyAudio()
     # asyncio.run(txt2txt())
-    audioloop_instance = GeminiLiveStream(config=CONFIG, pyaudio_instance=pya, logger=logger)
-    asyncio.run(audioloop_instance.run(sample_width=2,
-                                       channels=1,
-                                       in_rate=16000,
-                                       out_rate=24000,
-                                       in_chunk_size=480,
-                                       vad_mode=2))
+    geminiLive_instance = GeminiLiveStream(
+        config=CONFIG, pyaudio_instance=pya, logger=logger
+    )
+    asyncio.run(
+        geminiLive_instance.run(
+            sample_width=2,
+            channels=1,
+            in_rate=16000,
+            out_rate=24000,
+            in_chunk_size=480,
+            vad_mode=2,
+        )
+    )
