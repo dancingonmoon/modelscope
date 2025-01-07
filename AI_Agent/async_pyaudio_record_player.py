@@ -106,24 +106,23 @@ class Pyaudio_Record_Player:
             output=True,
         )
 
-        while True:
-            if self.pause_stream and not self.stop_stream:
+        while not self.stop_stream.is_set():
+            if self.pause_stream :
                 await asyncio.sleep(0.1)  # 避免运行因长循环，滞留在此处，导致user_command阻塞
                 continue
-            elif not self.pause_stream and not self.stop_stream:
-                audio_data = (
-                    await self.audio_queue.get()
-                )  # asyncio.Queue是一个异步操作,需要await
-                if audio_data is None:
-                    self.stop_stream.set()
-                    self.logger.info("音频播放结束")
-                    break
-                await asyncio.to_thread(stream.write, audio_data)
-            elif self.stop_stream.is_set():
-                stream.stop_stream()
-                stream.close()
-                self.logger.info("stop and close stream")
+            audio_data = (
+                await self.audio_queue.get()
+            )  # asyncio.Queue是一个异步操作,需要await
+            if audio_data is None:
+                self.stop_stream.set()
+                self.logger.info("音频播放结束")
                 break
+            await asyncio.to_thread(stream.write, audio_data)
+        if self.stop_stream.is_set():
+            stream.stop_stream()
+            stream.close()
+            self.logger.info("stop and close stream")
+
 
     async def microphone_read(
         self,
@@ -178,10 +177,10 @@ class Pyaudio_Record_Player:
                 except OSError as e:
                     self.logger.error(f"麦克风读取发生操作系统错误: {e}")
                     break  # 发生错误时退出循环
-
-            audio_stream.stop_stream()
-            audio_stream.close()
-            self.logger.info("等待事件set,或操作系统错误,停止关闭stream")
+            if self.stop_stream.is_set():
+                audio_stream.stop_stream()
+                audio_stream.close()
+                self.logger.info("等待事件set,或操作系统错误,停止关闭stream")
 
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
@@ -201,7 +200,7 @@ class Pyaudio_Record_Player:
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self.audiofile_read(file_path, chunk_size))
-                tg.create_task(self.user_command())
+                user_command = tg.create_task(self.user_command())
                 await asyncio.sleep(
                     0.1
                 )  # 等待self.channels, self.sample_rate被赋值完成;否则会导致self.channels=None, self.sample_rate=None
@@ -212,10 +211,12 @@ class Pyaudio_Record_Player:
                         self.audio_play_sample_rate,
                     )
                 )
+                # 以下代码由于user_command异步任务在quit时,自会break,而取消tg的所有任务,并无必要;
                 # TaskGroup的目的是管理一组相互依赖的任务，这些任务应该一起启动和结束。
                 # 当一个任务完成时，TaskGroup认为整个任务组的工作已经完成，因此会尝试取消其他所有任务
-                await self.stop_stream.wait()
-                self.logger.info("stop_stream等待事件阻塞解除")
+                # await self.stop_stream.wait()
+                # self.logger.info("stop_stream等待事件阻塞被解除")
+
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
         finally:

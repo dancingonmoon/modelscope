@@ -87,8 +87,8 @@ class GeminiLiveStream:
         self.audio_out_queue = None  # 缓存,模型audio 输出;
         self.in_queue = None  # 缓存,模型输入: microphone audio, screen video, camera video,
         self.pause_stream = False
-        self.stop_stream = False
-        self.exit_request = asyncio.Event()  # 创建等待事件对象
+        # self.stop_stream = False
+        self.stop_stream = asyncio.Event()  # 创建等待事件对象
 
         if logger is None:
             logger = logging.getLogger("Pyaudio_Record_Player")
@@ -125,7 +125,7 @@ class GeminiLiveStream:
 
                 # 此处等待send_txt_task结束，而实际上self.send()函数是无限循环的input,除非user输入了exit，主动退出；
                 # self.send()函数中的break，会退出self.send()函数，而不会退出async with 语句块;
-                # 所以，当await send_txt_task 等待完成，即用户请求退出，需要将这个异步进程，以及后面的task都要cancell，
+                # 所以，当await send_txt_task 等待完成，即用户请求退出，需要将这个异步进程，以及后面的task都要cancel，
                 # 所以，手动raise asyncio.CancelledError("User requested exit")
                 # await send_txt_task
                 # raise asyncio.CancelledError("User requested exit")
@@ -134,10 +134,10 @@ class GeminiLiveStream:
                 # exit_request等待事件处于等待（block），当set时，该等待进程被唤醒，block解除
                 # TaskGroup的目的是管理一组相互依赖的任务，这些任务应该一起启动和结束。
                 # 当一个任务完成时，TaskGroup认为整个任务组的工作已经完成，因此会尝试取消其他所有任务
-                await self.exit_request.wait()
+                await self.stop_stream.wait()
 
         except asyncio.CancelledError:
-            logger.info("wait()事件被set, user requested exit")
+            logger.info("asyncio.CancelledError")
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
 
@@ -152,34 +152,34 @@ class GeminiLiveStream:
             )
             if text in ["pause", "p"]:
                 self.pause_stream = True
-                self.stop_stream = False
+                self.stop_stream.clear()
                 self.logger.info(f"User input: {text}")
             elif text in ["c", "continue"]:
                 self.pause_stream = False
-                self.stop_stream = False
+                self.stop_stream.clear()
                 self.logger.info(f"User input: {text}")
-            elif text in ["q", "quit", "exit"]:
+            elif text in ["q", "quit"]:
                 self.pause_stream = False
-                self.stop_stream = True
-                self.exit_request.set()
+                self.stop_stream.set()
                 self.logger.info(f"User input: {text}")
                 break
-
-            await self.session.send(text or ".", end_of_turn=True)
+            else:
+                await self.session.send(text or ".", end_of_turn=True)
             # await asyncio.sleep(0.1)
 
     async def recv(self):
         """
         Background task to reads from the websocket and write pcm chunks to the output queue
         """
-        while True:
+        while not self.stop_stream.is_set():
             self.logger.debug("receive")
             # read chunks from the socket
             turn = self.session.receive()
             async for response in turn:
                 if data := response.data:
-                    self.audio_out_queue.put_nowait(data)
-                    # await self.audio_queue.put(data) # 使用await，可以保证，put操作是同步的，不会出现阻塞;
+                    # self.audio_out_queue.put_nowait(data)
+                    self.audio_out_queue.put(data)  # 使用await，可以保证，put操作是同步的，不会出现阻塞;
+                    # await self.audio_out_queue.put(data) # 使用await，可以保证，put操作是同步的，不会出现阻塞;
                 else:
                     self.logger.debug(f"Unhandled server message! - {response}")
                     if text := response.text:
@@ -192,7 +192,8 @@ class GeminiLiveStream:
             # 因为是模型被打断的时候，会是一个新的输出，所以，在async for循环外面,不断重复的取出(移出)最后一个数据,直到队列为空
             # 潜在的问题也是:当for response in turn循环完毕,播放没有完成的话,后面的数据会被自动empty掉
             while not self.audio_out_queue.empty():  # 当加上这句块，有掉字的情况
-                self.audio_out_queue.get_nowait()
+                # self.audio_out_queue.get_nowait()
+                self.audio_out_queue.get()
 
     async def play_audio(
             self,
@@ -208,32 +209,28 @@ class GeminiLiveStream:
             output=True,
         )
 
-        while True:
-            if self.pause_stream and not self.stop_stream:
+        while not self.stop_stream.is_set():
+            if self.pause_stream :
                 await asyncio.sleep(0.1)  # 避免运行因长循环，滞留在此处，导致user_command阻塞
                 continue
-            elif not self.pause_stream and not self.stop_stream:
-                audio_data = (
-                    await self.audio_out_queue.get()
-                )  # asyncio.Queue是一个异步操作,需要await
-                if audio_data is None:
-                    self.stop_stream = True
-                    stream.stop_stream()
-                    stream.close()
-                    self.logger.info("音频播放结束")
-                    break
-                await asyncio.to_thread(stream.write, audio_data)
-            elif self.stop_stream:
-                stream.stop_stream()
-                stream.close()
-                self.logger.info("user_command终止")
-                break
+            audio_data = await self.audio_out_queue.get()
+            # if audio_data is None:
+            #     self.stop_stream = True
+            #     stream.stop_stream()
+            #     stream.close()
+            #     self.logger.info("音频播放结束")
+            #     break
+            await asyncio.to_thread(stream.write, audio_data)
+        if self.stop_stream:
+            stream.stop_stream()
+            stream.close()
+            self.logger.info("user_command终止")
 
     def _get_screen(self):
         with mss.mss() as sct:
             # monitor = sct.monitors[0]
             # i = sct.grab(monitor)  # 捕获指定显示器的截图
-            screenshot = sct.shot()  # 捕获活动屏幕的截图
+            screen_shot = sct.shot()  # 捕获活动屏幕的截图
 
         image_bytes = mss.tools.to_png(screenshot.rgb, screenshot.size)  # raw data
         img = Image.open(io.BytesIO(image_bytes))  # image data bytes
@@ -250,8 +247,7 @@ class GeminiLiveStream:
         }
 
     async def get_screen(self):
-
-        while True:
+        while self.stop_stream.is_set():
             frame = await asyncio.to_thread(self._get_screen)
             if frame is None:
                 self.logger.info("failed to get screen")
@@ -260,7 +256,7 @@ class GeminiLiveStream:
             await self.in_queue.put(frame)
 
     async def send_realtime(self):
-        while True:
+        while self.stop_stream.is_set():
             msg = await self.in_queue.get()
             await self.session.send(msg)
 
@@ -295,33 +291,31 @@ class GeminiLiveStream:
             kwargs = {}  # 如果当前不是调试模式，这意味着在生产模式下，当音频流溢出时，可能会抛出异常，这通常是为了确保程序能够及时处理错误情况
 
         try:
-            while True:
+            while self.stop_stream.is_set():
                 if self.pause_stream:
                     await asyncio.sleep(0.1)
                     continue
-                elif not self.stop_stream:
-                    try:
-                        data = await asyncio.to_thread(
-                            audio_stream.read, chunk_size, **kwargs
-                        )
-                        data_np = np.frombuffer(data, dtype=np.int16)
-                        # 使用VAD检测是否是语音
-                        is_speech = vad.is_speech(data_np.tobytes(), rate)
-                        if is_speech:
-                            audio_vad = data
-                        else:
-                            # 填补静音数据
-                            silent_frame = np.zeros(chunk_size, dtype=np.int16)
-                            audio_vad = silent_frame.tobytes()
-                        await self.in_queue.put({"data": audio_vad, "mime_type": "audio/pcm"})
-                    except OSError as e:
-                        self.logger.error(f"麦克风读取发生操作系统错误: {e}")
-                        break  # 发生错误时退出循环
-                elif self.stop_stream:
-                    audio_stream.stop_stream()
-                    audio_stream.close()
-                    self.logger.info("麦克风停止录音")
-                    break
+                try:
+                    data = await asyncio.to_thread(
+                        audio_stream.read, chunk_size, **kwargs
+                    )
+                    data_np = np.frombuffer(data, dtype=np.int16)
+                    # 使用VAD检测是否是语音
+                    is_speech = vad.is_speech(data_np.tobytes(), rate)
+                    if is_speech:
+                        audio_vad = data
+                    else:
+                        # 填补静音数据
+                        silent_frame = np.zeros(chunk_size, dtype=np.int16)
+                        audio_vad = silent_frame.tobytes()
+                    await self.in_queue.put({"data": audio_vad, "mime_type": "audio/pcm"})
+                except OSError as e:
+                    self.logger.error(f"麦克风读取发生操作系统错误: {e}")
+                    break  # 发生错误时退出循环
+            if self.stop_stream.is_set():
+                audio_stream.stop_stream()
+                audio_stream.close()
+                self.logger.info("麦克风停止录音")
         except ExceptionGroup as EG:
             traceback.print_exception(EG)
             self.logger.info(f"麦克风初始化或读取发生错误: {EG}")
