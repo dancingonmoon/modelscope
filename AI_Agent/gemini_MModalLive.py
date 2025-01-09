@@ -20,7 +20,7 @@ FORMAT = 2  # paInt16, 16bit
 
 MODEL = "models/gemini-2.0-flash-exp"
 # Multimodal Live API 支持以下语音：Aoede、Charon、Fenrir、Kore 和 Puck;
-VOICE_NAME = ["Aoede", "Charon", "Fenrir", "Kore", "Puck"][3]
+VOICE_NAME = ["Aoede", "Charon", "Fenrir", "Kore", "Puck"][0]
 SPEECH_CONFIG = {
     "voice_config": {"prebuilt_voice_config": {"voice_name": f"{VOICE_NAME}"}}
 }
@@ -106,7 +106,6 @@ class GeminiLiveStream:
             logger = logging.getLogger("Pyaudio_Record_Player")
             logger.setLevel("INFO")
         self.logger = logger
-        self.logger.info(f"stop_stream:{self.stop_stream.is_set()}")
 
     async def run(
         self,
@@ -269,11 +268,11 @@ class GeminiLiveStream:
             if frame is None:
                 self.logger.info("failed to get screen")
                 break
-            await asyncio.sleep(1.0)
             await self.in_queue.put(frame)
+            # await asyncio.sleep(1.0)
 
     async def send_realtime(self):
-        while self.stop_stream.is_set():
+        while not self.stop_stream.is_set():
             msg = await self.in_queue.get()
             await self.session.send(msg)
 
