@@ -11,6 +11,7 @@ import base64
 import webrtcvad
 import numpy as np
 
+
 CHANNELS = 1
 RECEIVE_SAMPLE_RATE = 16000  # 输入音频格式：16kHz 小端字节序的原始 16 位 PCM 音频
 SEND_SAMPLE_RATE = 24000  # 输出音频格式：24kHz 小端字节序的原始 24 位 PCM 音频
@@ -21,12 +22,15 @@ MODEL = "models/gemini-2.0-flash-exp"
 # Multimodal Live API 支持以下语音：Aoede、Charon、Fenrir、Kore 和 Puck;
 VOICE_NAME = ["Aoede", "Charon", "Fenrir", "Kore", "Puck"][3]
 SPEECH_CONFIG = {
-    "voice_config": {
-        "prebuilt_voice_config ": {"voice_name": f"<var>{VOICE_NAME}</var>"}
+    "voice_config": {"prebuilt_voice_config": {"voice_name": f"{VOICE_NAME}"}}
+}
+CONFIG = {
+    "generation_config": {
+        "response_modalities": ["AUDIO"],
+        "speech_config": SPEECH_CONFIG,
     }
 }
-CONFIG = {"generation_config": {"response_modalities": ["AUDIO"],
-                                "speech_config": SPEECH_CONFIG}}
+# CONFIG = {"generation_config": {"response_modalities": ["AUDIO"]}}
 client = genai.Client(
     http_options={"api_version": "v1alpha"}
 )  # api_key直接从环境变量中名称为GOOGLE_API_KEY获取
@@ -68,7 +72,7 @@ class GeminiLiveStream:
     This method:
     Opens a websocket connecting to the Live API.Calls the initial setup method.
     Then enters the main loop where it alternates between send and recv until send returns False.
-    send - Sends input text to the api
+    send - Sends input text to the api, as screen snap video as well
     The send method collects input text from the user, wraps it in a client_content message, and sends it to the model.
     If the user sends a q this method returns False to signal that it's time to quit.
     recv - Collects audio from the API and plays it
@@ -102,6 +106,7 @@ class GeminiLiveStream:
             logger = logging.getLogger("Pyaudio_Record_Player")
             logger.setLevel("INFO")
         self.logger = logger
+        self.logger.info(f"stop_stream:{self.stop_stream.is_set()}")
 
     async def run(
         self,
@@ -126,7 +131,7 @@ class GeminiLiveStream:
                     maxsize=5
                 )  # 缓存,模型输入: microphone audio, screen video, camera video,
                 send_txt_task = tg.create_task(self.send())
-                tg.create_task((self.send_realtime()))
+                tg.create_task(self.send_realtime())
                 tg.create_task(
                     self.microphone_audio(
                         sample_width, channels, in_rate, in_chunk_size, vad_mode
@@ -139,14 +144,14 @@ class GeminiLiveStream:
                 # self.send()函数中的break，会退出self.send()函数，而不会退出async with 语句块;
                 # 所以，当await send_txt_task 等待完成，即用户请求退出，需要将这个异步进程，以及后面的task都要cancel，
                 # 所以，手动raise asyncio.CancelledError("User requested exit")
-                # await send_txt_task
-                # raise asyncio.CancelledError("User requested exit")
+                await send_txt_task
+                raise asyncio.CancelledError("User requested exit")
 
                 # 当exit_event被设置时，TaskGroup会等待所有任务完成，并自动取消所有任务;当有
                 # exit_request等待事件处于等待（block），当set时，该等待进程被唤醒，block解除
                 # TaskGroup的目的是管理一组相互依赖的任务，这些任务应该一起启动和结束。
                 # 当一个任务完成时，TaskGroup认为整个任务组的工作已经完成，因此会尝试取消其他所有任务
-                await self.stop_stream.wait()
+                # await self.stop_stream.wait()
 
         except asyncio.CancelledError:
             logger.info("asyncio.CancelledError")
@@ -189,8 +194,7 @@ class GeminiLiveStream:
             turn = self.session.receive()
             async for response in turn:
                 if data := response.data:
-                    # self.audio_out_queue.put_nowait(data)
-                    self.audio_out_queue.put(data)  # 使用await，可以保证，put操作是同步的，不会出现阻塞;
+                    self.audio_out_queue.put_nowait(data)
                     # await self.audio_out_queue.put(data) # 使用await，可以保证，put操作是同步的，不会出现阻塞;
                 else:
                     self.logger.debug(f"Unhandled server message! - {response}")
@@ -204,8 +208,8 @@ class GeminiLiveStream:
             # 因为是模型被打断的时候，会是一个新的输出，所以，在async for循环外面,不断重复的取出(移出)最后一个数据,直到队列为空
             # 潜在的问题也是:当for response in turn循环完毕,播放没有完成的话,后面的数据会被自动empty掉
             while not self.audio_out_queue.empty():  # 当加上这句块，有掉字的情况
-                # self.audio_out_queue.get_nowait()
-                self.audio_out_queue.get()
+                self.audio_out_queue.get_nowait()
+                # await self.audio_out_queue.get()
 
     async def play_audio(
         self,
@@ -250,7 +254,7 @@ class GeminiLiveStream:
         image_io = io.BytesIO()
         img.save(image_io, format="jpeg")
         image_io.seek(0)
-
+        # 从内存对象中读出，
         image_bytes = image_io.read()
         mime_type = "image/jpeg"
         return {
@@ -259,7 +263,8 @@ class GeminiLiveStream:
         }
 
     async def get_screen(self):
-        while self.stop_stream.is_set():
+        self.logger.info(f"stop_stream:{self.stop_stream.is_set()}")
+        while not self.stop_stream.is_set():
             frame = await asyncio.to_thread(self._get_screen)
             if frame is None:
                 self.logger.info("failed to get screen")
@@ -303,7 +308,7 @@ class GeminiLiveStream:
             kwargs = {}  # 如果当前不是调试模式，这意味着在生产模式下，当音频流溢出时，可能会抛出异常，这通常是为了确保程序能够及时处理错误情况
 
         try:
-            while self.stop_stream.is_set():
+            while not self.stop_stream.is_set():
                 if self.pause_stream:
                     await asyncio.sleep(0.1)
                     continue
