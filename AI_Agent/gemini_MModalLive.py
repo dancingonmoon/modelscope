@@ -143,14 +143,14 @@ class GeminiLiveStream:
                 # self.send()函数中的break，会退出self.send()函数，而不会退出async with 语句块;
                 # 所以，当await send_txt_task 等待完成，即用户请求退出，需要将这个异步进程，以及后面的task都要cancel，
                 # 所以，手动raise asyncio.CancelledError("User requested exit")
-                await send_txt_task
-                raise asyncio.CancelledError("User requested exit")
+                # await send_txt_task
+                # raise asyncio.CancelledError("User requested exit")
 
                 # 当exit_event被设置时，TaskGroup会等待所有任务完成，并自动取消所有任务;当有
                 # exit_request等待事件处于等待（block），当set时，该等待进程被唤醒，block解除
                 # TaskGroup的目的是管理一组相互依赖的任务，这些任务应该一起启动和结束。
                 # 当一个任务完成时，TaskGroup认为整个任务组的工作已经完成，因此会尝试取消其他所有任务
-                # await self.stop_stream.wait()
+                await self.stop_stream.wait()
 
         except asyncio.CancelledError:
             logger.info("asyncio.CancelledError")
@@ -168,7 +168,6 @@ class GeminiLiveStream:
             )
             if text in ["pause", "p"]:
                 self.pause_stream = True
-                self.stop_stream.clear()
                 self.logger.info(f"User input: {text}")
             elif text in ["c", "continue"]:
                 self.pause_stream = False
@@ -236,7 +235,7 @@ class GeminiLiveStream:
             #     self.logger.info("音频播放结束")
             #     break
             await asyncio.to_thread(stream.write, audio_data)
-        if self.stop_stream:
+        if self.stop_stream.is_set():
             stream.stop_stream()
             stream.close()
             self.logger.info("user_command终止")
@@ -269,7 +268,7 @@ class GeminiLiveStream:
                 self.logger.info("failed to get screen")
                 break
             await self.in_queue.put(frame)
-            # await asyncio.sleep(1.0)
+            await asyncio.sleep(1)  # 每 1 秒截取一次屏幕 (可以根据需要调整)
 
     async def send_realtime(self):
         while not self.stop_stream.is_set():
