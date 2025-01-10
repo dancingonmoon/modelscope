@@ -15,6 +15,15 @@ logging.basicConfig(
     ],
 )
 
+# 阿里通义实验室发布的DFSMN回声消除模型：一种音频通话场景的单通道回声消除模型算法
+# (https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k/summary)
+# 模型pipeline 输入为两个16KHz采样率的单声道wav文件，分别是本地麦克风录制信号和远端参考信号，输出结果保存在指定的wav文件中
+# 模型局限性:1)由于训练数据偏差，如果麦克风通道存在音乐声，则音乐会被抑制。2)麦克风和参考通道之间的延迟覆盖范围在500ms以内
+from modelscope.pipelines import pipeline
+from modelscope.utils.constant import Tasks
+
+aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
+# result = aec(input={"nearend_mic":wav_data or wave file,"farend_speech":wave_data or wave_file}, output=None or wave_file_path)
 
 class Pyaudio_Record_Player:
     def __init__(
@@ -22,6 +31,7 @@ class Pyaudio_Record_Player:
     ):
         self.pyaudio_instance = pyaudio_instance
         self.audio_queue = asyncio.Queue()
+        self.audio_out = None  # 存放输出音频,以作为回声抑制算法中的参考信号
         self.pause_stream = False
         # self.stop_stream = False
         self.stop_stream = asyncio.Event()  # 创建等待事件,来控制Taskgroup()
@@ -107,22 +117,19 @@ class Pyaudio_Record_Player:
         )
 
         while not self.stop_stream.is_set():
-            if self.pause_stream :
+            if self.pause_stream:
                 await asyncio.sleep(0.1)  # 避免运行因长循环，滞留在此处，导致user_command阻塞
                 continue
-            audio_data = (
-                await self.audio_queue.get()
-            )  # asyncio.Queue是一个异步操作,需要await
-            if audio_data is None:
+            self.audio_out = await self.audio_queue.get()  # asyncio.Queue是一个异步操作,需要await
+            if self.audio_out is None:
                 self.stop_stream.set()
                 self.logger.info("音频播放结束")
                 break
-            await asyncio.to_thread(stream.write, audio_data)
+            await asyncio.to_thread(stream.write, self.audio_out)
         if self.stop_stream.is_set():
             stream.stop_stream()
             stream.close()
             self.logger.info("stop and close stream")
-
 
     async def microphone_read(
         self,
@@ -134,7 +141,9 @@ class Pyaudio_Record_Player:
     ):
         """
         持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
-        实现了回声抑制(经过vad判断is_speech,静音填充) [注: 可能有vad算法的原因,回声抑制效果不是最佳,可以考虑更换回声抑制算法库]
+        实现了回声抑制:
+        1. 经过vad判断is_speech,静音填充
+        2. 使用阿里通义实验室DFSMN回声消除模型:模型接受单通道麦克风信号和单通道参考信号作为输入，输出线性回声消除和回声残余抑制后的音频信号
         """
         vad = webrtcvad.Vad(vad_mode)
         mic_info = self.pyaudio_instance.get_default_input_device_info()
@@ -172,7 +181,12 @@ class Pyaudio_Record_Player:
                         # 填补静音数据
                         silent_frame = np.zeros(chunk_size, dtype=np.int16)
                         audio_vad = silent_frame.tobytes()
-                    await self.audio_queue.put(audio_vad)
+                    nearend_mic = audio_vad
+                    farend_speech = self.audio_out
+                    audio_echo_cancellation = aec(input={'nearend_mic':nearend_mic,
+                                                         'farend_speech':farend_speech},
+                                                  output= None)
+                    await self.audio_queue.put(audio_echo_cancellation)
 
                 except OSError as e:
                     self.logger.error(f"麦克风读取发生操作系统错误: {e}")
@@ -259,7 +273,7 @@ if __name__ == "__main__":
     file_path = r"F:/Music/放牛班的春天10.mp3"
     # file_path = r"H:/music/Music/color of the world.mp3"
     player = Pyaudio_Record_Player(pya, logger)
-    asyncio.run(player.audiofile_player(file_path))
-    # asyncio.run(
-    #     player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=480)
-    # )
+    # asyncio.run(player.audiofile_player(file_path))
+    asyncio.run(
+        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=480)
+    )
