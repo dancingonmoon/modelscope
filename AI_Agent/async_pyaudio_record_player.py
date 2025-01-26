@@ -1,4 +1,6 @@
 import asyncio
+import io
+
 import pyaudio  # pyaudio 是一个跨平台的音频输入/输出库，主要用于处理 WAV 格式的音频数据
 from pydub import AudioSegment  # pydub 库本身不直接播放音频文件，但它可以将多种格式的音频文件转换为 WAV 格式
 import traceback
@@ -19,6 +21,10 @@ logging.basicConfig(
 # (https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k/summary)
 # 模型pipeline 输入为两个16KHz采样率的单声道wav文件，分别是本地麦克风录制信号和远端参考信号，输出结果保存在指定的wav文件中
 # 模型局限性:1)由于训练数据偏差，如果麦克风通道存在音乐声，则音乐会被抑制。2)麦克风和参考通道之间的延迟覆盖范围在500ms以内
+# 阿里的Audio语音模型，通常建议安装audio领域依赖：pip install "modelscope[audio]" -f https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html
+# 因部分依赖由ModelScope独立host，所以需要使用"-f"参数
+# 譬如在windows系统安装，可能会遇到缺少依赖： MinDAEC, 安装该依赖需要在modelscope的独立host里面寻找，需要添加参数：
+# pip install "MinDAEC" -f https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
@@ -172,7 +178,9 @@ class Pyaudio_Record_Player:
                     data = await asyncio.to_thread(
                         audio_stream.read, chunk_size, **kwargs
                     )
+                    self.logger.info(f"data type:{type(data)}")
                     data_np = np.frombuffer(data, dtype=np.int16)
+                    self.logger.info(f"data_np type:{type(data_np)}")
                     # 使用VAD检测是否是语音
                     is_speech = vad.is_speech(data_np.tobytes(), rate)
                     if is_speech:
@@ -181,11 +189,31 @@ class Pyaudio_Record_Player:
                         # 填补静音数据
                         silent_frame = np.zeros(chunk_size, dtype=np.int16)
                         audio_vad = silent_frame.tobytes()
+                    self.logger.info(f"audio_vad 内容:{audio_vad}")
+                    self.logger.info(f"audio_vad 类型:{type(audio_vad)}")
+                    self.logger.info(f"self.audio_out:{self.audio_out}")
+                    self.logger.info(f"self.audio_out类型:{type(self.audio_out)}")
+
+                    if self.logger.info is None:
+                        # 填补静音数据
+                        silent_frame = np.zeros(chunk_size, dtype=np.int16)
+                        farend_speech = silent_frame.tobytes()
+
                     nearend_mic = audio_vad
                     farend_speech = self.audio_out
-                    audio_echo_cancellation = aec(input={'nearend_mic':nearend_mic,
-                                                         'farend_speech':farend_speech},
-                                                  output= None)
+
+                    # # 创建一个BytesIO对象，并将其作为文件写入音频数据
+                    # nearend_mic = io.BytesIO()
+                    # farend_speech = io.BytesIO()
+                    # nearend_mic.write(audio_vad)
+                    # farend_speech.write(self.audio_out)
+                    # nearend_mic.seek(0)  # 将指针移回流的开始位置
+                    # farend_speech.seek(0)  # 将指针移回流的开始位置
+
+                    audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic,
+                                                         'farend_speech': farend_speech},
+                                                  output_path= None,
+                                                  )
                     await self.audio_queue.put(audio_echo_cancellation)
 
                 except OSError as e:
