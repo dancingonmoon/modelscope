@@ -7,6 +7,7 @@ import traceback
 import logging
 import webrtcvad
 import numpy as np
+import  wave
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +29,7 @@ logging.basicConfig(
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
-aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
+aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k") # 依赖: torchaudio, librosa, MinDAEC; 传送的音频格式需要是wav文件格式,并以bytes形式传送
 # result = aec(input={"nearend_mic":wav_data or wave file,"farend_speech":wave_data or wave_file}, output=None or wave_file_path)
 
 class Pyaudio_Record_Player:
@@ -178,7 +179,7 @@ class Pyaudio_Record_Player:
                     data = await asyncio.to_thread(
                         audio_stream.read, chunk_size, **kwargs
                     )
-                    self.logger.info(f"data type:{type(data)}")
+                    self.logger.info(f"麦克风data type:{type(data)}")
                     data_np = np.frombuffer(data, dtype=np.int16)
                     self.logger.info(f"data_np type:{type(data_np)}")
                     # 使用VAD检测是否是语音
@@ -189,30 +190,46 @@ class Pyaudio_Record_Player:
                         # 填补静音数据
                         silent_frame = np.zeros(chunk_size, dtype=np.int16)
                         audio_vad = silent_frame.tobytes()
-                    self.logger.info(f"audio_vad 内容:{audio_vad}")
+                    # self.logger.info(f"audio_vad[:20] 内容:{audio_vad[:20]}")
                     self.logger.info(f"audio_vad 类型:{type(audio_vad)}")
-                    self.logger.info(f"self.audio_out:{self.audio_out}")
-                    self.logger.info(f"self.audio_out类型:{type(self.audio_out)}")
 
-                    if self.logger.info is None:
+                    # 创建一个BytesIO对象，待将其作为文件写入音频数据
+                    nearend_mic = io.BytesIO()
+                    farend_speech = io.BytesIO()
+
+                    # 将音频数据改写成wav格式，并写入BytesIO对象
+                    with wave.open(nearend_mic, 'wb') as wf:
+                        wf.setnchannels(channels)
+                        wf.setsampwidth(sample_width)
+                        wf.setframerate(rate)
+                        wf.writeframes(audio_vad)
+                    nearend_mic.seek(0)  # 将指针移回流的开始位置
+
+                    farend_speech_raw = self.audio_out
+                    if self.audio_out is None:
                         # 填补静音数据
                         silent_frame = np.zeros(chunk_size, dtype=np.int16)
-                        farend_speech = silent_frame.tobytes()
+                        farend_speech_raw = silent_frame.tobytes()
 
-                    nearend_mic = audio_vad
-                    farend_speech = self.audio_out
+                    # 将音频数据改写成wav格式，并写入BytesIO对象
+                    with wave.open(farend_speech, 'wb') as wf:
+                        wf.setnchannels(channels)
+                        wf.setsampwidth(sample_width)
+                        wf.setframerate(rate)
+                        wf.writeframes(farend_speech_raw)
+                    farend_speech.seek(0)  # 将指针移回流的开始位置
 
-                    # # 创建一个BytesIO对象，并将其作为文件写入音频数据
-                    # nearend_mic = io.BytesIO()
-                    # farend_speech = io.BytesIO()
-                    # nearend_mic.write(audio_vad)
-                    # farend_speech.write(self.audio_out)
-                    # nearend_mic.seek(0)  # 将指针移回流的开始位置
-                    # farend_speech.seek(0)  # 将指针移回流的开始位置
+                    self.logger.info(f"farend_speech 内容:{farend_speech}")
+                    # self.logger.info(f"farend_speech 类型:{type(farend_speech)}")
 
-                    audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic,
-                                                         'farend_speech': farend_speech},
+                    # 将 BytesIO 对象转换为 bytes
+                    nearend_mic_bytes = nearend_mic.getvalue()
+                    farend_speech_bytes = farend_speech.getvalue()
+
+                    audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic_bytes,
+                                                         'farend_speech': farend_speech_bytes},
                                                   output_path= None,
+                                                  chunk_size = 480,
                                                   )
                     await self.audio_queue.put(audio_echo_cancellation)
 
