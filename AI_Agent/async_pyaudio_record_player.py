@@ -7,7 +7,7 @@ import traceback
 import logging
 import webrtcvad
 import numpy as np
-import  wave
+import wave
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,12 +29,14 @@ logging.basicConfig(
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
-aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k") # 依赖: torchaudio, librosa, MinDAEC; 传送的音频格式需要是wav文件格式,并以bytes形式传送
-# result = aec(input={"nearend_mic":wav_data or wave file,"farend_speech":wave_data or wave_file}, output=None or wave_file_path)
+# 依赖: torchaudio, librosa, MinDAEC; 传送的音频格式可以接受: wav文件路径, pydub AudioSegment读取的内容, 也可以是音频bytes添加wave header后的字节串; 模型输入音频接受的最小长度是640ms
+aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
+# output 为输出wav文件路径,如果不想输出文件,可以不列出output参数;但请不要将该参数设成output=None,否则会文件名None类型错误;
+# result = aec(input={"nearend_mic":wav_data or wave file,"farend_speech":wave_data or wave_file}, output= wave_file_path)
 
 def create_wav_header(dataflow, sample_rate=16000, num_channels=1, bits_per_sample=16):
     """
-    创建WAV文件头的字节串。
+    创建WAV文件头的字节串。 (替代生成wave文件）
 
     :param dataflow: 音频bytes数据（以字节为单位）。
     :param sample_rate: 采样率，默认16000。
@@ -221,10 +223,15 @@ class Pyaudio_Record_Player:
                         audio_stream.read, chunk_size, **kwargs
                     )
                     self.logger.info(f"麦克风data type:{type(data)}")
+                    self.logger.info(f"麦克风data 内容:{data[:50]}")
                     data_np = np.frombuffer(data, dtype=np.int16)
-                    self.logger.info(f"data_np type:{type(data_np)}")
+                    print(f"data_np.shape:{data_np.shape}")
+                    print(f"data_np[:50] 内容:{data_np[:50]}")
+                    print(f"data_np.tobytes()[:50] 内容:{data_np.tobytes()[:50]}")
+
                     # 使用VAD检测是否是语音
-                    is_speech = vad.is_speech(data_np.tobytes(), rate)
+                    is_speech = vad.is_speech(data_np.tobytes(), rate, length=int(chunk_size/2))  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
+                    print(f"is_speech:{is_speech}")
                     if is_speech:
                         audio_vad = data
                     else:
@@ -233,36 +240,6 @@ class Pyaudio_Record_Player:
                         audio_vad = silent_frame.tobytes()
                     # self.logger.info(f"audio_vad[:20] 内容:{audio_vad[:20]}")
                     self.logger.info(f"audio_vad 类型:{type(audio_vad)}")
-
-                    # # 创建一个BytesIO对象，待将其作为文件写入音频数据
-                    # nearend_mic = io.BytesIO()
-                    # farend_speech = io.BytesIO()
-                    #
-                    # # 将音频数据改写成wav格式，并写入BytesIO对象
-                    # with wave.open(nearend_mic, 'wb') as wf:
-                    #     wf.setnchannels(channels)
-                    #     wf.setsampwidth(sample_width)
-                    #     wf.setframerate(rate)
-                    #     wf.writeframes(audio_vad)
-                    # nearend_mic.seek(0)  # 将指针移回流的开始位置
-
-                    # farend_speech_raw = self.audio_out
-                    # if self.audio_out is None:
-                    #     # 填补静音数据
-                    #     silent_frame = np.zeros(chunk_size, dtype=np.int16)
-                    #     farend_speech_raw = silent_frame.tobytes()
-                    #
-                    # # 将音频数据改写成wav格式，并写入BytesIO对象
-                    # with wave.open(farend_speech, 'wb') as wf:
-                    #     wf.setnchannels(channels)
-                    #     wf.setsampwidth(sample_width)
-                    #     wf.setframerate(rate)
-                    #     wf.writeframes(farend_speech_raw)
-                    # farend_speech.seek(0)  # 将指针移回流的开始位置
-
-                    # # 将 BytesIO 对象转换为 bytes
-                    # nearend_mic_bytes = nearend_mic.getvalue()
-                    # farend_speech_bytes = farend_speech.getvalue()
 
 
                     # 将bytes音频转换成wav格式 (创建wav头的字节串）
@@ -274,17 +251,20 @@ class Pyaudio_Record_Player:
                         farend_speech_raw = silent_frame.tobytes()
                     farend_speech_bytes = create_wav_header(farend_speech_raw, rate, channels, bits_per_sample=sample_width*8)
 
+                    self.logger.info(f"nearend_mic_bytes (wavhead) [:20]内容:{nearend_mic_bytes[:20]}")
+                    self.logger.info(f"nearend_mic_bytes (wavhead) 类型:{type(nearend_mic_bytes)}")
+                    self.logger.info(f"farend_speech_raw (self.audio_out) [:20]内容:{farend_speech_raw[:20]}")
+                    self.logger.info(f"farend_speech_raw (self.audio_out) 类型:{type(farend_speech_raw)}")
+                    self.logger.info(f"farend_speech_bytes (wavhead) [:20]内容:{farend_speech_bytes[:20]}")
+                    self.logger.info(f"farend_speech_bytes (wavhead) 类型:{type(farend_speech_bytes)}")
 
-                    self.logger.info(f"farend_speech 内容:{farend_speech_bytes}")
-                    # self.logger.info(f"farend_speech 类型:{type(farend_speech)}")
 
 
                     audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic_bytes,
                                                          'farend_speech': farend_speech_bytes},
-                                                  output_path= None,
-                                                  chunk_size = 480,
-                                                  )
-                    await self.audio_queue.put(audio_echo_cancellation)
+                                                  )  # aec输出为一个字典{'output_pcm': b'\x00\x00‘}
+
+                    await self.audio_queue.put(audio_echo_cancellation['output_pcm'])
 
                 except OSError as e:
                     self.logger.error(f"麦克风读取发生操作系统错误: {e}")
@@ -373,5 +353,43 @@ if __name__ == "__main__":
     player = Pyaudio_Record_Player(pya, logger)
     # asyncio.run(player.audiofile_player(file_path))
     asyncio.run(
-        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=480)
+        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=640)
     )
+
+    # 以下为aec模型测试输入的格式,经测试,模型输入可以接受: wav文件路径, pydub读取的内容, 也可以是音频bytes添加wave header后的字节串
+
+    # input = {
+    #     'nearend_mic': 'https://modelscope.oss-cn-beijing.aliyuncs.com/test/audios/nearend_mic.wav',
+    #     'farend_speech': 'https://modelscope.oss-cn-beijing.aliyuncs.com/test/audios/farend_speech.wav'
+    # }
+
+    # nearend_mic_path = f"C:/Users/shoub/Music/nearend_mic.wav"
+    # farend_speech_path = f"C:/Users/shoub/Music/farend_speech.wav"
+    # nearend_mic_audio = AudioSegment.from_file(nearend_mic_path, format="wav")
+    # farend_speech_audio = AudioSegment.from_file(farend_speech_path, format="wav")
+    # print(f"nearend_mic_audio 类型: {type(nearend_mic_audio)}")
+    # # print(f"farend_speech_audio[:20]: {farend_speech_audio[:20]}")
+    #
+    # print(f"nearend_mic_audio.raw_data 类型: {type(nearend_mic_audio.raw_data)}")
+    # # print(f"farend_speech_audio.raw_data[:20]: {farend_speech_audio.raw_data[:20]}")
+    #
+    # nearend_bytes = nearend_mic_audio.raw_data
+    # farend_bytes = farend_speech_audio.raw_data
+    #
+    # nearend_bytes_wavhead = create_wav_header(nearend_bytes,16000,1,16)
+    # farend_bytes_wavhead = create_wav_header(farend_bytes,16000,1,16)
+    #
+    # stream = pya.open(
+    #     format=pya.get_format_from_width(2),
+    #     channels=1,
+    #     rate=16000,
+    #     output=True,
+    # )
+    # # stream.write(nearend_bytes)
+    # input = {
+    #     'nearend_mic': nearend_bytes_wavhead,
+    #     'farend_speech': farend_bytes_wavhead,
+    # }
+    # #
+    # result = aec(input, )
+    # stream.write(result['output_pcm'])
