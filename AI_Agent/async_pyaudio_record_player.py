@@ -29,10 +29,12 @@ logging.basicConfig(
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
-# 依赖: torchaudio, librosa, MinDAEC; 传送的音频格式可以接受: wav文件路径, pydub AudioSegment读取的内容, 也可以是音频bytes添加wave header后的字节串; 模型输入音频接受的最小长度是640ms
-aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
-# output 为输出wav文件路径,如果不想输出文件,可以不列出output参数;但请不要将该参数设成output=None,否则会文件名None类型错误;
-# result = aec(input={"nearend_mic":wav_data or wave file,"farend_speech":wave_data or wave_file}, output= wave_file_path)
+aec_enabled = False  # 是否启用回声消除;启动aec 需要启动speech_dfsmn_aec_psm_16k模型，该模型需要依赖torchaudio, librosa, MinDAEC
+if aec_enabled:
+    # 依赖: torchaudio, librosa, MinDAEC; 传送的音频格式可以接受: wav文件路径; pydub AudioSegment读取的内容; 也可以是音频bytes添加wave header后的字节串; 模型输入音频接受的最小长度是640ms
+    aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
+    # output 为输出wav文件路径,如果不想输出文件,可以不列出output参数;但请不要将该参数设成output=None,否则会文件名None类型错误;
+    # result = aec(input={"nearend_mic":wav_data or wave file,"farend_speech":wave_data or wave_file}, output= wave_file_path)
 
 def create_wav_header(dataflow, sample_rate=16000, num_channels=1, bits_per_sample=16):
     """
@@ -191,6 +193,72 @@ class Pyaudio_Record_Player:
     ):
         """
         持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
+        不处理回声抑制, 但有VAD
+        1. 经过vad判断is_speech,静音填充
+        """
+        vad = webrtcvad.Vad(vad_mode)
+        mic_info = self.pyaudio_instance.get_default_input_device_info()
+        audio_stream = await asyncio.to_thread(
+            self.pyaudio_instance.open,
+            format=self.pyaudio_instance.get_format_from_width(sample_width),
+            channels=channels,
+            rate=rate,
+            input=True,
+            input_device_index=mic_info["index"],
+            frames_per_buffer=chunk_size,
+        )
+        if __debug__:  # 这是一个条件语句，用于检查当前是否处于调试模式。
+            kwargs = {
+                "exception_on_overflow": False
+            }  # 如果处于调试模式，kwargs 被设置为一个字典，这意味着在调试模式下，当音频流溢出（即缓冲区满，无法再接收更多数据）时，不会抛出异常。
+        else:
+            kwargs = {}  # 如果当前不是调试模式，这意味着在生产模式下，当音频流溢出时，可能会抛出异常，这通常是为了确保程序能够及时处理错误情况
+
+        try:
+            while not self.stop_stream.is_set():
+                if self.pause_stream:
+                    await asyncio.sleep(0.1)
+                    continue
+                try:
+                    data = await asyncio.to_thread(
+                        audio_stream.read, chunk_size, **kwargs
+                    )
+                    data_np = np.frombuffer(data, dtype=np.int16)
+
+                    # 使用VAD检测是否是语音
+                    is_speech = vad.is_speech(data_np, rate, length=int(chunk_size/2))  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
+                    # self.logger.info(f"vad: is_speech={is_speech}")
+                    if is_speech:
+                        audio_vad = data
+                    else:
+                        # 填补静音数据
+                        silent_frame = np.zeros(chunk_size, dtype=np.int16)
+                        audio_vad = silent_frame.tobytes()
+
+
+                    await self.audio_queue.put(audio_vad)
+
+                except OSError as e:
+                    self.logger.error(f"麦克风读取发生操作系统错误: {e}")
+                    break  # 发生错误时退出循环
+            if self.stop_stream.is_set():
+                audio_stream.stop_stream()
+                audio_stream.close()
+                self.logger.info("等待事件set,或操作系统错误,停止关闭stream")
+
+        except ExceptionGroup as EG:
+            traceback.print_exception(EG)
+            self.logger.info(f"麦克风初始化或读取发生错误: {EG}")
+    async def microphone_read_AEC(
+        self,
+        sample_width: int = 2,
+        channels: int = 1,
+        rate: int = 16000,
+        chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
+        vad_mode: int = 2,  # vad 模式，0-3，3最敏感
+    ):
+        """
+        持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
         实现了回声抑制:
         1. 经过vad判断is_speech,静音填充
         2. 使用阿里通义实验室DFSMN回声消除模型:模型接受单通道麦克风信号和单通道参考信号作为输入，输出线性回声消除和回声残余抑制后的音频信号
@@ -222,16 +290,16 @@ class Pyaudio_Record_Player:
                     data = await asyncio.to_thread(
                         audio_stream.read, chunk_size, **kwargs
                     )
-                    self.logger.info(f"麦克风data type:{type(data)}")
-                    self.logger.info(f"麦克风data 内容:{data[:50]}")
+                    # self.logger.info(f"麦克风data type:{type(data)}")
+                    # self.logger.info(f"麦克风data 内容:{data[:50]}")
                     data_np = np.frombuffer(data, dtype=np.int16)
-                    print(f"data_np.shape:{data_np.shape}")
-                    print(f"data_np[:50] 内容:{data_np[:50]}")
-                    print(f"data_np.tobytes()[:50] 内容:{data_np.tobytes()[:50]}")
+                    # print(f"data_np.shape:{data_np.shape}")
+                    # print(f"data_np[:50] 内容:{data_np[:50]}")
+                    # print(f"data_np.tobytes()[:50] 内容:{data_np.tobytes()[:50]}")
 
                     # 使用VAD检测是否是语音
-                    is_speech = vad.is_speech(data_np.tobytes(), rate, length=int(chunk_size/2))  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
-                    print(f"is_speech:{is_speech}")
+                    is_speech = vad.is_speech(data_np, rate, length=int(chunk_size/2))  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
+                    self.logger.info(f"vad: is_speech={is_speech}")
                     if is_speech:
                         audio_vad = data
                     else:
@@ -239,7 +307,7 @@ class Pyaudio_Record_Player:
                         silent_frame = np.zeros(chunk_size, dtype=np.int16)
                         audio_vad = silent_frame.tobytes()
                     # self.logger.info(f"audio_vad[:20] 内容:{audio_vad[:20]}")
-                    self.logger.info(f"audio_vad 类型:{type(audio_vad)}")
+                    # self.logger.info(f"audio_vad 类型:{type(audio_vad)}")
 
 
                     # 将bytes音频转换成wav格式 (创建wav头的字节串）
@@ -251,18 +319,18 @@ class Pyaudio_Record_Player:
                         farend_speech_raw = silent_frame.tobytes()
                     farend_speech_bytes = create_wav_header(farend_speech_raw, rate, channels, bits_per_sample=sample_width*8)
 
-                    self.logger.info(f"nearend_mic_bytes (wavhead) [:20]内容:{nearend_mic_bytes[:20]}")
-                    self.logger.info(f"nearend_mic_bytes (wavhead) 类型:{type(nearend_mic_bytes)}")
-                    self.logger.info(f"farend_speech_raw (self.audio_out) [:20]内容:{farend_speech_raw[:20]}")
-                    self.logger.info(f"farend_speech_raw (self.audio_out) 类型:{type(farend_speech_raw)}")
-                    self.logger.info(f"farend_speech_bytes (wavhead) [:20]内容:{farend_speech_bytes[:20]}")
-                    self.logger.info(f"farend_speech_bytes (wavhead) 类型:{type(farend_speech_bytes)}")
+                    # self.logger.info(f"nearend_mic_bytes (wavhead) [:20]内容:{nearend_mic_bytes[:20]}")
+                    # self.logger.info(f"nearend_mic_bytes (wavhead) 类型:{type(nearend_mic_bytes)}")
+                    # self.logger.info(f"farend_speech_raw (self.audio_out) [:20]内容:{farend_speech_raw[:20]}")
+                    # self.logger.info(f"farend_speech_raw (self.audio_out) 类型:{type(farend_speech_raw)}")
+                    # self.logger.info(f"farend_speech_bytes (wavhead) [:20]内容:{farend_speech_bytes[:20]}")
+                    # self.logger.info(f"farend_speech_bytes (wavhead) 类型:{type(farend_speech_bytes)}")
 
 
 
                     audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic_bytes,
                                                          'farend_speech': farend_speech_bytes},
-                                                  )  # aec输出为一个字典{'output_pcm': b'\x00\x00‘}
+                                                  )  # aec输出为一个字典{'output_pcm': b'\x00\x00‘} ;
 
                     await self.audio_queue.put(audio_echo_cancellation['output_pcm'])
 
@@ -321,15 +389,22 @@ class Pyaudio_Record_Player:
         channels: int = 1,
         rate: int = 16000,
         chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
+        aec_enabled: bool = False
     ):
         """
         麦克风收音,3秒后回放;user_command控制;
         """
         try:
             async with asyncio.TaskGroup() as tg:
-                tg.create_task(
-                    self.microphone_read(sample_width, channels, rate, chunk_size)
-                )
+                if aec_enabled:
+                    tg.create_task(
+                    self.microphone_read_AEC(sample_width, channels, rate, chunk_size)
+                    )
+                else:
+                    tg.create_task(
+                        self.microphone_read(sample_width, channels, rate, chunk_size)
+                    )
+
                 tg.create_task(self.user_command())
                 await asyncio.sleep(3)
                 tg.create_task(self.async_audio_play(sample_width, channels, rate))
@@ -353,7 +428,7 @@ if __name__ == "__main__":
     player = Pyaudio_Record_Player(pya, logger)
     # asyncio.run(player.audiofile_player(file_path))
     asyncio.run(
-        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=640)
+        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=640, aec_enabled=aec_enabled)
     )
 
     # 以下为aec模型测试输入的格式,经测试,模型输入可以接受: wav文件路径, pydub读取的内容, 也可以是音频bytes添加wave header后的字节串
