@@ -1,5 +1,5 @@
 import asyncio
-import io
+from collections import deque
 
 import pyaudio  # pyaudio 是一个跨平台的音频输入/输出库，主要用于处理 WAV 格式的音频数据
 from pydub import AudioSegment  # pydub 库本身不直接播放音频文件，但它可以将多种格式的音频文件转换为 WAV 格式
@@ -7,7 +7,7 @@ import traceback
 import logging
 import webrtcvad
 import numpy as np
-import wave
+import time
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,7 +29,7 @@ logging.basicConfig(
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
-aec_enabled = False  # 是否启用回声消除;启动aec 需要启动speech_dfsmn_aec_psm_16k模型，该模型需要依赖torchaudio, librosa, MinDAEC
+aec_enabled = True  # 是否启用回声消除;启动aec 需要启动speech_dfsmn_aec_psm_16k模型，该模型需要依赖torchaudio, librosa, MinDAEC
 if aec_enabled:
     # 依赖: torchaudio, librosa, MinDAEC; 传送的音频格式可以接受: wav文件路径; pydub AudioSegment读取的内容; 也可以是音频bytes添加wave header后的字节串; 模型输入音频接受的最小长度是640ms
     aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
@@ -82,8 +82,9 @@ class Pyaudio_Record_Player:
         self, pyaudio_instance: pyaudio.PyAudio, logger: logging.Logger = None
     ):
         self.pyaudio_instance = pyaudio_instance
-        self.audio_queue = asyncio.Queue()
+        self.audio_queue = asyncio.Queue()  # 音频缓冲器
         self.audio_out = None  # 存放输出音频,以作为回声抑制算法中的参考信号
+        self.audio_out_deque = deque(maxlen=10)  # 存放输出音频以及对应的时间戳队列，以对齐麦克风录音输入，考虑到最大延时，设定10*640ms=6.4s延迟
         self.pause_stream = False
         # self.stop_stream = False
         self.stop_stream = asyncio.Event()  # 创建等待事件,来控制Taskgroup()
@@ -178,6 +179,7 @@ class Pyaudio_Record_Player:
                 self.logger.info("音频播放结束")
                 break
             await asyncio.to_thread(stream.write, self.audio_out)
+            self.audio_out_deque.append((time.time(), self.audio_out))  # 添加到deque队列,队列存放延迟累计chunk的播放音频,并带每个chunk播放时间的时间戳
         if self.stop_stream.is_set():
             stream.stop_stream()
             stream.close()
@@ -235,7 +237,6 @@ class Pyaudio_Record_Player:
                         silent_frame = np.zeros(chunk_size, dtype=np.int16)
                         audio_vad = silent_frame.tobytes()
 
-
                     await self.audio_queue.put(audio_vad)
 
                 except OSError as e:
@@ -282,6 +283,7 @@ class Pyaudio_Record_Player:
             kwargs = {}  # 如果当前不是调试模式，这意味着在生产模式下，当音频流溢出时，可能会抛出异常，这通常是为了确保程序能够及时处理错误情况
 
         try:
+            present_chunk_time = time.time() # 初始化第一个chunk的时间戳
             while not self.stop_stream.is_set():
                 if self.pause_stream:
                     await asyncio.sleep(0.1)
@@ -299,40 +301,50 @@ class Pyaudio_Record_Player:
 
                     # 使用VAD检测是否是语音
                     is_speech = vad.is_speech(data_np, rate, length=int(chunk_size/2))  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
-                    self.logger.info(f"vad: is_speech={is_speech}")
+                    # self.logger.info(f"vad: is_speech={is_speech}")
                     if is_speech:
                         audio_vad = data
                     else:
                         # 填补静音数据
                         silent_frame = np.zeros(chunk_size, dtype=np.int16)
                         audio_vad = silent_frame.tobytes()
-                    # self.logger.info(f"audio_vad[:20] 内容:{audio_vad[:20]}")
-                    # self.logger.info(f"audio_vad 类型:{type(audio_vad)}")
+                        await self.audio_queue.put(audio_vad)  # 麦克风无voice输入,则直接将audio_vad 送入self.audio_queue(缓冲器);跳过aec模型处理
+                        present_chunk_time = time.time()
+                        continue
 
+                    #  这里将添加对self.audio_out_deque里面的每个(时间戳,以及self.audio_out)的处理,添加wave_head,再与录音的chunk比较时间戳.匹配一个chunk时长以内的录音chunk与播放chunk
+                    #  1) 获取录音每个chunk生成的时间戳,并与self.audio_out_deque里面的时间戳比较,取最接近的元素(元素),并且时间戳的延迟少于chunk时长,以匹配录音chunk与播放chunk;
+                    #  2) 将匹配的播放chunk的self.audio_out添加wavehead,送入self.audio_queue(缓冲器)
+                    #  3) 如果没有找到匹配的录音与播放chunk,则表明某种原因,例如播放尚未开始,不存在录音与播放chunk的匹配对,则跳过aec模型处理,直接将录音chunk送入self.audio_queue(缓冲器)
+                    matched_audio = None
+                    matched_timedelay = float('inf')  # 初始化匹配chunk的时延
+                    if self.audio_out_deque:  # deque可能初始为空
+                        self.logger.info(f"self.audio_out_deque:{[timestamp for timestamp, _ in self.audio_out_deque]}")
+                        for timestamp, audio_out in self.audio_out_deque:
+                            timedelay = abs(timestamp - present_chunk_time)
+                            if timedelay <= chunk_size and timedelay < matched_timedelay:
+                                matched_timedelay = timedelay
+                                matched_audio = audio_out
+                                # 将bytes音频转换成wav格式 (创建wav头的字节串）
+                                nearend_mic_bytes = create_wav_header(audio_vad, rate, channels,
+                                                                      bits_per_sample=sample_width * 8)
+                                farend_speech_bytes = create_wav_header(matched_audio, rate, channels,
+                                                                        bits_per_sample=sample_width * 8)
+                                audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic_bytes,
+                                                                     'farend_speech': farend_speech_bytes},
+                                                              )  # aec输出为一个字典{'output_pcm': b'\x00\x00‘} ;
+                                await self.audio_queue.put(audio_echo_cancellation['output_pcm'])
+                                self.logger.info(f"找到匹配的录音与播放chunk,录音chunk与播放chunk的时延:{timedelay}")
+                                self.logger.info(f"nearend_mic_bytes:{nearend_mic_bytes[10:60]}")
+                                self.logger.info(f"farend_speh_bytes:{farend_speech_bytes[10:60]}")
+                                self.logger.info(f"aec之后的output_pcs:{audio_echo_cancellation['output_pcm'][10:60]}")
+                                present_chunk_time = time.time()
+                                continue
 
-                    # 将bytes音频转换成wav格式 (创建wav头的字节串）
-                    nearend_mic_bytes = create_wav_header(audio_vad, rate, channels, bits_per_sample=sample_width*8)
-                    farend_speech_raw = self.audio_out
-                    if self.audio_out is None:
-                        # 填补静音数据
-                        silent_frame = np.zeros(chunk_size, dtype=np.int16)
-                        farend_speech_raw = silent_frame.tobytes()
-                    farend_speech_bytes = create_wav_header(farend_speech_raw, rate, channels, bits_per_sample=sample_width*8)
+                    if not matched_audio:  # 未找到匹配项,跳过aec,直接将录音chunk送入self.audio_queue
+                        await self.audio_queue.put(audio_vad)
+                        present_chunk_time = time.time()
 
-                    # self.logger.info(f"nearend_mic_bytes (wavhead) [:20]内容:{nearend_mic_bytes[:20]}")
-                    # self.logger.info(f"nearend_mic_bytes (wavhead) 类型:{type(nearend_mic_bytes)}")
-                    # self.logger.info(f"farend_speech_raw (self.audio_out) [:20]内容:{farend_speech_raw[:20]}")
-                    # self.logger.info(f"farend_speech_raw (self.audio_out) 类型:{type(farend_speech_raw)}")
-                    # self.logger.info(f"farend_speech_bytes (wavhead) [:20]内容:{farend_speech_bytes[:20]}")
-                    # self.logger.info(f"farend_speech_bytes (wavhead) 类型:{type(farend_speech_bytes)}")
-
-
-
-                    audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic_bytes,
-                                                         'farend_speech': farend_speech_bytes},
-                                                  )  # aec输出为一个字典{'output_pcm': b'\x00\x00‘} ;
-
-                    await self.audio_queue.put(audio_echo_cancellation['output_pcm'])
 
                 except OSError as e:
                     self.logger.error(f"麦克风读取发生操作系统错误: {e}")
@@ -431,40 +443,3 @@ if __name__ == "__main__":
         player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=640, aec_enabled=aec_enabled)
     )
 
-    # 以下为aec模型测试输入的格式,经测试,模型输入可以接受: wav文件路径, pydub读取的内容, 也可以是音频bytes添加wave header后的字节串
-
-    # input = {
-    #     'nearend_mic': 'https://modelscope.oss-cn-beijing.aliyuncs.com/test/audios/nearend_mic.wav',
-    #     'farend_speech': 'https://modelscope.oss-cn-beijing.aliyuncs.com/test/audios/farend_speech.wav'
-    # }
-
-    # nearend_mic_path = f"C:/Users/shoub/Music/nearend_mic.wav"
-    # farend_speech_path = f"C:/Users/shoub/Music/farend_speech.wav"
-    # nearend_mic_audio = AudioSegment.from_file(nearend_mic_path, format="wav")
-    # farend_speech_audio = AudioSegment.from_file(farend_speech_path, format="wav")
-    # print(f"nearend_mic_audio 类型: {type(nearend_mic_audio)}")
-    # # print(f"farend_speech_audio[:20]: {farend_speech_audio[:20]}")
-    #
-    # print(f"nearend_mic_audio.raw_data 类型: {type(nearend_mic_audio.raw_data)}")
-    # # print(f"farend_speech_audio.raw_data[:20]: {farend_speech_audio.raw_data[:20]}")
-    #
-    # nearend_bytes = nearend_mic_audio.raw_data
-    # farend_bytes = farend_speech_audio.raw_data
-    #
-    # nearend_bytes_wavhead = create_wav_header(nearend_bytes,16000,1,16)
-    # farend_bytes_wavhead = create_wav_header(farend_bytes,16000,1,16)
-    #
-    # stream = pya.open(
-    #     format=pya.get_format_from_width(2),
-    #     channels=1,
-    #     rate=16000,
-    #     output=True,
-    # )
-    # # stream.write(nearend_bytes)
-    # input = {
-    #     'nearend_mic': nearend_bytes_wavhead,
-    #     'farend_speech': farend_bytes_wavhead,
-    # }
-    # #
-    # result = aec(input, )
-    # stream.write(result['output_pcm'])
