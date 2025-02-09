@@ -313,8 +313,8 @@ class Pyaudio_Record_Player:
                         audio_vad = silent_frame
                         # 麦克风无voice输入,则直接将audio_vad 送入self.audio_queue(缓冲器);跳过aec模型处理
                         # 音频缓冲器存放了元组(音频数据,vad结果is_speech的bool值)
+                        present_chunk_time = time.time()
                         await self.audio_queue.put((audio_vad, is_speech))
-                        # present_chunk_time = time.time()
                         continue
 
                     #  这里将添加对self.audio_out_deque里面的每个(时间戳,以及self.audio_out)的处理,添加wave_head,再与录音的chunk比较时间戳.匹配一个chunk时长以内的录音chunk与播放chunk
@@ -323,16 +323,18 @@ class Pyaudio_Record_Player:
                     #  3) 如果没有找到匹配的录音与播放chunk,则表明某种原因,例如播放尚未开始,不存在录音与播放chunk的匹配对,则跳过aec模型处理,直接将录音chunk送入self.audio_queue(缓冲器)
                     matched_audio = None
                     matched_timedelay = float('inf')  # 初始化匹配chunk的时延
+                    matched_vad_mark = None
                     if self.audio_out_deque:  # deque可能初始为空
                         # self.logger.info(f"self.audio_out_deque:{[timestamp for timestamp, _, _ in self.audio_out_deque]}")
                         for timestamp, audio_out, vad_mark in self.audio_out_deque:
                             timedelay = abs(timestamp - present_chunk_time)
-                            if timedelay <= chunk_size/1000 and timedelay < matched_timedelay and not vad_mark:
+                            # var_mark = True 标明播放音频标注为voice,仅当录音音频与播放音频都为Voice时,才可能有回声,才进行录音与播放chunk的匹配;
+                            if timedelay <= chunk_size/rate and timedelay < matched_timedelay and vad_mark and is_speech:
                                 matched_timedelay = timedelay
                                 matched_audio = audio_out
+                                matched_vad_mark = vad_mark
 
-
-                    if matched_audio:
+                    if matched_audio:  # 仅当有录音/播放音频的匹配时,才会有回声,才会有回声抑制模型的回音消除
                         # 将bytes音频转换成wav格式 (创建wav头的字节串）
                         nearend_mic_bytes = create_wav_header(audio_vad, rate, channels,
                                                               bits_per_sample=sample_width * 8)
@@ -341,23 +343,23 @@ class Pyaudio_Record_Player:
                         audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic_bytes,
                                                              'farend_speech': farend_speech_bytes},
                                                       )  # aec输出为一个字典{'output_pcm': b'\x00\x00‘} ;
-                        await self.audio_queue.put((audio_echo_cancellation['output_pcm'], is_speech))
                         present_chunk_time = time.time()
-                        self.logger.info(f"找到匹配的录音与播放chunk,录音chunk与播放chunk的时延:{matched_timedelay}, vad_mark={vad_mark}")
-                        self.logger.info(f"nearend_mic_bytes:{nearend_mic_bytes[-50:]}")
-                        self.logger.info(f"farend_speh_bytes:{farend_speech_bytes[-50:]}")
-                        self.logger.info(f"nearend wavehead之前 长度:{len(audio_vad)}")
+                        await self.audio_queue.put((audio_echo_cancellation['output_pcm'], is_speech))
+                        self.logger.info(f"找到匹配的录音与播放chunk,录音chunk与播放chunk的时延:{matched_timedelay}, matched_vad_mark={matched_vad_mark},is_speech={is_speech}")
+                        self.logger.info(f"nearend_mic_bytes:{nearend_mic_bytes[-40:]}")
+                        self.logger.info(f"farend_speh_bytes:{farend_speech_bytes[-40:]}")
+                        # self.logger.info(f"nearend wavehead之前 长度:{len(audio_vad)}")
                         # self.logger.info(f"nearend wavehead之后 长度:{len(nearend_mic_bytes)}")
-                        self.logger.info(f"farend wavehead之前 长度:{len(matched_audio)}")
+                        # self.logger.info(f"farend wavehead之前 长度:{len(matched_audio)}")
                         # self.logger.info(f"farend wavehead之后 长度:{len(farend_speech_bytes)}")
-                        self.logger.info(f"aec之后的output_pcs[:50]:{audio_echo_cancellation['output_pcm'][:50]}")
-                        self.logger.info(f"aec之后的output_pcs[-50:]:{audio_echo_cancellation['output_pcm'][-50:]}")
+                        self.logger.info(f"aec之后的output_pcs[:50]:{audio_echo_cancellation['output_pcm'][:40]}")
+                        self.logger.info(f"aec之后的output_pcs[-50:]:{audio_echo_cancellation['output_pcm'][-40:]}")
                         self.logger.info(f"aec之后的output_pcs 长度:{len(audio_echo_cancellation['output_pcm'])}")
                         continue
 
                     else:# 未找到匹配项,跳过aec,直接将录音chunk送入self.audio_queue
-                        await self.audio_queue.put((audio_vad, is_speech))
                         present_chunk_time = time.time()
+                        await self.audio_queue.put((audio_vad, is_speech))
 
 
                 except OSError as e:
