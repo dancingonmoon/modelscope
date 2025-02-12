@@ -30,13 +30,6 @@ logging.basicConfig(
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
-aec_enabled = True  # 是否启用回声消除;启动aec 需要启动speech_dfsmn_aec_psm_16k模型，该模型需要依赖torchaudio, librosa, MinDAEC
-if aec_enabled:
-    # 依赖: torchaudio, librosa, MinDAEC; 传送的音频格式可以接受: wav文件路径; pydub AudioSegment读取的内容; 也可以是音频bytes添加wave header后的字节串; 模型输入音频接受的最小长度是640ms
-    aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
-    # output 为输出wav文件路径,如果不想输出文件,可以不列出output参数;但请不要将该参数设成output=None,否则会文件名None类型错误;
-    # result = aec(input={"nearend_mic":wav_data or wave file,"farend_speech":wave_data or wave_file}, output= wave_file_path)
-
 def create_wav_header(dataflow, sample_rate=16000, num_channels=1, bits_per_sample=16):
     """
     创建WAV文件头的字节串。 (替代生成wave文件）
@@ -80,7 +73,8 @@ def create_wav_header(dataflow, sample_rate=16000, num_channels=1, bits_per_samp
 
 class Pyaudio_Record_Player:
     def __init__(
-        self, pyaudio_instance: pyaudio.PyAudio, logger: logging.Logger = None
+        self, pyaudio_instance: pyaudio.PyAudio, logger: logging.Logger = None,
+            echo_cancellation:bool=False, noise_suppression:bool=False
     ):
         self.pyaudio_instance = pyaudio_instance
         self.audio_queue = asyncio.Queue()  # 音频缓冲器
@@ -96,6 +90,14 @@ class Pyaudio_Record_Player:
         if not logger:
             self.logger = logging.getLogger("Pyaudio_Record_Player")
             self.logger.setLevel("INFO")
+
+        self.aec_enabled = echo_cancellation
+        self.ans_enabled = noise_suppression
+        if echo_cancellation:
+            self.aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
+        if noise_suppression:
+            self.ans = pipeline(Tasks.acoustic_noise_suppression, model='damo/speech_zipenhancer_ans_multiloss_16k_base')
+
 
     # 生成器函数，异步读取指定路径的音频文件
     async def user_command(self):
@@ -259,7 +261,7 @@ class Pyaudio_Record_Player:
         sample_width: int = 2,
         channels: int = 1,
         rate: int = 16000,
-        chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
+        chunk_size: int = 640,  # AEC 模型训练时window size = 640
         vad_mode: int = 2,  # vad 模式，0-3，3最敏感
     ):
         """
@@ -274,6 +276,9 @@ class Pyaudio_Record_Player:
         d. 由于训练数据偏差，如果麦克风通道存在音乐声，则音乐会被抑制。
         e. **麦克风和参考通道之间的延迟覆盖范围在500ms以内**
         f. **受模型训练权重限制，输入的音频如果不是wave文件输入,而是stream输入,音频的chunk需要为640 frame**
+        使用方法:
+        aec = pipeline(Tasks.acoustic_echo_cancellation, model="damo/speech_dfsmn_aec_psm_16k")
+        result = aec(input={"nearend_mic":wav_data or wave file,"farend_speech":wave_data or wave_file}, output= wave_file_path ) # 不需要生成wave_file,则将output不设置,不出现
         """
         vad = webrtcvad.Vad(vad_mode)
         mic_info = self.pyaudio_instance.get_default_input_device_info()
@@ -348,7 +353,7 @@ class Pyaudio_Record_Player:
                                                               bits_per_sample=sample_width * 8)
                         farend_speech_bytes = create_wav_header(matched_audio, rate, channels,
                                                                 bits_per_sample=sample_width * 8)
-                        audio_echo_cancellation = aec(input={'nearend_mic': nearend_mic_bytes,
+                        audio_echo_cancellation = self.aec(input={'nearend_mic': nearend_mic_bytes,
                                                              'farend_speech': farend_speech_bytes},
                                                       )  # aec输出为一个字典{'output_pcm': b'\x00\x00‘} ;
                         present_chunk_time = time.time()
@@ -382,6 +387,86 @@ class Pyaudio_Record_Player:
             traceback.print_exception(EG)
             self.logger.info(f"麦克风初始化或读取发生错误: {EG}")
 
+    async def microphone_read_ANS(
+        self,
+        sample_width: int = 2,
+        channels: int = 1,
+        rate: int = 16000,
+        chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
+        vad_mode: int = 2,  # vad 模式，0-3，3最敏感
+    ):
+        """
+        持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
+        实现了回声抑制:
+        1. 经过vad判断is_speech,静音填充
+        2. 使用阿里通义实验室speech_zipenhancer_ans_multiloss_16k_base,语音降噪模型
+        ZipEnhancer模型噪声抑制效果，使用条件：
+        a. 模型输入和输出均为16kHz采样率单通道语音时域波形信号，输入信号可由单通道麦克风直接进行录制，输出为噪声抑制后的语音音频信号;
+        b. 模型依赖: torchaudio, torchvision, SoundFile
+        c. pytorch环境建议显式设置线程数:
+            import torch
+            torch.set_num_threads(8)
+            torch.set_num_interop_threads(8)
+        使用方法:
+        ans = pipeline(
+        Tasks.acoustic_noise_suppression,model='damo/speech_zipenhancer_ans_multiloss_16k_base')
+        result = ans(音频wav文件或者添加wave head的音频数据, output_path='output.wav')
+        """
+        vad = webrtcvad.Vad(vad_mode)
+        mic_info = self.pyaudio_instance.get_default_input_device_info()
+        audio_stream = await asyncio.to_thread(
+            self.pyaudio_instance.open,
+            format=self.pyaudio_instance.get_format_from_width(sample_width),
+            channels=channels,
+            rate=rate,
+            input=True,
+            input_device_index=mic_info["index"],
+            frames_per_buffer=chunk_size,
+        )
+        if __debug__:  # 这是一个条件语句，用于检查当前是否处于调试模式。
+            kwargs = {
+                "exception_on_overflow": False
+            }  # 如果处于调试模式，kwargs 被设置为一个字典，这意味着在调试模式下，当音频流溢出（即缓冲区满，无法再接收更多数据）时，不会抛出异常。
+        else:
+            kwargs = {}  # 如果当前不是调试模式，这意味着在生产模式下，当音频流溢出时，可能会抛出异常，这通常是为了确保程序能够及时处理错误情况
+
+        try:
+
+            # 准备静音数据,为稍后使用
+            silent_frame = np.zeros(chunk_size, dtype=np.int16).tobytes()
+
+            while not self.stop_stream.is_set():
+                if self.pause_stream:
+                    await asyncio.sleep(0.1)
+                    continue
+                try:
+                    data = await asyncio.to_thread(audio_stream.read, chunk_size, **kwargs )
+                    data_np = np.frombuffer(data, dtype=np.int16)
+
+                    # 使用VAD检测是否是语音
+                    is_speech = vad.is_speech(data_np, rate, length=int(chunk_size/2))  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
+                    self.logger.info(f"vad: is_speech={is_speech}")
+                    if is_speech:
+                        audio_vad = data
+                    else:
+                        # 填补静音数据
+                        audio_vad = silent_frame
+
+                    ans_input = create_wav_header(audio_vad, rate, channels, bits_per_sample=sample_width * 8)
+                    audio_noise_suppression = self.ans(ans_input)  # ans输出为一个字典{'output_pcm': b'\x00\x00‘}
+                    await self.audio_queue.put((audio_noise_suppression['output_pcm'], is_speech))
+
+                except OSError as e:
+                    self.logger.error(f"麦克风读取发生操作系统错误: {e}")
+                    break  # 发生错误时退出循环
+            if self.stop_stream.is_set():
+                audio_stream.stop_stream()
+                audio_stream.close()
+                self.logger.info("等待事件set,或操作系统错误,停止关闭stream")
+
+        except ExceptionGroup as EG:
+            traceback.print_exception(EG)
+            self.logger.info(f"麦克风初始化或读取发生错误: {EG}")
     async def audiofile_player(
         self,
         file_path: str,
@@ -425,16 +510,19 @@ class Pyaudio_Record_Player:
         channels: int = 1,
         rate: int = 16000,
         chunk_size: int = 480,  # 16Khz, 30ms长度,对应的帧长度是480
-        aec_enabled: bool = False
     ):
         """
         麦克风收音,3秒后回放;user_command控制;
         """
         try:
             async with asyncio.TaskGroup() as tg:
-                if aec_enabled:
+                if self.aec_enabled:
                     tg.create_task(
                     self.microphone_read_AEC(sample_width, channels, rate, chunk_size)
+                    )
+                elif self.ans_enabled:
+                    tg.create_task(
+                        self.microphone_read_ANS(sample_width, channels, rate, chunk_size)
                     )
                 else:
                     tg.create_task(
@@ -442,7 +530,7 @@ class Pyaudio_Record_Player:
                     )
 
                 tg.create_task(self.user_command())
-                await asyncio.sleep(3)
+                await asyncio.sleep(1)
                 tg.create_task(self.async_audio_play(sample_width, channels, rate))
                 # TaskGroup的目的是管理一组相互依赖的任务，这些任务应该一起启动和结束。
                 # 当一个任务完成时，TaskGroup认为整个任务组的工作已经完成，因此会尝试取消其他所有任务
@@ -461,9 +549,9 @@ if __name__ == "__main__":
     pya = pyaudio.PyAudio()
     file_path = r"F:/Music/放牛班的春天10.mp3"
     # file_path = r"H:/music/Music/color of the world.mp3"
-    player = Pyaudio_Record_Player(pya, logger)
+    player = Pyaudio_Record_Player(pya, logger, echo_cancellation=False, noise_suppression=False)
     # asyncio.run(player.audiofile_player(file_path))
     asyncio.run(
-        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=640, aec_enabled=aec_enabled)
+        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=640, )
     )
 
