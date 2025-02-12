@@ -530,7 +530,7 @@ class Pyaudio_Record_Player:
                     )
 
                 tg.create_task(self.user_command())
-                await asyncio.sleep(1)
+                await asyncio.sleep(1)  # echo_cancellation 要求输入与回声之间时延小于500ms
                 tg.create_task(self.async_audio_play(sample_width, channels, rate))
                 # TaskGroup的目的是管理一组相互依赖的任务，这些任务应该一起启动和结束。
                 # 当一个任务完成时，TaskGroup认为整个任务组的工作已经完成，因此会尝试取消其他所有任务
