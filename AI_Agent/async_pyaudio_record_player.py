@@ -26,6 +26,7 @@ logging.basicConfig(
 # 因部分依赖由ModelScope独立host，所以需要使用"-f"参数
 # 譬如在windows系统安装，可能会遇到缺少依赖： MinDAEC, 安装该依赖需要在modelscope的独立host里面寻找，需要添加参数：
 # pip install "MinDAEC" -f https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html
+#
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
@@ -265,7 +266,14 @@ class Pyaudio_Record_Player:
         持续不断的从麦克风读取音频数据;使用asyncio.Queue来缓存队列,传递异步进程的音频数据,音频输入输出更加光滑;
         实现了回声抑制:
         1. 经过vad判断is_speech,静音填充
-        2. 使用阿里通义实验室DFSMN回声消除模型:模型接受单通道麦克风信号和单通道参考信号作为输入，输出线性回声消除和回声残余抑制后的音频信号
+        2. 使用阿里通义实验室speech_dfsmn_aec_psm_16k,回声消除模型
+        DFSMN模型实现好的回声消除效果，有诸多约束条件，列些如下：
+        a. 输入为两个16KHz采样率的单声道wav文件，分别是本地麦克风录制信号和远端参考信号，输出结果保存在指定的wav文件中;
+        b. 输入信号的wave格式，可以通过将音频bytes数据添加wave head实现(推荐）；也可以通过转存wave文件（io.BytesIO())实现；
+        c. 模型的环境需要一些特别的依赖库，譬如：torchaudio, librosa, MinDAEC, 安装该依赖需要在modelscope的独立host里面寻找，需要添加参数：pip install "MinDAEC" -f https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html
+        d. 由于训练数据偏差，如果麦克风通道存在音乐声，则音乐会被抑制。
+        e. **麦克风和参考通道之间的延迟覆盖范围在500ms以内**
+        f. **受模型训练权重限制，输入的音频如果不是wave文件输入,而是stream输入,音频的chunk需要为640 frame**
         """
         vad = webrtcvad.Vad(vad_mode)
         mic_info = self.pyaudio_instance.get_default_input_device_info()
