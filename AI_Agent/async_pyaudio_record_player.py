@@ -79,7 +79,7 @@ class Pyaudio_Record_Player:
         self.pyaudio_instance = pyaudio_instance
         self.audio_queue = asyncio.Queue()  # 音频缓冲器
         self.audio_out = None  # 存放输出音频,以作为回声抑制算法中的参考信号
-        self.audio_out_deque = deque(maxlen=10)  # 存放输出音频以及对应的时间戳队列，以对齐麦克风录音输入，考虑到最大延时，设定10*640ms=6.4s延迟
+        self.audio_out_deque = deque(maxlen=20)  # 存放输出音频以及对应的时间戳队列，以对齐麦克风录音输入，考虑到最大延时，设定20*640ms延迟
         self.pause_stream = False
         # self.stop_stream = False
         self.stop_stream = asyncio.Event()  # 创建等待事件,来控制Taskgroup()
@@ -317,7 +317,8 @@ class Pyaudio_Record_Player:
                     data_np = np.frombuffer(data, dtype=np.int16)
 
                     # 使用VAD检测是否是语音
-                    is_speech = vad.is_speech(data_np, rate, length=int(chunk_size/2))  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
+                    # is_speech = vad.is_speech(data_np, rate, length=int(chunk_size/2))  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
+                    is_speech = vad.is_speech(data_np, rate, length=320)  # 传入的音频数据是未压缩的 PCM 数据，并且数据类型是 int16
                     self.logger.info(f"vad: is_speech={is_speech}")
                     if is_speech:
                         audio_vad = data
@@ -341,8 +342,8 @@ class Pyaudio_Record_Player:
                         # self.logger.info(f"self.audio_out_deque:{[timestamp for timestamp, _, _ in self.audio_out_deque]}")
                         for timestamp, audio_out, vad_mark in self.audio_out_deque:
                             timedelay = abs(timestamp - present_chunk_time)
-                            # var_mark = True 标明播放音频标注为voice,仅当录音音频与播放音频都为Voice时,才可能有回声,才进行录音与播放chunk的匹配;
-                            if timedelay <= chunk_size/rate and timedelay < matched_timedelay and vad_mark and is_speech:
+                            # vad_mark = True 标明播放音频标注为voice,仅当录音音频与播放音频都为Voice时,才可能有回声,才进行录音与播放chunk的匹配;
+                            if timedelay < chunk_size/rate and timedelay < matched_timedelay and vad_mark and is_speech:
                                 matched_timedelay = timedelay
                                 matched_audio = audio_out
                                 matched_vad_mark = vad_mark
@@ -549,9 +550,9 @@ if __name__ == "__main__":
     pya = pyaudio.PyAudio()
     file_path = r"F:/Music/放牛班的春天10.mp3"
     # file_path = r"H:/music/Music/color of the world.mp3"
-    player = Pyaudio_Record_Player(pya, logger, echo_cancellation=False, noise_suppression=False)
+    player = Pyaudio_Record_Player(pya, logger, echo_cancellation=True, noise_suppression=False )
     # asyncio.run(player.audiofile_player(file_path))
     asyncio.run(
-        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=640, )
+        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=1024, )
     )
 
