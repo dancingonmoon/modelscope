@@ -33,12 +33,16 @@ class BucketObject:
                  endpoint: str = "https://oss-cn-hangzhou.aliyuncs.com",
                  region: str = "cn-hangzhou",
                  bucketname: str = None,
+                 accerate:bool = False,
+                 accerate_endpoint: str = "https://oss-accelerate.aliyuncs.com",
                  logger: logging.Logger = None
                  ):
         """
         :param endpoint:  填写Bucket所在地域对应的Endpoint。以华东1（杭州）为例，Endpoint填写为https://oss-cn-hangzhou.aliyuncs.com。
         :param region:  填写Endpoint对应的Region信息，例如cn-hangzhou。注意，v4签名下，必须填写该参数
         :param bucketname:  yourBucketName填写存储空间名称
+        :param accelerate: 是否使用OSS传输加速, 每GB收费1.25元;
+        :param accelreate_endpoint: 当使用OSS传输加速时,endpoint为加速域名, 如: https://oss-accelerate.aliyuncs.com
         :return:
         """
         if logger is None:
@@ -48,36 +52,36 @@ class BucketObject:
             self.logger = logger
         # 从环境变量中获取访问凭证。运行本代码示例之前，请确保已设置环境变量OSS_ACCESS_KEY_ID和OSS_ACCESS_KEY_SECRET。
         auth = oss2.ProviderAuthV4(EnvironmentVariableCredentialsProvider())
-        self.auth = auth
-        # yourBucketName填写存储空间名称。
-        self.endpoint = endpoint
-        self.bucketname = bucketname
-        self.region = region
+        if accerate:
+            endpoint = accerate_endpoint
+
         self.bucket = oss2.Bucket(auth, endpoint, bucketname, region=region)
 
     def get_signed_url(self,
                        object_name: str = None,
                        expiration: int = 600,
-                       accelerate: bool = False,
-                       accelreate_endpoint: str = "https://oss-accelerate.aliyuncs.com"):
+                       method:str = "GET"
+                       ):
         """
         签名URL是一种由客户端基于本地密钥信息生成的临时授权访问链接，可允许第三方在有效期内下载或预览私有文件，而无需暴露访问密钥.
         生成签名URL过程中，SDK利用本地存储的密钥信息，根据特定算法计算出签名（signature），然后将其附加到URL上，以确保URL的有效性和安全性。
         通过命令行工具ossutil和SDK生成的签名URL，最大有效时长为7天。
         :param object_name: 填写Object完整路径，例如exampledir/exampleobject.txt。Object完整路径中不能包含Bucket名称
         :param expiration: 生成签名URL的有效时长，单位为秒。默认值为600秒，即10分钟。最大有效时长为7天, 即7*24*3600秒;
-        :param accelerate: 是否使用OSS传输加速, 每GB收费1.25元;
-        :param accelreate_endpoint: 当使用OSS传输加速时,endpoint为加速域名, 如: https://oss-accelerate.aliyuncs.com
+        :param method: 请求方法，支持PUT、GET。默认值为GET; download, down, GET, 表示下载文件，upload, up, PUT表示上传文件;
         :return:
         """
+        if method.upper() in ["DOWNLOAD", "DOWN", "GET"]:
+            method = "GET"
+        elif method.upper() in ["UPLOAD", "UP", "PUT"]:
+            method = "PUT"
+        else:
+            self.logger.error("method参数错误, 只支持PUT和GET,分别表示上传与下载")
         # 生成签名URL时，OSS默认会对Object完整路径中的正斜线（/）进行转义，从而导致生成的签名URL无法直接使用。
         # 设置slash_safe为True，OSS不会对Object完整路径中的正斜线（/）进行转义，此时生成的签名URL可以直接使用。
-        if accelerate:
-            self.endpoint = accelreate_endpoint
-            self.bucket = oss2.Bucket(self.auth, self.endpoint, self.bucketname, region=self.region)
 
-        url = self.bucket.sign_url('GET', object_name, expires=expiration, slash_safe=True)
-        # print('签名URL的地址为：', url)
+        url = self.bucket.sign_url(method=method, key=object_name, expires=expiration, slash_safe=True)
+        self.logger.info(f'{method}签名URL的地址为：', url)
         return url
 
     def get_objects_list(self,
@@ -98,17 +102,17 @@ class BucketObject:
             self.logger.error(f"Failed to list objects: {e}")
 
     def get_object_from_url(self,
-                            file_url: str = None,
-                            save_path: str = "d:/downloads/myfile.txt",
+                            signed_url: str = None,
+                            save_path: str = None,
                             ):
         """
-        使用requests库下载文件
-        :param file_url:
+        使用requests库下载文件, 不支持断点续传;
+        :param signed_url:
         :param save_path:
         :return:
         """
         try:
-            response = requests.get(file_url, stream=True)
+            response = requests.get(signed_url, stream=True)
             if response.status_code == 200:
                 with open(save_path, 'wb') as f:
                     for chunk in response.iter_content(4096):
@@ -120,7 +124,7 @@ class BucketObject:
             self.logger.info("Error during download:", e)
 
     def get_object(self,
-                   file_url: str = None,
+                   signed_url: str = None,
                    from_file_path: str = None,
                    to_file_path: str = None,
                    resumable: bool = False,
@@ -131,8 +135,8 @@ class BucketObject:
                    num_threads=1
                    ):
         """
-        断点续传下载
-        :param file_url: 下载buket对象分享链接,(signed_url)
+        断点续传下载, signed_url或者本地文件
+        :param signed_url: 下载buket对象分享链接,(signed_url);request方法,不支持断点续传
         :param from_file_path: yourObjectName填写Object完整路径，完整路径中不能包含Bucket名称，例如exampledir/exampleobject.txt
         :param to_file_path: yourLocalFile填写本地文件的完整路径，例如D:\\localpath\\examplefile.txt
         :param resumable: bool 断点续传下载开关
@@ -144,14 +148,14 @@ class BucketObject:
         :return:
         """
 
-        if file_url is not None:
+        if signed_url is not None:
             try:
-                response = requests.get(file_url, stream=True)
+                response = requests.get(signed_url, stream=True)
                 if response.status_code == 200:
                     with open(to_file_path, 'wb') as f:
                         for chunk in response.iter_content(4096):
                             f.write(chunk)
-                    self.logger.info("Download completed!")
+                    self.logger.info("signed_url Download completed!")
                 else:
                     self.logger.info(f"No file to download. Server replied HTTP code: {response.status_code}")
             except Exception as e:
@@ -178,9 +182,10 @@ class BucketObject:
                 # 使用get_object_to_file方法将buket空间上object下载至本地文件
                 self.bucket.get_object_to_file(key=from_file_path, filename=to_file_path,
                                                progress_callback=progress_callback)
-            self.logger.info("Download completed!")
+            self.logger.info("file object Download completed!")
 
     def put_object(self,
+                   signed_url:str=None,
                    upload_data: bytes | str = None,
                    from_file_path: str = None,
                    to_file_path: str = None,
@@ -242,9 +247,9 @@ if __name__ == '__main__':
     # # yourBucketName填写存储空间名称。
     # bucket = oss2.Bucket(auth, endpoint, BucketName, region=region)
 
-    bucket = BucketObject(endpoint, region, BucketName)
+    bucket = BucketObject(endpoint, region, BucketName, accerate=False)
     objects_list = bucket.get_objects_list()
-    url = bucket.get_signed_url(object_name=objects_list[0], expiration=7 * 24 * 3600, accelerate=False)
+    url = bucket.get_signed_url(object_name=objects_list[0], expiration=7 * 24 * 3600, method="GET")
     print(url)
     upload_file_path = r"L:/Python_WorkSpace/modelscope/OSS_aliyun_client.py"
     # bucket.put_object(from_file_path=upload_file_path, to_file_path="OSS_aliyun_client.py")
