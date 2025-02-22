@@ -176,7 +176,7 @@ class BucketObject:
                                         num_threads=num_threads)
             else:
                 # 使用get_object_to_file方法将buket空间上object下载至本地文件
-                self.bucket.get_object_to_file(key=to_file_path, filename=from_file_path)
+                self.bucket.get_object_to_file(key=from_file_path, filename=to_file_path, progress_callback=progress_callback)
             self.logger.info("Download completed!")
 
     def put_object(self,
@@ -227,7 +227,7 @@ class BucketObject:
                                       num_threads=num_threads)
             else:
                 # 使用put_object_from_file方法将本地文件上传至OSS
-                self.bucket.put_object_from_file(key=to_file_path, filename=from_file_path)
+                self.bucket.put_object_from_file(key=to_file_path, filename=from_file_path,progress_callback=progress_callback)
             self.logger.info("upload completed!")
 
 
@@ -249,4 +249,4 @@ if __name__ == '__main__':
     # bucket.put_object(from_file_path=upload_file_path, to_file_path="OSS_aliyun_client.py")
     objects_list = bucket.get_objects_list()
     download_file_path = r"L:/temp/OSS_aliyun_client.py"
-    bucket.get_object(from_file_path=objects_list[0], to_file_path=download_file_path,)
+    bucket.get_object(from_file_path='OSS_aliyun_client.py', to_file_path=download_file_path,)
