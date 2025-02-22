@@ -81,7 +81,7 @@ class BucketObject:
         # 设置slash_safe为True，OSS不会对Object完整路径中的正斜线（/）进行转义，此时生成的签名URL可以直接使用。
 
         url = self.bucket.sign_url(method=method, key=object_name, expires=expiration, slash_safe=True)
-        self.logger.info(f'{method}签名URL的地址为：', url)
+        self.logger.info(f'{method}签名URL的地址为： {url}')
         return url
 
     def get_objects_list(self,
@@ -250,9 +250,14 @@ if __name__ == '__main__':
     bucket = BucketObject(endpoint, region, BucketName, accerate=False)
     objects_list = bucket.get_objects_list()
     url = bucket.get_signed_url(object_name=objects_list[0], expiration=7 * 24 * 3600, method="GET")
-    print(url)
+    # print(url)
     upload_file_path = r"L:/Python_WorkSpace/modelscope/OSS_aliyun_client.py"
     # bucket.put_object(from_file_path=upload_file_path, to_file_path="OSS_aliyun_client.py")
-    objects_list = bucket.get_objects_list()
-    download_file_path = r"L:/temp/OSS_aliyun_client.py"
-    bucket.get_object(from_file_path='OSS_aliyun_client.py', to_file_path=download_file_path, )
+    # objects_list = bucket.get_objects_list()
+    # download_file_path = r"L:/temp/OSS_aliyun_client.py"
+    # bucket.get_object(from_file_path='OSS_aliyun_client.py', to_file_path=download_file_path, )
+
+    # 断点上传大Size文件
+    big_file_path = r"L:\Software\Microsoft Products\64bit Windows10专业版\cn_windows_10_multiple_editions_x64_dvd_6848463.iso"
+    bucket.put_object(from_file_path=big_file_path, to_file_path="cn_windows_10_multiple_editions_x64_dvd_6848463.iso", resumable=True, num_threads=5, )
+
