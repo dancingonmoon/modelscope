@@ -1,5 +1,6 @@
 import os
 from qwen_agent.agents import Assistant
+from qwen_agent.gui import WebUI
 from qwen_agent.utils.output_beautify import typewriter_print
 # `typewriter_print` prints streaming messages in a non-overlapping manner.
 
@@ -44,18 +45,19 @@ if __name__ == '__main__':
         llm=llm_cfg,
         function_list=tools
     )
+    WebUI(agent).run()
 
-    messages = []  # 这里储存聊天历史。
-    while True:
-        # 例如，输入请求 "绘制一只狗并将其旋转 90 度"。
-        query = input('\n用户请求: ')
-        # 将用户请求添加到聊天历史。
-        messages.append({'role': 'user', 'content': query})
-        response = []
-        response_plain_text = ''
-        print('机器人回应:')
-        for response in agent.run(messages=messages):
-            # 流式输出。
-            response_plain_text = typewriter_print(response, response_plain_text)
-        # 将机器人的回应添加到聊天历史。
-        messages.extend(response)
+    # messages = []  # 这里储存聊天历史。
+    # while True:
+    #     # 例如，输入请求 "绘制一只狗并将其旋转 90 度"。
+    #     query = input('\n用户请求: ')
+    #     # 将用户请求添加到聊天历史。
+    #     messages.append({'role': 'user', 'content': query})
+    #     response = []
+    #     response_plain_text = ''
+    #     print('机器人回应:')
+    #     for response in agent.run(messages=messages):
+    #         # 流式输出。
+    #         response_plain_text = typewriter_print(response, response_plain_text)
+    #     # 将机器人的回应添加到聊天历史。
+    #     messages.extend(response)
