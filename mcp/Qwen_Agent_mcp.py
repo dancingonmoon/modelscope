@@ -11,7 +11,19 @@ llm_cfg = {
     # 'model': 'qwen-plus-latest',  # 输入0.0008元;思考模式0.016元;非思考模式0.002元
     'model_server': 'dashscope',
     # 'api_key': ''  # **fill your api key here**
-    "enable_thinking": False,
+    'generate_cfg': {
+            # When using the Dash Scope API, pass the parameter of whether to enable thinking mode in this way
+            'enable_thinking': False,
+            'enable_search': True, # 开启联网搜索的参数
+            'search_options': {
+                "forced_search": True, # 强制开启联网搜索
+                "enable_source": True, # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
+                "enable_citation": True, # 开启角标标注功能
+                "citation_format": "[ref_<number>]", # 角标形式为[ref_i]
+                "search_strategy": "pro" # 模型将搜索10条互联网信息
+            },
+
+        },
 
     # Use a model service compatible with the OpenAI API, such as vLLM or Ollama:
     # 'model': 'Qwen3-8B',
@@ -36,14 +48,20 @@ tools = [{
         "time": {
             "command": "uvx",
             "args": ["mcp-server-time","--local-timezone=Asia/Shanghai"]
-        }
-    }
-}]
+                }
+                }
+        },
+    # 'code_interpreter',  # Built-in tools
+]
 
 if __name__ == '__main__':
     agent = Assistant(
         llm=llm_cfg,
-        function_list=tools
+        function_list=tools,
+        name='my Assistant',
+        # system_message="按照用户需求，你先画图，再运行代码...."
+        # description='使用RAG检索并回答，支持文件类型：PDF/Word/PPT/TXT/HTML。'
+        # files = [os.path.join('.', 'doc.pdf')]
     )
     WebUI(agent).run()
 

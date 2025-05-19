@@ -98,6 +98,7 @@ if __name__ == "__main__":
         audiostream = open(audio_path, 'rb')
 
     stream.write(audiostream.read())  # 播放
+    audiostream.seek(0)
     window = 2 * 16000 * 2  # 2 秒的窗口大小，以字节为单位
     outputs = b''
     total_bytes_len = 0
