@@ -1,4 +1,5 @@
 import os
+import pathlib
 from qwen_agent.agents import Assistant
 from qwen_agent.gui import WebUI
 from qwen_agent.utils.output_beautify import typewriter_print
@@ -149,21 +150,24 @@ class Qwen_Agent_mcp:
         :param file_path: str|os.path对象,文件路径
         :return:
         """
-        with open(file_path, 'r', encoding='utf-8') as file:
-
+        # messages = [{'role': 'user', 'content': [{'text': '介绍图一'},
+        #             {'file': 'https://arxiv.org/pdf/1706.03762.pdf'}]}]
 
         messages = []  # 这里储存聊天历史。
         # 例如，输入请求 "绘制一只狗并将其旋转 90 度"。
         # 将用户请求添加到聊天历史。
-        messages.append({'role': 'user', 'content': query})
-        # response = []
+        if file_path is None:
+            messages.append({'role': 'user', 'content': query})
+        else:
+            file_content = pathlib.Path(file_path).read_bytes()
+            messages.append({'role': 'user', 'content': [{'text': query},
+                          {'file': file_content}]})
         response_plain_text = ''
         print('机器人回应:')
         for response in agent.run(messages=messages):
             # 流式输出。
             response_plain_text = typewriter_print(response, response_plain_text)
-        # 将机器人的回应添加到聊天历史。
-        # messages.extend(response)
+
 
 
 
