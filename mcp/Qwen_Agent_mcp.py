@@ -1,5 +1,6 @@
 import os
 import pathlib
+import ast
 from qwen_agent.agents import Assistant
 from qwen_agent.gui import WebUI
 from qwen_agent.utils.output_beautify import typewriter_print
@@ -67,7 +68,7 @@ class Qwen_Agent_mcp:
                  system_message:str='', description:str='', files:list[str]=None):
         """
 
-        :param model:
+        :param model: 譬如: 'qwen-turbo-latest',  输入0.0003元;思考模式0.006元;非思考模式0.0006元
         :param model_server: 'dashscope',或者url_base, 譬如:'http://localhost:8000/v1'
         :param api_key: 如环境变量中设定,则此处为None
         :param enable_thinking:
@@ -143,60 +144,104 @@ class Qwen_Agent_mcp:
             files = files
             )
 
-    def chat_once(self, query: str, file_path):
+    def chat_once(self, query: str, query_file_path:str=None, messages_history:list=None):
         """
 
         :param query:
-        :param file_path: str|os.path对象,文件路径
+        :param query_file_path: str|os.path对象,文件路径
+        :param messages_history: list,
         :return:
         """
         # messages = [{'role': 'user', 'content': [{'text': '介绍图一'},
         #             {'file': 'https://arxiv.org/pdf/1706.03762.pdf'}]}]
 
-        messages = []  # 这里储存聊天历史。
+        if messages_history is None:
+            messages_history = []
         # 例如，输入请求 "绘制一只狗并将其旋转 90 度"。
         # 将用户请求添加到聊天历史。
-        if file_path is None:
-            messages.append({'role': 'user', 'content': query})
+        if query_file_path is None:
+            messages_history.append({'role': 'user', 'content': query})
         else:
-            file_content = pathlib.Path(file_path).read_bytes()
-            messages.append({'role': 'user', 'content': [{'text': query},
+            file_content = pathlib.Path(query_file_path).read_bytes()
+            # file_content = pathlib.Path(query_file_path).read_text()  #  Qwen模型内文件内容需要是text，不能是bytes
+            # 此处模型读取pdf文件时，出现'gbk' codec can't decode byte 0x9c in position 1034: illegal multibyte sequence
+            messages_history.append({'role': 'user', 'content': [{'text': query},
                           {'file': file_content}]})
+        response = []
         response_plain_text = ''
-        print('机器人回应:')
-        for response in agent.run(messages=messages):
+        print('Agent 回应:')
+        for response in self.agent.run(messages=messages_history):
             # 流式输出。
             response_plain_text = typewriter_print(response, response_plain_text)
+        messages_history.append(response)
+        return messages_history
+
+    def chat_continuous(self, ):
+        message_history = []
+        while True:
+            query = ''
+            file_path = None
+            message = input('\n请输入你的问题：')
+            # if not isinstance(message,str):
+            #     print('输入格式错误！请检查是否有'"/"'改写字符！')
+            #     break
+            if message.lower() == 'exit':
+                break
+            message = ast.literal_eval(message) #  安全解析字符串为 Python 字面量
+            if isinstance(message, str):
+                query = message
+            if isinstance(message,list):
+                query = message[0]
+                file_path = message[1]
+            if isinstance(message,dict):
+                query  = message['text']
+                file_path = message['file']
+
+            message_dict = self.chat_once(query, query_file_path=file_path)
+            message_history.append(message_dict)
+
+        return message_history
 
 
+
+    def webUI(self,user_name:str=None,user_avatar:str=None,
+              input_placeholder:str=None,prompt_suggestions:list=None,
+              share:bool=False,server_port:int=None,enable_emotion:bool=True):
+        """
+
+        :param user_name:
+        :param user_avatar: 图像路径
+        :param input_placeholder:
+        :param prompt_suggestions:
+        :return:
+        """
+        if prompt_suggestions is None:
+            prompt_suggestions = []
+        if input_placeholder is None:
+            input_placeholder = ''
+        chatbot_config = {
+            'input.placeholder': input_placeholder,
+            'prompt.suggestions': prompt_suggestions
+        }
+        if user_name is not None:
+            chatbot_config['user.name'] = user_name
+        if user_avatar is not None:
+            chatbot_config['user.avatar'] = user_avatar
+        WebUI(self.agent,chatbot_config=chatbot_config).run(
+            share = share,
+            server_port = server_port,
+            enable_mention = enable_emotion)
 
 
 
 if __name__ == '__main__':
-    agent = Assistant(
-        llm=llm_cfg,
-        function_list=tools,
-        name='my Assistant',
-        # system_message="按照用户需求，你先画图，再运行代码...."
-        # description='使用RAG检索并回答，支持文件类型：PDF/Word/PPT/TXT/HTML。'
-        # files = [os.path.join('.', 'doc.pdf')]
-    )
-    WebUI(agent).run()
 
-    # messages = []  # 这里储存聊天历史。
-    # while True:
-    #     # 例如，输入请求 "绘制一只狗并将其旋转 90 度"。
-    #     query = input('\n用户请求: ')
-    #     if query.lower() == "exit":
-    #         break
-    #     # 将用户请求添加到聊天历史。
-    #     messages.append({'role': 'user', 'content': query})
-    #     response = []
-    #     response_plain_text = ''
-    #     print('机器人回应:')
-    #     for response in agent.run(messages=messages):
-    #         # 流式输出。
-    #         response_plain_text = typewriter_print(response, response_plain_text)
-    #     # 将机器人的回应添加到聊天历史。
-    #     messages.extend(response)
+    qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=False)
+    # message_history = qwen_agent.chat_once("请总结今天的新闻10条")
+    message_history = qwen_agent.chat_continuous()
+    # print(message_history)
+    # qwen_agent.webUI(user_name=None,)
+
+
+
 

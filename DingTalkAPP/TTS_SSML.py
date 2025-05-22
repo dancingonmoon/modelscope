@@ -155,7 +155,7 @@ def get_audio_duration(audio_file, sample_rate=16000):
         file_size = len(audio_file.getbuffer())
         duration = file_size / (sample_rate * sample_depth // 8 * channels) * 1000
     else:
-        print("file_path 既不是文件路径,也不是内存BytesIO对象")
+        print("query_file_path 既不是文件路径,也不是内存BytesIO对象")
 
     return math.ceil(duration)
 

@@ -549,9 +549,9 @@ if __name__ == "__main__":
     logger.setLevel("INFO")
     pya = pyaudio.PyAudio()
     file_path = r"F:/Music/放牛班的春天10.mp3"
-    # file_path = r"H:/music/Music/color of the world.mp3"
+    # query_file_path = r"H:/music/Music/color of the world.mp3"
     player = Pyaudio_Record_Player(pya, logger, echo_cancellation=True, noise_suppression=False )
-    # asyncio.run(player.audiofile_player(file_path))
+    # asyncio.run(player.audiofile_player(query_file_path))
     asyncio.run(
         player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=1024, )
     )
