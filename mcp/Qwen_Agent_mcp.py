@@ -1,4 +1,3 @@
-import os
 import pathlib
 import ast
 from qwen_agent.agents import Assistant
@@ -6,55 +5,6 @@ from qwen_agent.gui import WebUI
 from qwen_agent.utils.output_beautify import typewriter_print
 # `typewriter_print` prints streaming messages in a non-overlapping manner.
 
-llm_cfg = {
-    'model': 'qwen-turbo-latest',   # 输入0.0003元;思考模式0.006元;非思考模式0.0006元
-    # 'model': 'qwq-plus-latest',   # 输入0.0016元;   输出0.004元
-    # 'model': 'qwen-max-latest',   # 输入0.0024元;   输出0.0096元
-    # 'model': 'qwen-plus-latest',  # 输入0.0008元;思考模式0.016元;非思考模式0.002元
-    'model_server': 'dashscope',
-    # 'api_key': ''  # **fill your api key here**
-    'generate_cfg': {
-            # When using the Dash Scope API, pass the parameter of whether to enable thinking mode in this way
-            'enable_thinking': False,
-            'enable_search': True, # 开启联网搜索的参数
-            'search_options': {
-                "forced_search": True, # 强制开启联网搜索
-                "enable_source": True, # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
-                "enable_citation": True, # 开启角标标注功能
-                "citation_format": "[ref_<number>]", # 角标形式为[ref_i]
-                "search_strategy": "pro" # 模型将搜索10条互联网信息
-            },
-
-        },
-
-    # Use a model service compatible with the OpenAI API, such as vLLM or Ollama:
-    # 'model': 'Qwen3-8B',
-    # 'model_server': 'http://localhost:8000/v1',  # base_url, also known as api_base
-    # 'api_key': 'EMPTY'
-}
-
-tools = [{
-    "mcpServers": {
-        "filesystem": {
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-filesystem",
-                '.',
-            ]
-        },
-        "mindmap": {
-            "command": "uvx",
-            "args": ["mindmap-mcp-server", "--return-type", "filePath"]
-        },
-        "time": {
-            "command": "uvx",
-            "args": ["mcp-server-time","--local-timezone=Asia/Shanghai"]
-                }
-                }
-        },
-    # 'code_interpreter',  # Built-in tools
-]
 
 class Qwen_Agent_mcp:
     """
@@ -62,13 +12,16 @@ class Qwen_Agent_mcp:
     :return:
     """
     def __init__(self, model:str, model_server:str='dashscope', api_key:str=None,enable_thinking:bool=False,
-                 enable_search:bool=True, force_search:bool=True, enable_source:bool=True,
+                 enable_search:bool=True, force_search:bool=False, enable_source:bool=True,
                  enable_citation:bool=True, citation_format:bool="[ref_<number>]", search_strategy="pro",
                  code_interpreter:bool=False, mcp:dict|bool=None,
                  system_message:str='', description:str='', files:list[str]=None):
         """
 
-        :param model: 譬如: 'qwen-turbo-latest',  输入0.0003元;思考模式0.006元;非思考模式0.0006元
+        :param model: 譬如: 'model': 'qwen-turbo-latest',   # 输入0.0003元;思考模式0.006元;非思考模式0.0006元
+                            'model': 'qwq-plus-latest',   # 输入0.0016元;   输出0.004元
+                            'model': 'qwen-max-latest',   # 输入0.0024元;   输出0.0096元
+                            'model': 'qwen-plus-latest',  # 输入0.0008元;思考模式0.016元;非思考模式0.002元
         :param model_server: 'dashscope',或者url_base, 譬如:'http://localhost:8000/v1'
         :param api_key: 如环境变量中设定,则此处为None
         :param enable_thinking:
@@ -79,7 +32,7 @@ class Qwen_Agent_mcp:
         :param citation_format: # 角标形式为[ref_i]
         :param search_strategy: "pro"时,模型将搜索10条互联网信息
         :param code_interpreter:
-        :param mcp:
+        :param mcp: {}|Bool: None时，为缺省加载mcp:文件系统，time; False时，不加载mcp
         :param system_message: "按照用户需求，你先画图，再运行代码...."
         :param description: '使用RAG检索并回答，支持文件类型：PDF/Word/PPT/TXT/HTML。'
         :param files: list,譬如: [os.path.join('.', 'doc.pdf')]
@@ -95,6 +48,7 @@ class Qwen_Agent_mcp:
                             "-y",
                             "@modelcontextprotocol/server-filesystem",
                             '.',
+                            './mcp_docs/'
                         ]
                     },
                     "time": {
@@ -126,7 +80,6 @@ class Qwen_Agent_mcp:
                 },
 
             },
-
         }
         else:
             llm_config = {
@@ -144,11 +97,14 @@ class Qwen_Agent_mcp:
             files = files
             )
 
+
+
     def chat_once(self, query: str, query_file_path:str=None, messages_history:list=None):
         """
-
+        单次对话。此处输入query_file_path，接受url或者文件路径；采用的是openAI兼容的File格式, 例如：{messages = [{'role': 'user', 'content': [{'text': '介绍图一'},
+        {'file': 'https://arxiv.org/pdf/1706.03762.pdf'}]}]}； 事实上，由于Qwen模型API本身并不支持File格式，这是由Qwen-Agent SDK做了转换后实现。
         :param query:
-        :param query_file_path: str|os.path对象,文件路径
+        :param query_file_path: str;文件路径(支持docx,pdf,不支持jpg)，或者url
         :param messages_history: list,
         :return:
         """
@@ -162,11 +118,19 @@ class Qwen_Agent_mcp:
         if query_file_path is None:
             messages_history.append({'role': 'user', 'content': query})
         else:
-            file_content = pathlib.Path(query_file_path).read_bytes()
-            # file_content = pathlib.Path(query_file_path).read_text()  #  Qwen模型内文件内容需要是text，不能是bytes
-            # 此处模型读取pdf文件时，出现'gbk' codec can't decode byte 0x9c in position 1034: illegal multibyte sequence
-            messages_history.append({'role': 'user', 'content': [{'text': query},
-                          {'file': file_content}]})
+            # 文本文档的后缀列表,openAI格式也支持docx,doc,pdf：
+            text_extensions = ['.txt', '.md', '.csv', '.json', '.py', '.html', '.htm', '.xml', '.yaml', '.yml','.docx','.doc','.pdf']
+            text_file = pathlib.Path(query_file_path)
+            if text_file.exists() and text_file.suffix.lower() in text_extensions: # 文本文档
+                messages_history.append({'role': 'user', 'content': [{'text': query},
+                                                                         {'file': query_file_path}]})
+            elif query_file_path.startswith('http:') or query_file_path.startswith('https:'): # url
+                messages_history.append({'role': 'user', 'content': [{'text': query},
+                                                                     {'file': query_file_path}]})
+            else:
+                print("不合法的文件路径，或者不支持的非图像文档后缀!")
+                return messages_history
+
         response = []
         response_plain_text = ''
         print('Agent 回应:')
@@ -177,14 +141,16 @@ class Qwen_Agent_mcp:
         return messages_history
 
     def chat_continuous(self, ):
+        """
+        连续对话。input()输入的问题，可以是一个字符串;或者列表，列表第一个元素为问题，第二个元素为文件路径或者url;或者字典, 例如： {'text': '介绍图一'},
+                    {'file': 'https://arxiv.org/pdf/1706.03762.pdf'}
+        :return:
+        """
         message_history = []
         while True:
             query = ''
             file_path = None
             message = input('\n请输入你的问题：')
-            # if not isinstance(message,str):
-            #     print('输入格式错误！请检查是否有'"/"'改写字符！')
-            #     break
             if message.lower() == 'exit':
                 break
             message = ast.literal_eval(message) #  安全解析字符串为 Python 字面量
@@ -208,7 +174,7 @@ class Qwen_Agent_mcp:
               input_placeholder:str=None,prompt_suggestions:list=None,
               share:bool=False,server_port:int=None,enable_emotion:bool=True):
         """
-
+        gradio UI
         :param user_name:
         :param user_avatar: 图像路径
         :param input_placeholder:
@@ -236,11 +202,13 @@ class Qwen_Agent_mcp:
 
 if __name__ == '__main__':
 
-    qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=False)
+    qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=None)
     # message_history = qwen_agent.chat_once("请总结今天的新闻10条")
     message_history = qwen_agent.chat_continuous()
     # print(message_history)
     # qwen_agent.webUI(user_name=None,)
+
+
 
 
 
