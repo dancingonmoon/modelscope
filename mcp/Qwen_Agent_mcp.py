@@ -5,7 +5,7 @@ from qwen_agent.gui import WebUI
 from qwen_agent.utils.output_beautify import typewriter_print
 # `typewriter_print` prints streaming messages in a non-overlapping manner.
 
-
+import qwen_agent
 class Qwen_Agent_mcp:
     """
     初始化Qwen-Agent,可选工具,例如搜索,code_interpreter, mcp, 流式输出;
@@ -99,6 +99,8 @@ class Qwen_Agent_mcp:
 
 
 
+
+
     def chat_once(self, query: str, query_file_path:str=None, messages_history:list=None):
         """
         单次对话。此处输入query_file_path，接受url或者文件路径；采用的是openAI兼容的File格式, 例如：{messages = [{'role': 'user', 'content': [{'text': '介绍图一'},
@@ -150,7 +152,7 @@ class Qwen_Agent_mcp:
         while True:
             query = ''
             file_path = None
-            message = input('\n请输入你的问题：')
+            message = input('\n请输入你的消息(输入exit退出):')
             if message.lower() == 'exit':
                 break
             message = ast.literal_eval(message) #  安全解析字符串为 Python 字面量
