@@ -156,7 +156,12 @@ class Qwen_Agent_mcp:
             if message.lower() in ['exit','quit']:
                 print("✅ 对话已结束")
                 break
-            message = ast.literal_eval(message) #  安全解析字符串为 Python 字面量
+            try:
+                # 尝试解析为结构化数据（如 list 或 dict）
+                message = ast.literal_eval(message)  #  安全解析字符串为 Python 字面量
+            except ValueError:
+                # 如果失败，当作普通字符串处理；因为，ast.literal_eval()会将字符串的引号除去，使得message 变成了非字符串
+                message = f"{message}"
             if isinstance(message, str):
                 query = message
             if isinstance(message,list):
@@ -205,7 +210,7 @@ class Qwen_Agent_mcp:
 
 if __name__ == '__main__':
 
-    qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=None)
+    qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=False)
     # message_history = qwen_agent.chat_once("请总结今天的新闻10条")
     message_history = qwen_agent.chat_continuous()
     # print(message_history)
