@@ -152,8 +152,9 @@ class Qwen_Agent_mcp:
         while True:
             query = ''
             file_path = None
-            message = input('\n请输入你的消息(输入exit退出):')
-            if message.lower() == 'exit':
+            message = input('\n💬 请输入你的消息(输入exit或quit退出):')
+            if message.lower() in ['exit','quit']:
+                print("✅ 对话已结束")
                 break
             message = ast.literal_eval(message) #  安全解析字符串为 Python 字面量
             if isinstance(message, str):
