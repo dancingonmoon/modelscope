@@ -205,7 +205,7 @@ class Qwen_Agent_mcp:
 
 if __name__ == '__main__':
 
-    qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=None)
+    qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=False)
     # message_history = qwen_agent.chat_once("请总结今天的新闻10条")
     message_history = qwen_agent.chat_continuous()
     # print(message_history)
