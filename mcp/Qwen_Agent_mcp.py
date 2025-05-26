@@ -160,8 +160,8 @@ class Qwen_Agent_mcp:
                 # 尝试解析为结构化数据（如 list 或 dict）
                 message = ast.literal_eval(message)  #  安全解析字符串为 Python 字面量
             except ValueError:
-                # 如果失败，当作普通字符串处理；因为，ast.literal_eval()会将字符串的引号除去，使得message 变成了非字符串
-                message = f"{message}"
+                # message为字符串时，ast.literal_eval()会出错.(引号外再引号的字符串才会在ast.literal_eval()合法，输出正确的字符串)
+                pass
             if isinstance(message, str):
                 query = message
             if isinstance(message,list):
