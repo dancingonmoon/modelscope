@@ -3,7 +3,7 @@ import asyncio
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
-    WebSearchTool
+    FileSearchTool
 from agents.model_settings import ModelSettings
 from rich import print
 from rich.markdown import Markdown
@@ -69,8 +69,20 @@ if __name__ == '__main__':
     agent = Agent(name="my_assistant", instructions="你是一名助人为乐的助手。",
                   model=default_OpenAIModel,
                   model_settings=ModelSettings(
-                      tool_choice=None,
-                      parallel_tool_calls=False),
+                      tool_choice='auto',
+                      parallel_tool_calls=False,
+                      extra_body={
+                          # "enable_thinking": True,
+                          "enable_search": True,
+                          # 'search_options': {
+                          #     "forced_search": False,  # 强制开启联网搜索
+                              # "enable_source": False,  # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
+                              # "enable_citation": True,  # 开启角标标注功能
+                              # "citation_format": True,  # 角标形式为[ref_i]
+                              # "search_strategy": "pro"  # "pro"时,模型将搜索10条互联网信息
+                          # }
+                      }
+                  ),
                   # tools=[WebSearchTool(user_location={"type": "approximate", "city": "New York"})], # 目前只支持openAI的模型
 
                   )
