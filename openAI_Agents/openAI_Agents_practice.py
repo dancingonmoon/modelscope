@@ -3,16 +3,14 @@ import asyncio
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
-    FileSearchTool
+    function_tool
 from agents.model_settings import ModelSettings
 from rich import print
 from rich.markdown import Markdown
-import platform
 from typing import Literal
-import openai
 
 
-# 由于Agents SDK默认支持的模型是OpenAI的GPT系列，因此在修改底层模型的时候，需要将external_client 设置为：set_default_openai_client(external_client)
+# 由于Agents SDK默认支持的模型是OpenAI的GPT系列，因此在修改底层模型的时候，需要将custom_client 设置为：set_default_openai_client(external_client)
 
 def custom2default_openai_model(model: str, base_url: str, api_key: str, ):
     custom_client = AsyncOpenAI(base_url=base_url, api_key=api_key)
@@ -59,15 +57,29 @@ async def agents_chat_continuous(agent: Agent, runner_mode: Literal['async', 'st
         input_item = result.to_input_list()
 
 
+@function_tool
+def folder_search(query: str, folder_path: str):
+    """
+    搜索指定文件夹下的所有文件，并输出文件列表
+    :param query:
+    :param folder_path:
+    :return:
+    """
+    files = [os.path.join(folder_path, file) for file in os.listdir(folder_path) if
+             os.path.isfile(os.path.join(folder_path, file))]
+    return files
+
+
 if __name__ == '__main__':
     # model = 'qwen-plus'
     model = 'qwen-turbo-latest'
     base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    instruction = instructions = "你是一名助人为乐的助手，并且搜索并输出指定文件夹下的文件"
     default_OpenAIModel = custom2default_openai_model(model=model,
                                                       base_url=base_url,
                                                       api_key=os.getenv("DASHSCOPE_API_KEY"),
                                                       )
-    agent = Agent(name="my_assistant", instructions="你是一名助人为乐的助手。",
+    agent = Agent(name="my_assistant", instructions=instruction,
                   model=default_OpenAIModel,
                   model_settings=ModelSettings(
                       tool_choice='auto',
@@ -85,16 +97,7 @@ if __name__ == '__main__':
                       }
                   ),
                   # tools=[WebSearchTool(user_location={"type": "approximate", "city": "New York"})], # 目前只支持openAI的模型
-
-
+                  tools=[folder_search]
                   )
-    # 设置事件循环策略
-    if platform.system() == 'Windows':
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     # 运行主协程
     asyncio.run(agents_chat_continuous(agent, runner_mode='stream'), debug=False)
-    # prompt = "hi"
-    # result_items = asyncio.run(agents_async_chat_once(agent, prompt=prompt, runner_mode='async'), debug=False)
-    # print(type(result_items))
-
-
