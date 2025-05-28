@@ -1,21 +1,26 @@
+import os
 import pathlib
 import ast
 from qwen_agent.agents import Assistant
 from qwen_agent.gui import WebUI
 from qwen_agent.utils.output_beautify import typewriter_print
 # `typewriter_print` prints streaming messages in a non-overlapping manner.
+import openai
+from rich import print
+from rich.markdown import Markdown
 
-import qwen_agent
+
 class Qwen_Agent_mcp:
     """
     初始化Qwen-Agent,可选工具,例如搜索,code_interpreter, mcp, 流式输出;
     :return:
     """
-    def __init__(self, model:str, model_server:str='dashscope', api_key:str=None,enable_thinking:bool=False,
-                 enable_search:bool=True, force_search:bool=False, enable_source:bool=True,
-                 enable_citation:bool=True, citation_format:bool="[ref_<number>]", search_strategy="pro",
-                 code_interpreter:bool=False, mcp:dict|bool=None,
-                 system_message:str='', description:str='', files:list[str]=None):
+
+    def __init__(self, model: str, model_server: str = 'dashscope', api_key: str = None, enable_thinking: bool = False,
+                 enable_search: bool = True, force_search: bool = False, enable_source: bool = True,
+                 enable_citation: bool = True, citation_format: bool = "[ref_<number>]", search_strategy="pro",
+                 code_interpreter: bool = False, mcp: dict | bool = None,
+                 system_message: str = '', description: str = '', files: list[str] = None):
         """
 
         :param model: 譬如: 'model': 'qwen-turbo-latest',   # 输入0.0003元;思考模式0.006元;非思考模式0.0006元
@@ -38,7 +43,7 @@ class Qwen_Agent_mcp:
         :param files: list,譬如: [os.path.join('.', 'doc.pdf')]
         :parm
         """
-        tools  = []
+        tools = []
         if mcp is None and mcp is not False:
             mcp = {
                 "mcpServers": {
@@ -64,23 +69,23 @@ class Qwen_Agent_mcp:
 
         if model_server == 'dashscope':
             llm_config = {
-            'model': model,
-            'model_server': model_server,
-            # 'api_key':  #  如果环境变量中已经设定,则该项可以不填''  # **fill your api key here**
-            'generate_cfg': {
-                # When using the Dash Scope API, pass the parameter of whether to enable thinking mode in this way
-                'enable_thinking': enable_thinking,
-                'enable_search': enable_search, # 开启联网搜索的参数
-                'search_options': {
-                    "forced_search": force_search, # 强制开启联网搜索
-                    "enable_source": enable_source, # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
-                    "enable_citation": enable_citation, # 开启角标标注功能
-                    "citation_format": citation_format, # 角标形式为[ref_i]
-                    "search_strategy": search_strategy # "pro"时,模型将搜索10条互联网信息
-                },
+                'model': model,
+                'model_server': model_server,
+                # 'api_key':  #  如果环境变量中已经设定,则该项可以不填''  # **fill your api key here**
+                'generate_cfg': {
+                    # When using the Dash Scope API, pass the parameter of whether to enable thinking mode in this way
+                    'enable_thinking': enable_thinking,
+                    'enable_search': enable_search,  # 开启联网搜索的参数
+                    'search_options': {
+                        "forced_search": force_search,  # 强制开启联网搜索
+                        "enable_source": enable_source,  # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
+                        "enable_citation": enable_citation,  # 开启角标标注功能
+                        "citation_format": citation_format,  # 角标形式为[ref_i]
+                        "search_strategy": search_strategy  # "pro"时,模型将搜索10条互联网信息
+                    },
 
-            },
-        }
+                },
+            }
         else:
             llm_config = {
                 # Use a model service compatible with the OpenAI API, such as vLLM or Ollama:
@@ -92,16 +97,12 @@ class Qwen_Agent_mcp:
             llm=llm_config,
             function_list=tools,
             name='my Assistant',
-            system_message= system_message,
-            description= description,
-            files = files
-            )
+            system_message=system_message,
+            description=description,
+            files=files
+        )
 
-
-
-
-
-    def chat_once(self, query: str, query_file_path:str=None, messages_history:list=None):
+    def chat_once(self, query: str, query_file_path: str = None, messages_history: list = None):
         """
         单次对话。此处输入query_file_path，接受url或者文件路径；采用的是openAI兼容的File格式, 例如：{messages = [{'role': 'user', 'content': [{'text': '介绍图一'},
         {'file': 'https://arxiv.org/pdf/1706.03762.pdf'}]}]}； 事实上，由于Qwen模型API本身并不支持File格式，这是由Qwen-Agent SDK做了转换后实现。
@@ -121,12 +122,13 @@ class Qwen_Agent_mcp:
             messages_history.append({'role': 'user', 'content': query})
         else:
             # 文本文档的后缀列表,openAI格式也支持docx,doc,pdf：
-            text_extensions = ['.txt', '.md', '.csv', '.json', '.py', '.html', '.htm', '.xml', '.yaml', '.yml','.docx','.doc','.pdf']
+            text_extensions = ['.txt', '.md', '.csv', '.json', '.py', '.html', '.htm', '.xml', '.yaml', '.yml', '.docx',
+                               '.doc', '.pdf']
             text_file = pathlib.Path(query_file_path)
-            if text_file.exists() and text_file.suffix.lower() in text_extensions: # 文本文档
+            if text_file.exists() and text_file.suffix.lower() in text_extensions:  # 文本文档
                 messages_history.append({'role': 'user', 'content': [{'text': query},
-                                                                         {'file': query_file_path}]})
-            elif query_file_path.startswith('http:') or query_file_path.startswith('https:'): # url
+                                                                     {'file': query_file_path}]})
+            elif query_file_path.startswith('http:') or query_file_path.startswith('https:'):  # url
                 messages_history.append({'role': 'user', 'content': [{'text': query},
                                                                      {'file': query_file_path}]})
             else:
@@ -153,22 +155,22 @@ class Qwen_Agent_mcp:
             query = ''
             file_path = None
             message = input('\n💬 请输入你的消息(输入exit或quit退出):')
-            if message.lower() in ['exit','quit']:
+            if message.lower() in ['exit', 'quit']:
                 print("✅ 对话已结束")
                 break
             try:
                 # 尝试解析为结构化数据（如 list 或 dict）
-                message = ast.literal_eval(message)  #  安全解析字符串为 Python 字面量
+                message = ast.literal_eval(message)  # 安全解析字符串为 Python 字面量
             except ValueError:
                 # message为字符串时，ast.literal_eval()会出错.(引号外再引号的字符串才会在ast.literal_eval()合法，输出正确的字符串)
                 pass
             if isinstance(message, str):
                 query = message
-            if isinstance(message,list):
+            if isinstance(message, list):
                 query = message[0]
                 file_path = message[1]
-            if isinstance(message,dict):
-                query  = message['text']
+            if isinstance(message, dict):
+                query = message['text']
                 file_path = message['file']
 
             message_dict = self.chat_once(query, query_file_path=file_path)
@@ -176,11 +178,9 @@ class Qwen_Agent_mcp:
 
         return message_history
 
-
-
-    def webUI(self,user_name:str=None,user_avatar:str=None,
-              input_placeholder:str=None,prompt_suggestions:list=None,
-              share:bool=False,server_port:int=None,enable_emotion:bool=True):
+    def webUI(self, user_name: str = None, user_avatar: str = None,
+              input_placeholder: str = None, prompt_suggestions: list = None,
+              share: bool = False, server_port: int = None, enable_emotion: bool = True):
         """
         gradio UI
         :param user_name:
@@ -201,23 +201,53 @@ class Qwen_Agent_mcp:
             chatbot_config['user.name'] = user_name
         if user_avatar is not None:
             chatbot_config['user.avatar'] = user_avatar
-        WebUI(self.agent,chatbot_config=chatbot_config).run(
-            share = share,
-            server_port = server_port,
-            enable_mention = enable_emotion)
+        WebUI(self.agent, chatbot_config=chatbot_config).run(
+            share=share,
+            server_port=server_port,
+            enable_mention=enable_emotion)
 
+
+def qwen_agent_openai(model: str = 'qwen-turbo-latest', base_url: str = None, api_key: str = None, prompt: str = None):
+    if base_url is None:
+        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    client = openai.OpenAI(
+        # 若没有配置环境变量，请用百炼API Key将下行替换为：api_key="sk-xxx",
+        api_key=api_key,
+        base_url=base_url,  # 填写DashScope服务的base_url
+    )
+    completion = client.chat.completions.create(
+        model=model,
+        messages=[
+            {'role': 'system', 'content': 'You are a helpful assistant.'},
+            {'role': 'user', 'content': prompt}],
+        extra_body={
+            # "enable_thinking": True, # only support stream call
+            "enable_search": True,
+            'search_options': {
+                "forced_search": False,  # 强制开启联网搜索
+                "enable_source": True,  # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
+                "enable_citation": True,  # 开启角标标注功能
+                "citation_format":  "[ref_<number>]",  # 角标形式为[ref_i]
+                "search_strategy": 'pro'  # "pro"时,模型将搜索10条互联网信息
+            }
+        }
+    )
+    # print(completion.model_dump_json())
+
+    print(Markdown(completion.choices[0].message.content))
+    return completion
 
 
 if __name__ == '__main__':
-
-    qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=False)
+    # qwen_agent  = Qwen_Agent_mcp(model='qwen-turbo-latest', mcp=False)
     # message_history = qwen_agent.chat_once("请总结今天的新闻10条")
-    message_history = qwen_agent.chat_continuous()
+    # message_history = qwen_agent.chat_continuous()
     # print(message_history)
     # qwen_agent.webUI(user_name=None,)
 
-
-
-
-
-
+    # # 设置事件循环策略
+    # if platform.system() == 'Windows':
+    #     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    api_key = os.getenv("DASHSCOPE_API_KEY")
+    prompt = "请总结今天的新闻10条"
+    qwen_agent_openai(model='qwen-turbo-latest', api_key=api_key, prompt=prompt)

@@ -9,6 +9,7 @@ from rich import print
 from rich.markdown import Markdown
 import platform
 from typing import Literal
+import openai
 
 
 # 由于Agents SDK默认支持的模型是OpenAI的GPT系列，因此在修改底层模型的时候，需要将external_client 设置为：set_default_openai_client(external_client)
@@ -72,18 +73,19 @@ if __name__ == '__main__':
                       tool_choice='auto',
                       parallel_tool_calls=False,
                       extra_body={
-                          # "enable_thinking": True,
+                          # "enable_thinking": True, # only support stream call
                           "enable_search": True,
-                          # 'search_options': {
-                          #     "forced_search": False,  # 强制开启联网搜索
-                              # "enable_source": False,  # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
-                              # "enable_citation": True,  # 开启角标标注功能
-                              # "citation_format": True,  # 角标形式为[ref_i]
-                              # "search_strategy": "pro"  # "pro"时,模型将搜索10条互联网信息
-                          # }
+                          'search_options': {
+                              "forced_search": False,  # 强制开启联网搜索
+                              "enable_source": False,  # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
+                              "enable_citation": True,  # 开启角标标注功能
+                              "citation_format": "[ref_<number>]",  # 角标形式为[ref_i]
+                              "search_strategy": "pro"  # "pro"时,模型将搜索10条互联网信息
+                          }
                       }
                   ),
                   # tools=[WebSearchTool(user_location={"type": "approximate", "city": "New York"})], # 目前只支持openAI的模型
+
 
                   )
     # 设置事件循环策略
@@ -94,3 +96,5 @@ if __name__ == '__main__':
     # prompt = "hi"
     # result_items = asyncio.run(agents_async_chat_once(agent, prompt=prompt, runner_mode='async'), debug=False)
     # print(type(result_items))
+
+
