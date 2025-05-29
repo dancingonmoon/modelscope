@@ -8,6 +8,8 @@ from agents.model_settings import ModelSettings
 from rich import print
 from rich.markdown import Markdown
 from typing import Literal
+import base64
+import pathlib
 
 
 # 由于Agents SDK默认支持的模型是OpenAI的GPT系列，因此在修改底层模型的时候，需要将custom_client 设置为：set_default_openai_client(external_client)
@@ -70,6 +72,52 @@ def folder_search(query: str, folder_path: str):
     return files
 
 
+def base64_image(image_path):
+    """
+    读取本地文件，并编码为 Base64 格式
+    """
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+
+@function_tool
+def load_img(image_path):
+    """
+    1) 根据路径，加载一张图片文档，获取图片文件后缀;
+    2) 对不支持的文件后缀，错误退出，并返回不支持的图像文档;
+    3) 对支持的图片文档，进行base64编码;
+    4) 按照图片的后缀，输出Qwen-VL模型input_item格式：{
+                    "type": "image_url",
+                    # 需要注意，传入Base64，图像格式（即image/{format}）需要与支持的图片列表中的Content Type保持一致。"f"是字符串格式化的方法。
+                    # PNG图像：  f"data:image/png;base64,{base64_image}"
+                    # JPEG图像： f"data:image/jpeg;base64,{base64_image}"
+                    # WEBP图像： f"data:image/webp;base64,{base64_image}"
+                    "image_url": {"url": f"data:image/png;base64,{base64_image}"}
+    :param image_path: 单张图片，本地文件路径;支持的后缀：.bmp,.png,.jpe, .jpeg, .jpg,.tif,.tiff,.webp,.heic;
+    :return: 返回Qwen-VL要求的本地图片文件上传格式;
+    """
+    supported_img = [".bmp", ".png", ".jpe", ".jpeg", ".jpg", ".tif", ".tiff", ".webp", ".heic"]
+    jpg_variant = ['.jpe', '.jpeg', '.jpg']
+    tif_variant = ['.tif', '.tiff']
+    img_format = pathlib.Path(image_path).suffix
+    if img_format not in supported_img:
+        print(f"不支持的图片格式：{img_format}")
+        return None
+    if not pathlib.Path.exists(image_path):
+        print(f"文件不存在：{image_path}")
+        return None
+    base64_img = base64_image(image_path)
+    if img_format in jpg_variant:
+        img_format = "jpeg"
+    elif img_format in tif_variant:
+        img_format = "tiff"
+    input_item = {
+        "type": "image_url",
+        "image_url": {"url": f"data:image/{img_format};base64,{base64_img}"}
+    }
+    return input_item
+
+
 # 通义千问VL：qwen-vl-plus-latest，模型可以根据您传入的图片来进行回答 输入:0.0015;输出:0.0045
 # 图像问答：描述图像中的内容或者对其进行分类打标，如识别人物、地点、花鸟鱼虫等。
 # 数学题目解答：解答图像中的数学问题，适用于中小学、大学以及成人教育阶段。
@@ -92,7 +140,23 @@ VL_agent = Agent(
     model=custom2default_openai_model(model="qwen-vl-plus-latest",
                                       base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                                       api_key=os.getenv("DASHSCOPE_API_KEY"),
-                                      )
+                                      ),
+    model_settings=ModelSettings(
+                      tool_choice='auto',
+                      parallel_tool_calls=False,
+                      extra_body={
+                          # "enable_thinking": True, # only support stream call
+                          "enable_search": True,
+                          'search_options': {
+                              "forced_search": False,  # 强制开启联网搜索
+                              "enable_source": False,  # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
+                              "enable_citation": True,  # 开启角标标注功能
+                              "citation_format": "[ref_<number>]",  # 角标形式为[ref_i]
+                              "search_strategy": "pro"  # "pro"时,模型将搜索10条互联网信息
+                          }
+                      }
+                  ),
+                  tools=[load_img]
 
 )
 
@@ -103,6 +167,8 @@ VL_agent = Agent(
 # 仅DashScope SDK支持对图像进行旋转矫正和设置内置任务。如需使用OpenAI SDK进行内置的OCR任务，需要手动填写任务指定的Prompt进行引导。
 
 
+# Qwen2.5-VL模型支持将图像类的文档（如扫描件/图片PDF）解析为 QwenVL HTML格式，该格式不仅能精准识别文本，还能获取图像、表格等元素的位置信息。
+# Prompt技巧：您需要在提示词中引导模型输出QwenVL HTML，否则将解析为不带位置信息的HTML格式的文本
 if __name__ == '__main__':
     # model = 'qwen-plus'
     model = 'qwen-turbo-latest'
