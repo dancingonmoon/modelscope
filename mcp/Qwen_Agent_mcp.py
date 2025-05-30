@@ -70,7 +70,7 @@ class Qwen_Agent_mcp:
         if model_server == 'dashscope':
             llm_config = {
                 'model': model,
-                'model_server': model_server,
+                'base_url': model_server,
                 # 'api_key':  #  如果环境变量中已经设定,则该项可以不填''  # **fill your api key here**
                 'generate_cfg': {
                     # When using the Dash Scope API, pass the parameter of whether to enable thinking mode in this way
@@ -90,7 +90,7 @@ class Qwen_Agent_mcp:
             llm_config = {
                 # Use a model service compatible with the OpenAI API, such as vLLM or Ollama:
                 'model': model,
-                'model_server': model_server,  # base_url, also known as api_base
+                'base_url': model_server,  # base_url, also known as api_base
                 'api_key': api_key
             }
         self.agent = Assistant(
