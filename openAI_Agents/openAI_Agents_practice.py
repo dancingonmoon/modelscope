@@ -10,7 +10,7 @@ from rich.markdown import Markdown
 from typing import Literal
 import base64
 import pathlib
-
+from pydantic import BaseModel
 
 # 由于Agents SDK默认支持的模型是OpenAI的GPT系列，因此在修改底层模型的时候，需要将custom_client 设置为：set_default_openai_client(external_client)
 
@@ -272,8 +272,12 @@ QwenVL_agent_instruction = '''
 # 不支持指定 System Message，也不支持多轮对话；messages 数组中有且仅有一个 User Message，用于指定需要翻译的语句。
 # 如果您希望翻译的风格更符合某个领域的特性，如法律、政务领域翻译用语应当严肃正式，社交领域用语应当口语化，可以用一段自然语言文本描述您的领域，将其提供给大模型作为提示。# 领域提示语句暂时只支持英文。
 
+class Term(BaseModel):
+    source: str
+    target: str
+
 def Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None, source_lang: str = 'auto',
-                 target_lang: str = 'English', terms: list[dict] = None, tm_list: list[dict] = None,
+                 target_lang: str = 'English', terms: list[Term] = None, tm_list: list[Term] = None,
                  domains: str = None):
     """
     Qwen-MT模型是基于通义千问模型优化的机器翻译大语言模型，擅长中英互译、中文与小语种互译、英文与小语种互译;在多语言互译的基础上，提供术语干预、领域提示、记忆库等能力，提升模型在复杂应用场景下的翻译效果。
@@ -317,11 +321,9 @@ def Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None,
     )
     # print(completion.choices[0].message.content)
     return completion.choices[0].message.content
-
-
 @function_tool
 def _Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None, source_lang: str = 'auto',
-                  target_lang: str = 'English', terms: list[dict] = None, tm_list: list[dict] = None,
+                  target_lang: str = 'English', terms: list[Term] = None, tm_list: list[Term] = None,
                   domains: str = None):
     """
     Qwen-MT模型是基于通义千问模型优化的机器翻译大语言模型，擅长中英互译、中文与小语种互译、英文与小语种互译;在多语言互译的基础上，提供术语干预、领域提示、记忆库等能力，提升模型在复杂应用场景下的翻译效果。
