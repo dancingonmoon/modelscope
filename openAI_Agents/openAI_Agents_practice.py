@@ -56,29 +56,30 @@ async def agents_chat_continuous(agent: Agent, runner_mode: Literal['async', 'st
         if msg_input.lower() in ['exit', 'quit']:
             print("✅ 对话已结束")
             break
-        contents.append({"type": "text", "text": msg_input})
-        # input_item.append({"role": "user", "content": [{"type": "text", "text": msg_input}]})
         file_input = input("\n📁 请输入图片或者文档路径(输入quit退出):")
-        file_input = f"r{file_input}"
+        file_input = file_input.strip("'\"")  # 文件路径去除首位引号，否则会pathlib.Path认为字符串
         file_path = pathlib.Path(file_input)
-        if file_input.lower() in ['exit', 'quit'] or not file_path.exists() or not file_path.is_file():
-            print("✅ 对话已结束,或者文档路径不存在")
-            break
-        if file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp', '.heic']:
-            img_item = load_img(file_input)
-            contents.append(img_item)
+        if file_input not in ['cancel', 'no_file',  'quit']:
+            if file_path.exists() and file_path.is_file():
+                if file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp',
+                                                '.heic']:
+                    img_item = load_img(file_input)
+                    contents.append(img_item)
+                    input_item.append({"role": "user", "content": contents})
 
-        input_item.append({"role": "user", "content": contents})
+            else:
+                print("✅ 对话已结束,或者文档路径不存在")
+                break
+        input_item.append({"role": "user", "content": msg_input})
         result = await agents_async_chat_once(agent=agent, input_items=input_item, runner_mode=runner_mode)
         input_item = result.to_input_list()
     return result
 
 
 @function_tool
-def folder_search(query: str, folder_path: str):
+def folder_search(folder_path: str):
     """
     搜索指定文件夹下的所有文件，并输出文件列表
-    :param query:
     :param folder_path:
     :return:
     """
@@ -113,11 +114,12 @@ def load_img(image_path: str | pathlib.Path):
     supported_img = [".bmp", ".png", ".jpe", ".jpeg", ".jpg", ".tif", ".tiff", ".webp", ".heic"]
     jpg_variant = ['.jpe', '.jpeg', '.jpg']
     tif_variant = ['.tif', '.tiff']
-    img_format = pathlib.Path(image_path).suffix
+    img_path_obj = pathlib.Path(image_path)
+    img_format = img_path_obj.suffix
     if img_format not in supported_img:
         print(f"不支持的图片格式：{img_format}")
         return None
-    if not pathlib.Path.exists(image_path):
+    if not pathlib.Path.exists(img_path_obj):
         print(f"文件不存在：{image_path}")
         return None
     base64_img = base64_image(image_path)
@@ -126,9 +128,11 @@ def load_img(image_path: str | pathlib.Path):
     elif img_format in tif_variant:
         img_format = "tiff"
     input_item = {
-        "type": "image_url",
-        "image_url": {"url": f"data:image/{img_format};base64,{base64_img}"}
-    }
+        # "type": "image_url", # qwen的OpenAI格式,与openai-agent不同
+        # "image_url": {"url": f"data:image/{img_format};base64,{base64_img}"} # qwen的OpenAI格式,与openai-agent不同
+        "type": "input_image",
+        "detail": "auto",
+        "image_url": f"data:image/{img_format};base64,{base64_img}"}  # openAI-Aents格式
     return input_item
 
 
@@ -167,6 +171,8 @@ class openAI_Agents_create:
             api_key = os.getenv("DASHSCOPE_API_KEY")
         if base_url is None:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        if tools is None:
+            tools = []
 
         default_OpenAIModel = custom2default_openai_model(model=model,
                                                           base_url=base_url,
@@ -198,19 +204,18 @@ class openAI_Agents_create:
         """
         输入[{"role": "user", "content": prompt}]格式prompt,输出agent的result类，可以通过result.new_items属性来查看全部的事件；
         result.new_items[0].raw_item，可以看具体的回复内容；to_input_list()方法，可以直接将用户的输入和本次输出结果拼接成一个消息列表
-        :param agent:
         :param input_items: list[dict],表示输入的prompt格式列表，例如: [{"role": "user", "content": prompt}]
         :param runner_mode:
         :return:
         """
         result = await agents_async_chat_once(agent=self.agent,
-                                        input_items=input_items,
-                                        runner_mode=runner_mode)
+                                              input_items=input_items,
+                                              runner_mode=runner_mode)
         return result
 
     async def chat_continuous(self, runner_mode: Literal['async', 'stream'] = 'async'):
         result = await agents_chat_continuous(agent=self.agent,
-                                        runner_mode=runner_mode)
+                                              runner_mode=runner_mode)
         return result
 
 
@@ -231,7 +236,7 @@ class openAI_Agents_create:
 
 model = 'qwen-vl-plus-latest'
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-name = "Qwen_VL_plus_latest"
+name = "Qwen VL plus latest agent for Image QA"
 instructions = '''
     你是一个助人为乐的助手，可以根据您传入的图片来进行:
     1)图像问答：描述图像中的内容或者对其进行分类打标，如识别人物、地点、花鸟鱼虫等。
@@ -254,4 +259,4 @@ if __name__ == '__main__':
                                       )
 
     # 运行主协程
-    asyncio.run(chat_agent.chat_continuous(runner_mode='stream'), debug=False)
+    asyncio.run(chat_agent.chat_continuous(runner_mode='async'), debug=False)
