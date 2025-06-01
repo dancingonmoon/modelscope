@@ -1,9 +1,9 @@
 import os
 import asyncio
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
-    function_tool
+    function_tool, TResponseInputItem
 from agents.model_settings import ModelSettings
 from rich import print
 from rich.markdown import Markdown
@@ -25,7 +25,7 @@ def custom2default_openai_model(model: str, base_url: str, api_key: str, ):
     return default_openai_model
 
 
-async def agents_async_chat_once(agent: Agent, input_items: list[dict],
+async def agents_async_chat_once(agent: Agent, input_items: list[TResponseInputItem],
                                  runner_mode: Literal['async', 'stream'] = 'async'):
     """
     输入[{"role": "user", "content": prompt}]格式prompt,输出agent的result类，可以通过result.new_items属性来查看全部的事件；
@@ -47,7 +47,16 @@ async def agents_async_chat_once(agent: Agent, input_items: list[dict],
     return result
 
 
-async def agents_chat_continuous(agent: Agent, runner_mode: Literal['async', 'stream'] = 'async'):
+async def agents_chat_continuous(agent: Agent, runner_mode: Literal['async', 'stream'] = 'async',
+                                 enable_fileloading: bool = False):
+    """
+    输入用户输入，输出agent的result类，可以通过result.new_items属性来查看全部的事件；
+    result.new_items[0].raw_item，可以看具体的回复内容；to_input_list()方法，可以直接将用户的输入和本次输出结果拼接成一个消息列表
+    :param agent:
+    :param runner_mode:
+    :param enable_fileloading: 某些模型需要文件上传，当不需要文件上传时，可以避免每次input()文件路径
+    :return:
+    """
     input_item = []
     result = None
     while True:
@@ -56,20 +65,20 @@ async def agents_chat_continuous(agent: Agent, runner_mode: Literal['async', 'st
         if msg_input.lower() in ['exit', 'quit']:
             print("✅ 对话已结束")
             break
-        file_input = input("\n📁 请输入图片或者文档路径(输入quit退出):")
-        file_input = file_input.strip("'\"")  # 文件路径去除首位引号，否则会pathlib.Path认为字符串
-        file_path = pathlib.Path(file_input)
-        if file_input not in ['cancel', 'no_file',  'quit']:
-            if file_path.exists() and file_path.is_file():
-                if file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp',
-                                                '.heic']:
-                    img_item = load_img(file_input)
-                    contents.append(img_item)
-                    input_item.append({"role": "user", "content": contents})
-
-            else:
-                print("✅ 对话已结束,或者文档路径不存在")
-                break
+        if enable_fileloading:
+            file_input = input("\n📁 请输入图片或者文档路径(输入quit退出):")
+            file_input = file_input.strip("'\"")  # 文件路径去除首位引号，否则会pathlib.Path认为字符串
+            file_path = pathlib.Path(file_input)
+            if file_input not in ['cancel', 'no_file', 'quit']:
+                if file_path.exists() and file_path.is_file():
+                    if file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp',
+                                                    '.heic']:
+                        img_item = load_img(file_input)
+                        contents.append(img_item)
+                        input_item.append({"role": "user", "content": contents})
+                else:
+                    print("✅ 对话已结束,或者文档路径不存在")
+                    break
         input_item.append({"role": "user", "content": msg_input})
         result = await agents_async_chat_once(agent=agent, input_items=input_item, runner_mode=runner_mode)
         input_item = result.to_input_list()
@@ -145,7 +154,8 @@ class openAI_Agents_create:
                  enable_thinking: bool = False,
                  enable_search: bool = True, force_search: bool = False, enable_source: bool = True,
                  enable_citation: bool = True, citation_format: bool = "[ref_<number>]", search_strategy="pro",
-                 tool_choice: str = None, parallel_tool_calls: bool = False, tools: list = None):
+                 tool_choice: str = None, parallel_tool_calls: bool = False, tools: list = None,
+                 custom_extra_body: dict = None, ):
         """
         OpenAI-Agents初始化
         :param model: 譬如: 'model': 'qwen-turbo-latest',   # 输入0.0003元;思考模式0.006元;非思考模式0.0006元
@@ -166,6 +176,7 @@ class openAI_Agents_create:
         :param tools: 列表,包含自定义function_tool,或其它工具
         :param tool_choice: None, 'auto' 等
         :param parallel_tool_calls: bool
+        :param custom_extra_body: dict 当custom_body != None时，将自定义extra_body,
         """
         if api_key is None:
             api_key = os.getenv("DASHSCOPE_API_KEY")
@@ -173,6 +184,21 @@ class openAI_Agents_create:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         if tools is None:
             tools = []
+
+        if custom_extra_body is None:
+            extra_body = {
+                "enable_thinking": enable_thinking,  # only support stream call
+                "enable_search": enable_search,
+                'search_options': {
+                    "forced_search": force_search,  # 强制开启联网搜索
+                    "enable_source": enable_source,  # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
+                    "enable_citation": enable_citation,  # 开启角标标注功能
+                    "citation_format": citation_format,  # 角标形式为[ref_i]
+                    "search_strategy": search_strategy  # "pro"时,模型将搜索10条互联网信息
+                }
+            }
+        else:
+            extra_body = custom_extra_body
 
         default_OpenAIModel = custom2default_openai_model(model=model,
                                                           base_url=base_url,
@@ -183,23 +209,13 @@ class openAI_Agents_create:
                            model_settings=ModelSettings(
                                tool_choice=tool_choice,
                                parallel_tool_calls=parallel_tool_calls,
-                               extra_body={
-                                   "enable_thinking": enable_thinking,  # only support stream call
-                                   "enable_search": enable_search,
-                                   'search_options': {
-                                       "forced_search": force_search,  # 强制开启联网搜索
-                                       "enable_source": enable_source,  # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
-                                       "enable_citation": enable_citation,  # 开启角标标注功能
-                                       "citation_format": citation_format,  # 角标形式为[ref_i]
-                                       "search_strategy": search_strategy  # "pro"时,模型将搜索10条互联网信息
-                                   }
-                               }
+                               extra_body=extra_body
                            ),
                            # tools=[WebSearchTool(user_location={"type": "approximate", "city": "New York"})], # 目前只支持openAI的模型
                            tools=tools
                            )
 
-    async def async_chat_once(self, input_items: list[dict],
+    async def async_chat_once(self, input_items: list[TResponseInputItem],
                               runner_mode: Literal['async', 'stream'] = 'async'):
         """
         输入[{"role": "user", "content": prompt}]格式prompt,输出agent的result类，可以通过result.new_items属性来查看全部的事件；
@@ -213,9 +229,10 @@ class openAI_Agents_create:
                                               runner_mode=runner_mode)
         return result
 
-    async def chat_continuous(self, runner_mode: Literal['async', 'stream'] = 'async'):
-        result = await agents_chat_continuous(agent=self.agent,
-                                              runner_mode=runner_mode)
+    async def chat_continuous(self, runner_mode: Literal['async', 'stream'] = 'async',
+                              enable_fileloading: bool = False):
+        result = await agents_chat_continuous(agent=self.agent, runner_mode=runner_mode,
+                                              enable_fileloading=enable_fileloading)
         return result
 
 
@@ -234,11 +251,11 @@ class openAI_Agents_create:
 # 未设置内置任务时，支持用户输入Prompt进行指引；如设置了内置任务时，为保证识别效果，模型内部会使用任务指定的Prompt。
 # 仅DashScope SDK支持对图像进行旋转矫正和设置内置任务。如需使用OpenAI SDK进行内置的OCR任务，需要手动填写任务指定的Prompt进行引导。
 
-model = 'qwen-vl-plus-latest'
+QwenVL_model = 'qwen-vl-plus-latest'
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-name = "Qwen VL plus latest agent for Image QA"
-instructions = '''
-    你是一个助人为乐的助手，可以根据您传入的图片来进行:
+QwenVL_agent_name = "Qwen VL plus latest agent for Image QA"
+QwenVL_agent_instruction = '''
+    您是一个助人为乐的助手，可以根据传入的图片来进行:
     1)图像问答：描述图像中的内容或者对其进行分类打标，如识别人物、地点、花鸟鱼虫等。
     2)数学题目解答：解答图像中的数学问题，适用于中小学、大学以及成人教育阶段。
     3)视频理解：分析视频内容，如对具体事件进行定位并获取时间戳，或生成关键时间段的摘要。
@@ -248,15 +265,89 @@ instructions = '''
     你只对带有图片的prompt，做出响应。
     '''
 
+
+# Qwen-MT模型是基于通义千问模型优化的机器翻译大语言模型，擅长中英互译、中文与小语种互译、英文与小语种互译
+# qwen-mt-plus  0.015元/0.045元;
+# qwen-mt-turbo 0.001元/0.003元
+# 不支持指定 System Message，也不支持多轮对话；messages 数组中有且仅有一个 User Message，用于指定需要翻译的语句。
+# 如果您希望翻译的风格更符合某个领域的特性，如法律、政务领域翻译用语应当严肃正式，社交领域用语应当口语化，可以用一段自然语言文本描述您的领域，将其提供给大模型作为提示。# 领域提示语句暂时只支持英文。
+
+def Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None, source_lang: str = 'auto',
+                 target_lang: str = 'English', terms: list[dict] = None, tm_list: list[dict] = None,
+                 domains: str = None):
+    """
+    Qwen-MT模型是基于通义千问模型优化的机器翻译大语言模型，擅长中英互译、中文与小语种互译、英文与小语种互译;在多语言互译的基础上，提供术语干预、领域提示、记忆库等能力，提升模型在复杂应用场景下的翻译效果。
+    :param prompt: str, 输入的prompt
+    :param model: str, 您对翻译质量有较高要求，建议选择qwen-mt-plus模型；如果您希望翻译速度更快或成本更低，建议选择qwen-mt-turbo模型
+    :param api_key: str, 阿里云百炼API Key
+    :param source_lang: str, 源语言
+    :param target_lang: str, 目标语言
+    :param terms: list[dict], 技术术语可以提前翻译，并将其提供给Qwen-MT模型作为参考；每个术语是一个JSON对象，包含术语和翻译过的术语信息，格式如下：{"source": "术语", "target": "提前翻译好的术语"}
+    :param tm_list: list[dict], 如果您已经有标准的双语句对并且希望大模型在后续翻译时能参考这些标准译文给出结果，可以使用翻译记忆功能；每个JSON对象包含源语句与对应的已翻译的语句，格式如下：{"source": "源语句","target": "已翻译的语句"}
+    :param domains: str, 如果您希望翻译的风格更符合某个领域的特性，可以用一段自然语言文本描述您的领域(暂时只支持英文)
+    :return: str, 翻译结果
+    """
+    if api_key is None:
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+
+    client = OpenAI(
+        # 若没有配置环境变量，请用阿里云百炼API Key将下行替换为：api_key="sk-xxx",
+        api_key=api_key,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+    messages = [{"role": "user", "content": prompt}]
+
+    translation_options = {
+        "source_lang": source_lang,
+        "target_lang": target_lang
+    }
+    if terms is not None:
+        translation_options['terms'] = terms
+    if tm_list is not None:
+        translation_options['tm_list'] = tm_list
+    if domains is not None:
+        translation_options['domains'] = domains
+
+    completion = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        extra_body={
+            "translation_options": translation_options
+        }
+    )
+    # print(completion.choices[0].message.content)
+    return completion.choices[0].message.content
+
+
+@function_tool
+def _Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None, source_lang: str = 'auto',
+                  target_lang: str = 'English', terms: list[dict] = None, tm_list: list[dict] = None,
+                  domains: str = None):
+    """
+    Qwen-MT模型是基于通义千问模型优化的机器翻译大语言模型，擅长中英互译、中文与小语种互译、英文与小语种互译;在多语言互译的基础上，提供术语干预、领域提示、记忆库等能力，提升模型在复杂应用场景下的翻译效果。
+    :param prompt: str, 输入的prompt
+    :param model: str, 您对翻译质量有较高要求，建议选择qwen-mt-plus模型；如果您希望翻译速度更快或成本更低，建议选择qwen-mt-turbo模型
+    :param api_key: str, 阿里云百炼API Key
+    :param source_lang: str, 源语言
+    :param target_lang: str, 目标语言
+    :param terms: list[dict], 技术术语可以提前翻译，并将其提供给Qwen-MT模型作为参考；每个术语是一个JSON对象，包含术语和翻译过的术语信息，格式如下：{"source": "术语", "target": "提前翻译好的术语"}
+    :param tm_list: list[dict], 如果您已经有标准的双语句对并且希望大模型在后续翻译时能参考这些标准译文给出结果，可以使用翻译记忆功能；每个JSON对象包含源语句与对应的已翻译的语句，格式如下：{"source": "源语句","target": "已翻译的语句"}
+    :param domains: str, 如果您希望翻译的风格更符合某个领域的特性，可以用一段自然语言文本描述您的领域(暂时只支持英文)
+    :return: str, 翻译结果
+    """
+    result = Qwen_MT_func(prompt, model, api_key, source_lang, target_lang, terms, tm_list, domains)
+    return result
+
+
 if __name__ == '__main__':
     # model = 'qwen-turbo-plus'
-    chat_agent = openAI_Agents_create(agent_name=name,
-                                      instruction=instructions,
-                                      model=model,
-                                      base_url=None,
-                                      api_key=None,
-
-                                      )
+    QwenVL_agent = openAI_Agents_create(agent_name=QwenVL_agent_name,
+                                        instruction=QwenVL_agent_instruction,
+                                        model=QwenVL_model,
+                                        base_url=None,
+                                        api_key=None,
+                                        # tools = [_Qwen_MT_func]
+                                        )
 
     # 运行主协程
-    asyncio.run(chat_agent.chat_continuous(runner_mode='async'), debug=False)
+    asyncio.run(QwenVL_agent.chat_continuous(runner_mode='async', enable_fileloading=True), debug=False)
