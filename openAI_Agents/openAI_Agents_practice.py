@@ -5,6 +5,7 @@ from openai.types.responses import ResponseTextDeltaEvent
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
     function_tool, TResponseInputItem
 from agents.model_settings import ModelSettings
+from agents.mcp import MCPServer, MCPServerStdio
 from rich import print
 from rich.markdown import Markdown
 from typing import Literal
@@ -155,7 +156,7 @@ class openAI_Agents_create:
                  enable_search: bool = True, force_search: bool = False, enable_source: bool = True,
                  enable_citation: bool = True, citation_format: bool = "[ref_<number>]", search_strategy="pro",
                  tool_choice: str = None, parallel_tool_calls: bool = False, tools: list = None,
-                 custom_extra_body: dict = None, ):
+                 custom_extra_body: dict = None,  ):
         """
         OpenAI-Agents初始化
         :param model: 譬如: 'model': 'qwen-turbo-latest',   # 输入0.0003元;思考模式0.006元;非思考模式0.0006元
@@ -184,6 +185,8 @@ class openAI_Agents_create:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         if tools is None:
             tools = []
+        if mcp_servers is None:
+            mcp_servers = []
 
         if custom_extra_body is None:
             extra_body = {
@@ -212,7 +215,7 @@ class openAI_Agents_create:
                                extra_body=extra_body
                            ),
                            # tools=[WebSearchTool(user_location={"type": "approximate", "city": "New York"})], # 目前只支持openAI的模型
-                           tools=tools
+                           tools=tools,
                            )
 
     async def async_chat_once(self, input_items: list[TResponseInputItem],
@@ -234,6 +237,15 @@ class openAI_Agents_create:
         result = await agents_chat_continuous(agent=self.agent, runner_mode=runner_mode,
                                               enable_fileloading=enable_fileloading)
         return result
+
+    # async def mcp(mcp_server: MCPServer, directory_path: str):
+
+
+
+        message = "请帮我介绍下这个项目。"
+        print(f"Running: {message}")
+        result = await Runner.run(starting_agent=agent, input=message)
+        print(result.final_output)
 
 
 # 2
@@ -339,6 +351,22 @@ def _Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None
     """
     result = Qwen_MT_func(prompt, model, api_key, source_lang, target_lang, terms, tm_list, domains)
     return result
+
+
+async def mcp_server_run(agent:Agent, prompt:str=None):
+    """
+    创建mcp_server_run函数，负责开启外部server并运行Agent
+    :return:
+    """
+    async with MCPServerStdio(
+        name="Weather Server",
+        cache_tools_list=True,
+        params = {"command": "uv","args": ["run", "weather_server.py"]}
+    ) as server:
+        result = await Runner.run(starting_agent=agent, input=prompt)
+        print(result.final_output)
+
+        return result
 
 
 if __name__ == '__main__':
