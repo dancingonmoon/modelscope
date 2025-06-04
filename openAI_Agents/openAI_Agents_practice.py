@@ -163,10 +163,7 @@ class openAI_Agents_create:
                  enable_citation: bool = True, citation_format: bool = "[ref_<number>]", search_strategy="pro",
                  tool_choice: str = None, parallel_tool_calls: bool = False, tools: list = None,
                  custom_extra_body: dict = None,
-                 mcp_names: list[str] = None,
-                 mcp_params: list[mcp_stdio|mcp_sse] = None,
-                 mcp_io_methods: list[Literal["MCPServerStdio", "MCPServerSse", "MCPServerStreamableHttp"]] = None,
-                 mcp_added_instructions: list[str] = None):
+                 ):
         """
         OpenAI-Agents初始化
         :param model: 譬如: 'model': 'qwen-turbo-latest',   # 输入0.0003元;思考模式0.006元;非思考模式0.0006元
@@ -188,10 +185,7 @@ class openAI_Agents_create:
         :param tool_choice: None, 'auto' 等
         :param parallel_tool_calls: bool
         :param custom_extra_body: dict 当custom_body != None时，将自定义extra_body,
-        :param mcp_names: [mcp_name] ,当有mcp server时，配置mcp name; mcp_names/mcp_params列表中一一对应;
-        :param mcp_parms: [mcp_parm],当有mcp server时，配置mcp params: 支持， stdio, sse, streamableHttp;mcp_names/mcp_params列表中一一对应
-        :param mcp_io_methods: 对应每一个mcp server, stdio, sse, streamableHttp 三种io传输方式选一
-        :param mcp_added_instructions: [mcp_added_instruction], 列表
+
         """
         if api_key is None:
             api_key = os.getenv("DASHSCOPE_API_KEY")
@@ -218,7 +212,7 @@ class openAI_Agents_create:
             parallel_tool_calls=parallel_tool_calls,
             extra_body=extra_body, )
 
-        agent_params = {
+        self.agent_params = {
             'name': agent_name,
             'instructions': instruction,
             'model_settings': model_settings,
@@ -228,30 +222,45 @@ class openAI_Agents_create:
                                                           base_url=base_url,
                                                           api_key=api_key,
                                                           )
-        agent_params['model'] = default_OpenAIModel
+        self.agent_params['model'] = default_OpenAIModel
 
         if tools is not None:
-            agent_params['tools'] = tools
+            self.agent_params['tools'] = tools
             # tools=[WebSearchTool(user_location={"type": "approximate", "city": "New York"})], # 目前只支持openAI的模型
 
+        self.agent = Agent(**self.agent_params)
+        self.instruction = instruction
+
+
+    async def mcp_server_initialize(self,mcp_names: list[str] = None,
+                 mcp_params: list[mcp_stdio|mcp_sse] = None,
+                 mcp_io_methods: list[Literal["MCPServerStdio", "MCPServerSse", "MCPServerStreamableHttp"]] = None,
+                 mcp_added_instructions: list[str] = None):
+        """
+        初始化mcp_server,并初始化包含mcp_servers的agent
+        :param mcp_names: [mcp_name] ,当有mcp server时，配置mcp name; mcp_names/mcp_params列表中一一对应;
+        :param mcp_parms: [mcp_parm],当有mcp server时，配置mcp params: 支持， stdio, sse, streamableHttp;mcp_names/mcp_params列表中一一对应
+        :param mcp_io_methods: 对应每一个mcp server, stdio, sse, streamableHttp 三种io传输方式选一
+        :param mcp_added_instructions: [mcp_added_instruction], 列表
+        :return:
+        """
         # 处理mcp_server的参数
         if mcp_added_instructions is not None:
-            agent_params['instructions'] = instruction.join(mcp_added_instructions)
-        self.mcp_servers = []
-        if mcp_names is not None and mcp_params is not None and mcp_io_methods is not None :
-            agent_params['mcp_servers'] = []
-            for mcp_name, mcp_param, mcp_io_method in zip(mcp_names, mcp_params,mcp_io_methods):
+            self.agent_params['instructions'] = self.instruction.join(mcp_added_instructions)
+        if mcp_names is not None and mcp_params is not None and mcp_io_methods is not None:
+            self.agent_params['mcp_servers'] = []
+            for mcp_name, mcp_param, mcp_io_method in zip(mcp_names, mcp_params, mcp_io_methods):
                 if mcp_io_method == "MCPServerStdio":
                     # 手动创建并启动server:
                     mcp_server = MCPServerStdio(name=mcp_name,
                                                 cache_tools_list=True,
                                                 params=mcp_param)
-                elif mcp_io_method  == "MCPServerSse":
+                elif mcp_io_method == "MCPServerSse":
                     # 手动创建并启动server:
                     mcp_server = MCPServerSse(name=mcp_name,
                                               cache_tools_list=True,
                                               params=mcp_param)
-                elif mcp_io_method  == "MCPServerStreamableHttp":
+                elif mcp_io_method == "MCPServerStreamableHttp":
                     # 手动创建并启动server:
                     mcp_server = MCPServerStreamableHttp(name=mcp_name,
                                                          cache_tools_list=True,
@@ -259,11 +268,14 @@ class openAI_Agents_create:
                 else:
                     mcp_server = None
                 # 启动server
-                asyncio.create_task(mcp_server.connect()) # 此处需要调整启动策略
-                agent_params['mcp_servers'].append = mcp_server
-                self.mcp_servers.append(mcp_server)
+                await mcp_server.connect()  # 此处需要调整启动策略，需要将mcp_server转移至chat函数中执行。
+                self.agent_params['mcp_servers'].append(mcp_server)
+            self.agent = Agent(**self.agent_params)
 
-        self.agent = Agent(**agent_params)
+    async def mcp_server_cleanup(self, ):
+        for mcp_server in self.agent_params['mcp_servers']:
+            await mcp_server.cleanup()
+
 
     async def async_chat_once(self, input_items: list[TResponseInputItem] | TResponseInputItem,
                               runner_mode: Literal['async', 'stream'] = 'async'):
@@ -281,11 +293,12 @@ class openAI_Agents_create:
 
     async def chat_continuous(self, runner_mode: Literal['async', 'stream'] = 'async',
                               enable_fileloading: bool = False):
+        if not self.agent_params.get('mcp_servers', []):
+            await self.mcp_server_initialize()
         result = await agents_chat_continuous(agent=self.agent, runner_mode=runner_mode,
                                               enable_fileloading=enable_fileloading)
-        if not self.mcp_servers:
-            for mcp_server in self.mcp_servers:
-                await mcp_server.cleanup()
+        if self.agent_params.get('mcp_servers', []):
+            await self.mcp_server_cleanup()
         return result
 
 
@@ -396,8 +409,7 @@ def _Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None
     result = Qwen_MT_func(prompt, model, api_key, source_lang, target_lang, terms, tm_list, domains)
     return result
 
-
-if __name__ == '__main__':
+async def main():
     # model = 'qwen-turbo-plus'
     mcp_names = ['file_system']
     mcp_params = [{
@@ -406,7 +418,6 @@ if __name__ == '__main__':
             "-y",
             "@modelcontextprotocol/server-filesystem",
             ".",
-            "./openAI_Agents/"
         ]}]
     mcp_io_methods = ["MCPServerStdio"]
     QwenVL_agent = openAI_Agents_create(agent_name=QwenVL_agent_name,
@@ -415,10 +426,35 @@ if __name__ == '__main__':
                                         base_url=None,
                                         api_key=None,
                                         # tools = [_Qwen_MT_func]
-                                        mcp_names=mcp_names,
-                                        mcp_params=mcp_params,
-                                        mcp_io_methods=mcp_io_methods
                                         )
+    await QwenVL_agent.mcp_server_initialize(mcp_names=mcp_names,
+                                                   mcp_params=mcp_params,
+                                                   mcp_io_methods=mcp_io_methods)
 
     # 运行主协程
-    asyncio.run(QwenVL_agent.chat_continuous(runner_mode='async', enable_fileloading=False), debug=False)
+    # asyncio.run(QwenVL_agent.chat_continuous(runner_mode='async', enable_fileloading=False), debug=False)
+if __name__ == '__main__':
+    # model = 'qwen-turbo-plus'
+    # mcp_names = ['file_system']
+    # mcp_params = [{
+    #     "command": "npx",
+    #     "args": [
+    #         "-y",
+    #         "@modelcontextprotocol/server-filesystem",
+    #         ".",
+    #     ]}]
+    # mcp_io_methods = ["MCPServerStdio"]
+    # QwenVL_agent = openAI_Agents_create(agent_name=QwenVL_agent_name,
+    #                                     instruction=QwenVL_agent_instruction,
+    #                                     model=QwenVL_model,
+    #                                     base_url=None,
+    #                                     api_key=None,
+    #                                     # tools = [_Qwen_MT_func]
+    #                                     )
+    # asyncio.run(QwenVL_agent.mcp_server_initialize(mcp_names=mcp_names,
+    #                                     mcp_params=mcp_params,
+    #                                     mcp_io_methods=mcp_io_methods))
+
+    # 运行主协程
+    # asyncio.run(QwenVL_agent.chat_continuous(runner_mode='async', enable_fileloading=False), debug=False)
+    asyncio.run(main())
