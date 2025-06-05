@@ -1,5 +1,6 @@
 import os
 import asyncio
+from contextlib import AsyncExitStack
 from openai import AsyncOpenAI, OpenAI
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
@@ -233,7 +234,7 @@ class openAI_Agents_create:
 
 
     async def mcp_server_initialize(self,mcp_names: list[str] = None,
-                 mcp_params: list[mcp_stdio|mcp_sse] = None,
+                 mcp_params: list[dict] = None,
                  mcp_io_methods: list[Literal["MCPServerStdio", "MCPServerSse", "MCPServerStreamableHttp"]] = None,
                  mcp_added_instructions: list[str] = None):
         """
@@ -249,6 +250,8 @@ class openAI_Agents_create:
             self.agent_params['instructions'] = self.instruction.join(mcp_added_instructions)
         if mcp_names is not None and mcp_params is not None and mcp_io_methods is not None:
             self.agent_params['mcp_servers'] = []
+            # 使用 AsyncExitStack 自动管理多个上下文退出
+            stack = AsyncExitStack()
             for mcp_name, mcp_param, mcp_io_method in zip(mcp_names, mcp_params, mcp_io_methods):
                 if mcp_io_method == "MCPServerStdio":
                     # 手动创建并启动server:
@@ -268,8 +271,11 @@ class openAI_Agents_create:
                 else:
                     mcp_server = None
                 # 启动server
-                await mcp_server.connect()  # 此处需要调整启动策略，需要将mcp_server转移至chat函数中执行。
-                self.agent_params['mcp_servers'].append(mcp_server)
+                await mcp_server.connect()
+                # 创建并进入所有 server 上下文
+                stacked_mcp_server = await stack.enter_async_context(mcp_server)
+
+                self.agent_params['mcp_servers'].append(stacked_mcp_server)
             self.agent = Agent(**self.agent_params)
 
     async def mcp_server_cleanup(self, ):
@@ -293,13 +299,51 @@ class openAI_Agents_create:
 
     async def chat_continuous(self, runner_mode: Literal['async', 'stream'] = 'async',
                               enable_fileloading: bool = False):
-        if not self.agent_params.get('mcp_servers', []):
-            await self.mcp_server_initialize()
+
         result = await agents_chat_continuous(agent=self.agent, runner_mode=runner_mode,
                                               enable_fileloading=enable_fileloading)
-        if self.agent_params.get('mcp_servers', []):
-            await self.mcp_server_cleanup()
+
         return result
+    async def multi_mcp_chat_continuous(self,mcp_names: list[str] = None, mcp_params: list[dict] = None,
+                 mcp_io_methods: list[Literal["MCPServerStdio", "MCPServerSse", "MCPServerStreamableHttp"]] = None,
+                 mcp_added_instructions: list[str] = None,
+                 runner_mode: Literal['async', 'stream'] = 'async',
+                              enable_fileloading: bool = False,):
+        # 处理mcp_server的参数
+        if mcp_added_instructions is not None:
+            self.agent_params['instructions'] = self.instruction.join(mcp_added_instructions)
+        if mcp_names is not None and mcp_params is not None and mcp_io_methods is not None:
+            # 使用 AsyncExitStack 自动管理多个上下文退出
+            async with AsyncExitStack() as stack:
+                self.agent_params['mcp_servers'] = []
+                for mcp_name, mcp_param, mcp_io_method in zip(mcp_names, mcp_params, mcp_io_methods):
+                    # 创建并进入所有 mcp_server 上下文
+                    if mcp_io_method == "MCPServerStdio":
+                        mcp_server = MCPServerStdio(name=mcp_name,
+                                                cache_tools_list=True,
+                                                params=mcp_param)
+                    elif mcp_io_method == "MCPServerSse":
+                        mcp_server = MCPServerSse(name=mcp_name,
+                                                    cache_tools_list=True,
+                                                    params=mcp_param)
+                    elif mcp_io_method == "MCPServerStreamableHttp":
+                        mcp_server = MCPServerStreamableHttp(name=mcp_name,
+                                                    cache_tools_list=True,
+                                                    params=mcp_param)
+                    else:
+                        mcp_server = None
+
+                    stacked_mcp_server = await stack.enter_async_context(mcp_server)
+                    self.agent_params['mcp_servers'].append(stacked_mcp_server)
+                self.agent = Agent(**self.agent_params)
+                result = await agents_chat_continuous(agent=self.agent, runner_mode=runner_mode,
+                                                      enable_fileloading=enable_fileloading)
+
+                return result
+
+
+
+
 
 
 # 2
@@ -409,7 +453,7 @@ def _Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None
     result = Qwen_MT_func(prompt, model, api_key, source_lang, target_lang, terms, tm_list, domains)
     return result
 
-async def main():
+async def main(): # 便于异步上下文管理，建议多语句放入异步函数中，一起执行
     # model = 'qwen-turbo-plus'
     mcp_names = ['file_system']
     mcp_params = [{
@@ -427,34 +471,20 @@ async def main():
                                         api_key=None,
                                         # tools = [_Qwen_MT_func]
                                         )
-    await QwenVL_agent.mcp_server_initialize(mcp_names=mcp_names,
-                                                   mcp_params=mcp_params,
-                                                   mcp_io_methods=mcp_io_methods)
+    # await QwenVL_agent.mcp_server_initialize(mcp_names=mcp_names,
+    #                                                mcp_params=mcp_params,
+    #                                                mcp_io_methods=mcp_io_methods)
 
     # 运行主协程
-    # asyncio.run(QwenVL_agent.chat_continuous(runner_mode='async', enable_fileloading=False), debug=False)
+    try:
+        # await QwenVL_agent.chat_continuous(runner_mode='async', enable_fileloading=False)
+        await QwenVL_agent.multi_mcp_chat_continuous(runner_mode='async', enable_fileloading=False,
+                                                       mcp_names=mcp_names,
+                                                       mcp_params=mcp_params,
+                                                       mcp_io_methods=mcp_io_methods)
+    finally:
+        await QwenVL_agent.mcp_server_cleanup()
 if __name__ == '__main__':
-    # model = 'qwen-turbo-plus'
-    # mcp_names = ['file_system']
-    # mcp_params = [{
-    #     "command": "npx",
-    #     "args": [
-    #         "-y",
-    #         "@modelcontextprotocol/server-filesystem",
-    #         ".",
-    #     ]}]
-    # mcp_io_methods = ["MCPServerStdio"]
-    # QwenVL_agent = openAI_Agents_create(agent_name=QwenVL_agent_name,
-    #                                     instruction=QwenVL_agent_instruction,
-    #                                     model=QwenVL_model,
-    #                                     base_url=None,
-    #                                     api_key=None,
-    #                                     # tools = [_Qwen_MT_func]
-    #                                     )
-    # asyncio.run(QwenVL_agent.mcp_server_initialize(mcp_names=mcp_names,
-    #                                     mcp_params=mcp_params,
-    #                                     mcp_io_methods=mcp_io_methods))
 
-    # 运行主协程
-    # asyncio.run(QwenVL_agent.chat_continuous(runner_mode='async', enable_fileloading=False), debug=False)
     asyncio.run(main())
+
