@@ -4,10 +4,10 @@ from contextlib import AsyncExitStack
 from openai import AsyncOpenAI, OpenAI
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
-    function_tool, TResponseInputItem
+    function_tool, TResponseInputItem, ItemHelpers
 from agents.model_settings import ModelSettings
-from agents.mcp import MCPServer, MCPServerStdio, MCPServerSse, MCPServerStreamableHttp, MCPServerStdioParams, \
-    MCPServerSseParams, MCPServerStreamableHttpParams
+from agents.mcp import MCPServer, MCPServerStdio, MCPServerSse, MCPServerStreamableHttp
+
 from rich import print
 from rich.markdown import Markdown
 from typing import Literal
@@ -48,6 +48,18 @@ async def agents_async_chat_once(agent: Agent, input_items: list[TResponseInputI
         async for event in result.stream_events():
             if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                 print(event.data.delta, end="", flush=True)
+            elif event.type == "agent_updated_stream_event":
+                print(f"Agent updated: {event.new_agent.name}")
+                continue
+            elif event.type == "run_item_stream_event":
+                if event.item.type == "tool_call_item":
+                    print("-- Tool was called")
+                elif event.item.type == "tool_call_output_item":
+                    print(f"-- Tool output: {event.item.output}")
+                elif event.item.type == "message_output_item":
+                    print(f"-- Message output:\n {ItemHelpers.text_message_output(event.item)}")
+                else:
+                    pass  # Ignore other event types
     return result
 
 
@@ -147,11 +159,16 @@ def load_img(image_path: str | pathlib.Path):
         "detail": "auto",
         "image_url": f"data:image/{img_format};base64,{base64_img}"}  # openAI-Aents格式
     return input_item
+
+
 class mcp_stdio(BaseModel):
-    command:str
+    command: str
     args: list[str]
+
+
 class mcp_sse(BaseModel):
-    url:str
+    url: str
+
 
 class openAI_Agents_create:
     """
@@ -159,7 +176,7 @@ class openAI_Agents_create:
     """
 
     def __init__(self, agent_name: str, instruction: str, model: str, base_url: str = None, api_key: str = None,
-                 enable_thinking: bool = False,
+                 handoffs: list[Agent] = None, handoff_description: str = None, enable_thinking: bool = False,
                  enable_search: bool = True, force_search: bool = False, enable_source: bool = True,
                  enable_citation: bool = True, citation_format: bool = "[ref_<number>]", search_strategy="pro",
                  tool_choice: str = None, parallel_tool_calls: bool = False, tools: list = None,
@@ -174,6 +191,9 @@ class openAI_Agents_create:
                             'model': 'qwen-vl-plus-latest',输入:0.0015;输出:0.0045
         :param base_url: base_url, 譬如:'http://localhost:8000/v1'
         :param api_key:  模型api-key
+        :param handoffs: 分诊agent列表
+        :param handoff_description: A description of the agent. This is used when the agent is used as a handoff, so that an
+    LLM knows what it does and when to invoke it
         :param enable_thinking: 对于Qwen模型，仅在stream打开时，使用；
         :param enable_search: # 开启联网搜索的参数
         :param force_search: # 强制开启联网搜索
@@ -229,14 +249,17 @@ class openAI_Agents_create:
             self.agent_params['tools'] = tools
             # tools=[WebSearchTool(user_location={"type": "approximate", "city": "New York"})], # 目前只支持openAI的模型
 
+        if handoffs is not None:
+            self.agent_params['handoffs'] = handoffs
+
         self.agent = Agent(**self.agent_params)
         self.instruction = instruction
 
-
-    async def mcp_server_initialize(self,mcp_names: list[str] = None,
-                 mcp_params: list[dict] = None,
-                 mcp_io_methods: list[Literal["MCPServerStdio", "MCPServerSse", "MCPServerStreamableHttp"]] = None,
-                 mcp_added_instructions: list[str] = None):
+    async def mcp_server_initialize(self, mcp_names: list[str] = None,
+                                    mcp_params: list[dict] = None,
+                                    mcp_io_methods: list[
+                                        Literal["MCPServerStdio", "MCPServerSse", "MCPServerStreamableHttp"]] = None,
+                                    mcp_added_instructions: list[str] = None):
         """
         初始化mcp_server,并初始化包含mcp_servers的agent
         :param mcp_names: [mcp_name] ,当有mcp server时，配置mcp name; mcp_names/mcp_params列表中一一对应;
@@ -279,9 +302,14 @@ class openAI_Agents_create:
             self.agent = Agent(**self.agent_params)
 
     async def mcp_server_cleanup(self, ):
-        for mcp_server in self.agent_params['mcp_servers']:
-            await mcp_server.cleanup()
-
+        mcp_servers = self.agent_params.get('mcp_servers', None)
+        if mcp_servers is not None:
+            for mcp_server in mcp_servers:
+                try:
+                    await mcp_server.cleanup()
+                except Exception as e:
+                    print(f"[WARNING] 清理 MCP Server 时发生异常: {e}")
+                del self.agent_params['mcp_servers']
 
     async def async_chat_once(self, input_items: list[TResponseInputItem] | TResponseInputItem,
                               runner_mode: Literal['async', 'stream'] = 'async'):
@@ -299,16 +327,16 @@ class openAI_Agents_create:
 
     async def chat_continuous(self, runner_mode: Literal['async', 'stream'] = 'async',
                               enable_fileloading: bool = False):
-
         result = await agents_chat_continuous(agent=self.agent, runner_mode=runner_mode,
                                               enable_fileloading=enable_fileloading)
-
         return result
-    async def multi_mcp_chat_continuous(self,mcp_names: list[str] = None, mcp_params: list[dict] = None,
-                 mcp_io_methods: list[Literal["MCPServerStdio", "MCPServerSse", "MCPServerStreamableHttp"]] = None,
-                 mcp_added_instructions: list[str] = None,
-                 runner_mode: Literal['async', 'stream'] = 'async',
-                              enable_fileloading: bool = False,):
+
+    async def multi_mcp_chat_continuous(self, mcp_names: list[str] = None, mcp_params: list[dict] = None,
+                                        mcp_io_methods: list[Literal[
+                                            "MCPServerStdio", "MCPServerSse", "MCPServerStreamableHttp"]] = None,
+                                        mcp_added_instructions: list[str] = None,
+                                        runner_mode: Literal['async', 'stream'] = 'async',
+                                        enable_fileloading: bool = False, ):
         # 处理mcp_server的参数
         if mcp_added_instructions is not None:
             self.agent_params['instructions'] = self.instruction.join(mcp_added_instructions)
@@ -320,16 +348,16 @@ class openAI_Agents_create:
                     # 创建并进入所有 mcp_server 上下文
                     if mcp_io_method == "MCPServerStdio":
                         mcp_server = MCPServerStdio(name=mcp_name,
-                                                cache_tools_list=True,
-                                                params=mcp_param)
+                                                    cache_tools_list=True,
+                                                    params=mcp_param)
                     elif mcp_io_method == "MCPServerSse":
                         mcp_server = MCPServerSse(name=mcp_name,
-                                                    cache_tools_list=True,
-                                                    params=mcp_param)
+                                                  cache_tools_list=True,
+                                                  params=mcp_param)
                     elif mcp_io_method == "MCPServerStreamableHttp":
                         mcp_server = MCPServerStreamableHttp(name=mcp_name,
-                                                    cache_tools_list=True,
-                                                    params=mcp_param)
+                                                             cache_tools_list=True,
+                                                             params=mcp_param)
                     else:
                         mcp_server = None
 
@@ -338,12 +366,7 @@ class openAI_Agents_create:
                 self.agent = Agent(**self.agent_params)
                 result = await agents_chat_continuous(agent=self.agent, runner_mode=runner_mode,
                                                       enable_fileloading=enable_fileloading)
-
                 return result
-
-
-
-
 
 
 # 2
@@ -453,8 +476,9 @@ def _Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None
     result = Qwen_MT_func(prompt, model, api_key, source_lang, target_lang, terms, tm_list, domains)
     return result
 
-async def main(): # 便于异步上下文管理，建议多语句放入异步函数中，一起执行
-    # model = 'qwen-turbo-plus'
+
+async def main():  # 便于异步上下文管理，建议多语句放入异步函数中，一起执行
+
     mcp_names = ['file_system']
     mcp_params = [{
         "command": "npx",
@@ -464,27 +488,46 @@ async def main(): # 便于异步上下文管理，建议多语句放入异步函
             ".",
         ]}]
     mcp_io_methods = ["MCPServerStdio"]
+
     QwenVL_agent = openAI_Agents_create(agent_name=QwenVL_agent_name,
                                         instruction=QwenVL_agent_instruction,
                                         model=QwenVL_model,
                                         base_url=None,
                                         api_key=None,
                                         # tools = [_Qwen_MT_func]
+                                        handoff_description="当prompt有图片时,使用QwenVL模型进行视觉推理"
                                         )
-    # await QwenVL_agent.mcp_server_initialize(mcp_names=mcp_names,
-    #                                                mcp_params=mcp_params,
-    #                                                mcp_io_methods=mcp_io_methods)
 
+    Qwen_model = 'qwen-turbo-plus'
+    Qwen_model_instruction = """
+        你是一名助人为乐的助手,
+        1)当prompt中有文件时，请handoff至视觉推理模型;
+        2)否则，就直接回答问题;
+        """
+    handoff_description = """
+        本模型仅仅处理不带有文件的prompt;当prompt图片文件时，请handoff至视觉推理模型，并给出结果。
+        """
+    Qwen3_agent = openAI_Agents_create(agent_name='Qwen-turbo-plus',
+                                       instruction=Qwen_model_instruction,
+                                       model=Qwen_model,
+                                       base_url=None,
+                                       api_key=None,
+                                       # tools = [_Qwen_MT_func]
+                                       handoffs=[QwenVL_agent.agent],
+                                       handoff_description=handoff_description
+
+                                       )
     # 运行主协程
-    try:
-        # await QwenVL_agent.chat_continuous(runner_mode='async', enable_fileloading=False)
-        await QwenVL_agent.multi_mcp_chat_continuous(runner_mode='async', enable_fileloading=False,
-                                                       mcp_names=mcp_names,
-                                                       mcp_params=mcp_params,
-                                                       mcp_io_methods=mcp_io_methods)
-    finally:
-        await QwenVL_agent.mcp_server_cleanup()
+    await Qwen3_agent.chat_continuous(runner_mode='async', enable_fileloading=False)
+    # await QwenVL_agent.multi_mcp_chat_continuous(runner_mode='async', enable_fileloading=False,
+    #                                                    mcp_names=mcp_names,
+    #                                                    mcp_params=mcp_params,
+    #                                                    mcp_io_methods=mcp_io_methods)
+
+
 if __name__ == '__main__':
+    # Windows 上推荐使用 ProactorEventLoop，但需确保事件循环正确关闭
+    policy = asyncio.WindowsProactorEventLoopPolicy()
+    asyncio.set_event_loop_policy(policy)
 
     asyncio.run(main())
-
