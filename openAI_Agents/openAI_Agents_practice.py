@@ -251,6 +251,8 @@ class openAI_Agents_create:
 
         if handoffs is not None:
             self.agent_params['handoffs'] = handoffs
+        if handoff_description is not None:
+            self.agent_params['handoff_description'] = handoff_description
 
         self.agent = Agent(**self.agent_params)
         self.instruction = instruction
@@ -386,7 +388,6 @@ class openAI_Agents_create:
 
 QwenVL_model = 'qwen-vl-plus-latest'
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-QwenVL_agent_name = "Qwen VL plus latest agent for Image QA"
 QwenVL_agent_instruction = '''
     您是一个助人为乐的助手，可以根据传入的图片来进行:
     1)图像问答：描述图像中的内容或者对其进行分类打标，如识别人物、地点、花鸟鱼虫等。
@@ -489,7 +490,7 @@ async def main():  # 便于异步上下文管理，建议多语句放入异步�
         ]}]
     mcp_io_methods = ["MCPServerStdio"]
 
-    QwenVL_agent = openAI_Agents_create(agent_name=QwenVL_agent_name,
+    QwenVL_agent = openAI_Agents_create(agent_name='通义千问视觉理解智能体',
                                         instruction=QwenVL_agent_instruction,
                                         model=QwenVL_model,
                                         base_url=None,
@@ -498,7 +499,7 @@ async def main():  # 便于异步上下文管理，建议多语句放入异步�
                                         handoff_description="当prompt有图片时,使用QwenVL模型进行视觉推理"
                                         )
 
-    Qwen_model = 'qwen-turbo-plus'
+    Qwen_model = 'qwen-turbo-latest'
     Qwen_model_instruction = """
         你是一名助人为乐的助手,
         1)当prompt中有文件时，请handoff至视觉推理模型;
@@ -507,7 +508,7 @@ async def main():  # 便于异步上下文管理，建议多语句放入异步�
     handoff_description = """
         本模型仅仅处理不带有文件的prompt;当prompt图片文件时，请handoff至视觉推理模型，并给出结果。
         """
-    Qwen3_agent = openAI_Agents_create(agent_name='Qwen-turbo-plus',
+    Qwen3_agent = openAI_Agents_create(agent_name='通义千问智能体(general)',
                                        instruction=Qwen_model_instruction,
                                        model=Qwen_model,
                                        base_url=None,
@@ -518,7 +519,7 @@ async def main():  # 便于异步上下文管理，建议多语句放入异步�
 
                                        )
     # 运行主协程
-    await Qwen3_agent.chat_continuous(runner_mode='async', enable_fileloading=False)
+    await Qwen3_agent.chat_continuous(runner_mode='stream', enable_fileloading=True)
     # await QwenVL_agent.multi_mcp_chat_continuous(runner_mode='async', enable_fileloading=False,
     #                                                    mcp_names=mcp_names,
     #                                                    mcp_params=mcp_params,
