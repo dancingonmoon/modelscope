@@ -186,11 +186,15 @@ def gradio_msg2openai_msg(history:list[dict]=None, gradio_msg: dict=None):
                     contents.append(img_item)
                     input_item.append({"role": "user", "content": contents})
                 else:
-                    print("✅ 对话已结束,或者文档路径不存在")
+                    pass # 未来处理其他文件类型，采用file.upload 方式上传
+                    print("✅ 文件为不接受的IMG类型")
                     break
+            else:
+                print("✅ 文件不存在")
+                break
 
-
-        input_item.append({"role": "user", "content": msg_input})
+        input_item.append({"role": "user", "content": text})
+        return input_item
 
 
 
