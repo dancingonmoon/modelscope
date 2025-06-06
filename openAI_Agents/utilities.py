@@ -67,7 +67,7 @@ def upload_file_and_get_url(api_key, model_name, file_path):
     :param api_key:
     :param model_name:
     :param file_path:
-    :return: oss://dashscope-instant/??????/file_name  (仅在阿里内部访问)
+    :return: oss://dashscope-instant/??????/file_path  (仅在阿里内部访问)
     """
     # 1. 获取上传凭证
     policy_data = get_upload_policy(api_key, model_name)

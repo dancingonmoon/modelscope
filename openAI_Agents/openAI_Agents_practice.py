@@ -160,6 +160,39 @@ def load_img(image_path: str | pathlib.Path):
         "image_url": f"data:image/{img_format};base64,{base64_img}"}  # openAI-Aents格式
     return input_item
 
+def gradio_msg2openai_msg(history:list[dict]=None, gradio_msg: dict=None):
+    """
+    一次gradio的多媒体message(包含text,file)，转换成openAI兼容的message格式
+    :param history:
+    :param gradio_msg: gradio.MultiModalText.value,例如: {"text": "sample text", "files": [{path: "files/file.jpg", orig_name: "file.jpg", url: "http://image_url.jpg", size: 100}]}
+    :return:  openAI-Agents兼容的message格式
+    """
+    contents = []
+    input_item = []
+    if history is None:
+        history = [{"role": "user", "content": ""}]
+    text = gradio_msg.get("text", None)
+    files = gradio_msg.get("files", None)
+    if files is None:
+        pass
+    else:
+        for file in files:
+            file_path = pathlib.Path(file)
+            if file_path.exists() and file_path.is_file():
+                # 处理Image:
+                if file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp',
+                                                '.heic']:
+                    img_item = load_img(file_path)
+                    contents.append(img_item)
+                    input_item.append({"role": "user", "content": contents})
+                else:
+                    print("✅ 对话已结束,或者文档路径不存在")
+                    break
+
+
+        input_item.append({"role": "user", "content": msg_input})
+
+
 
 class mcp_stdio(BaseModel):
     command: str
@@ -478,6 +511,18 @@ def _Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None
     return result
 
 
+@function_tool
+def save2file(file_path: pathlib.Path, content):
+    """
+    用于将LLM的输出，依照一定的格式写入本地文件file_name
+    :param file_path:
+    :param content:
+    :return:
+    """
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+
 async def main():  # 便于异步上下文管理，建议多语句放入异步函数中，一起执行
 
     mcp_names = ['file_system']
@@ -495,8 +540,8 @@ async def main():  # 便于异步上下文管理，建议多语句放入异步�
                                         model=QwenVL_model,
                                         base_url=None,
                                         api_key=None,
-                                        # tools = [_Qwen_MT_func]
-                                        handoff_description="当prompt有图片时,使用QwenVL模型进行视觉推理"
+                                        tools=[save2file],
+                                        handoff_description="当prompt有图片时,使用QwenVL模型进行视觉推理,并且必要时，按要求将约定的内容存入本地文件"
                                         )
 
     Qwen_model = 'qwen-turbo-latest'
@@ -504,6 +549,7 @@ async def main():  # 便于异步上下文管理，建议多语句放入异步�
         你是一名助人为乐的助手,
         1)当prompt中有文件时，请handoff至视觉推理模型;
         2)否则，就直接回答问题;
+        3) 必要时，可以将约定的内容存入本地文件。
         """
     handoff_description = """
         本模型仅仅处理不带有文件的prompt;当prompt图片文件时，请handoff至视觉推理模型，并给出结果。
@@ -513,7 +559,7 @@ async def main():  # 便于异步上下文管理，建议多语句放入异步�
                                        model=Qwen_model,
                                        base_url=None,
                                        api_key=None,
-                                       # tools = [_Qwen_MT_func]
+                                       tools=[save2file],
                                        handoffs=[QwenVL_agent.agent],
                                        handoff_description=handoff_description
 
