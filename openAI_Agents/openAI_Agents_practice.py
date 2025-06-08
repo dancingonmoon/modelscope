@@ -93,8 +93,10 @@ async def agents_chat_continuous(agent: Agent, runner_mode: Literal['async', 'st
                         contents.append(img_item)
                         input_item.append({"role": "user", "content": contents})
                 else:
-                    print("✅ 对话已结束,或者文档路径不存在")
+                    print(f"✅ 对话已结束,{file_path.suffix.lower()}图片格式不支持")
                     break
+            else:
+                print("✅ 对话已结束, 文档不是文件或者不存在")
         input_item.append({"role": "user", "content": msg_input})
         result = await agents_async_chat_once(agent=agent, input_items=input_item, runner_mode=runner_mode)
         input_item = result.to_input_list()
@@ -186,11 +188,15 @@ def gradio_msg2openai_msg(history:list[dict]=None, gradio_msg: dict=None):
                     contents.append(img_item)
                     input_item.append({"role": "user", "content": contents})
                 else:
-                    print("✅ 对话已结束,或者文档路径不存在")
+                    # 处理其它格式文件，使用file.upload
+                    print("✅ 不合适的IMG格式")
                     break
+            else:
+                print("✅ 文档路径不存在")
+                break
 
-
-        input_item.append({"role": "user", "content": msg_input})
+    input_item.append({"role": "user", "content": text})
+    return input_item
 
 
 
