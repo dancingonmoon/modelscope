@@ -1,19 +1,21 @@
 import os
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))  # 添加项目根目录
+
 import asyncio
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
     function_tool, TResponseInputItem, ItemHelpers
 from openai.types.responses import ResponseTextDeltaEvent
 import gradio as gr  # gradio 5.5.0 需要python 3.10以上
 from zhipuai import ZhipuAI
-from GLM.GLM_callFunc import config_read
+# from GLM.GLM_callFunc import config_read
 import base64
-import pathlib
-from pathlib import Path
 from typing import Literal
 import json
 # import google.generativeai as genai # 旧版
 from google import genai  # 新版
-from ..openAI_Agents.openAI_Agents_practice import openAI_Agents_create
+from openAI_Agents.openAI_Agents_practice import openAI_Agents_create
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
