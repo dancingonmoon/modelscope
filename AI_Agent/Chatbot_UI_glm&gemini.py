@@ -136,7 +136,7 @@ def add_message_v2(history: list[dict] = None, message: dict = None):
 
     # history.append(present_message)
     chatbot_display_prompt = text
-    if files:
+    if files and 'glm' in model: # 假设gemini 以及 agent 模型的message格式，在gradio的chatbot_display上，不因files而显示大量内容（可以显示图片）
         chatbot_display_prompt = f"{text}\n\n({files['path']})"
     history.append({
         "role": "user",
@@ -250,6 +250,8 @@ def inference(history: list, new_topic: bool):
         yield from gemini_inference(history, new_topic)
     elif 'glm' in model:
         yield from glm_inference(history, new_topic)
+    elif 'agent' in model:
+        yield from openai_agents_inference(history, new_topic)
 
 
 def openai_agents_inference(
@@ -263,32 +265,33 @@ def openai_agents_inference(
             response = asyncio.run(Runner.run(agent, history[:-1].append(present_message)))
 
         present_response = ""
-        history.append({"role": "assistant", "conten？考虑买回来 国行版gt": present_response})
+        history.append({"role": "assistant", "content": present_response})
         for event in response.stream_events():
-            if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                print(event.data.delta, end="", flush=True)
-            elif event.type == "agent_updated_stream_event":
-                print(f"Agent updated: {event.new_agent.name}")
-                continue
-            elif event.type == "run_item_stream_event":
-                if event.item.type == "tool_call_item":
-                    print("-- Tool was called")
-                elif event.item.type == "tool_call_output_item":
-                    print(f"-- Tool 吧给output: {event.item.output}")
-                elif event.item.type == "message_output_item":
-                    print(f"-- Message output:\n {ItemHelpers.text_message_output(event.item)}")
-                else:
-                    pass  # Ignore other event types
-        for chunk in response:
             if stop_inference_flag:
                 # print(f"return之前history:{history}")
                 yield history  # 先yield 再return ; 直接return history会导致history不输出
                 return
-            out = chunk.text
-            if out:
-                present_response += out  # extract text from streamed litellm chunks
-                history[-1] = {"role": "assistant", "content": present_response}
-                yield history
+            if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                print(event.data.delta, end="", flush=True)
+                present_response += event.data.delta
+            elif event.type == "agent_updated_stream_event":
+                print(f"Agent updated: {event.new_agent.name}")
+                present_response  += f"\n{event.new_agent.name}"
+                continue
+            elif event.type == "run_item_stream_event":
+                if event.item.type == "tool_call_item":
+                    print("-- Tool was called")
+                    present_response += "\n-- Tool was called"
+                elif event.item.type == "tool_call_output_item":
+                    print(f"-- Tool output: {event.item.output}")
+                    present_response += f"\n-- Tool output: {event.item.output}"
+                elif event.item.type == "message_output_item":
+                    print(f"-- Message output:\n {ItemHelpers.text_message_output(event.item)}")
+                    present_response += f"\n-- Message output:\n {ItemHelpers.text_message_output(event.item)}"
+                else:
+                    pass  # Ignore other event types
+            history[-1] = {"role": "assistant", "content": present_response}
+            yield history
 
     except Exception as e:
         logging.error("Exception encountered:", str(e))
