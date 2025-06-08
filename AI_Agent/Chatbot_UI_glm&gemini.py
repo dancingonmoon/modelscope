@@ -466,30 +466,7 @@ def on_selectDropdown(evt: gr.SelectData) -> None:
     #     except Exception as e:
     #         logging.error(e.args)
 
-
-def on_topicRadio(value, evt: gr.EventData):
-    logging.error(f"The {evt.target} component was selected, and its value was {value}.")
-
-
-if __name__ == "__main__":
-
-    # zhipuAI client:
-    zhipuai_client = ZhipuAI(api_key=os.getenv("ZHIPUAI_API_KEY"))
-    # # 测试zhipuai
-    # model = "glm-4-flash"
-    # response = zhipuai_api("请联网搜索，回答：美国大选最新情况", model=model)
-    # for chunk in response:
-    #     out = chunk.choices[0].delta.content
-
-    # gemini client:
-    genai_client = genai.Client(api_key="GEMINI_API_KEY")
-
-    # 全局变量
-    stop_inference_flag = False  # 停止推理初始值，全局变量
-    model = 'glm-4-flash'  # 初始假定值，作为全局变量
-    # streaming_chat = None  # gemini直播聊天对象；全局变量
-    present_message = None  # 当前消息，全局变量;因为chatbot显示的message与送入模型的message会有所不同;
-
+def gradio_UI():
     with gr.Blocks() as demo:
         gr.Markdown("# 多模态Robot 🤗")
         chatbot = gr.Chatbot(
@@ -563,7 +540,7 @@ if __name__ == "__main__":
         )
 
         chat_msg = chat_input.submit(
-            add_message,
+            add_message_v2,
             [chatbot, chat_input],
             [chatbot, chat_input, stop_inference_button],
             queue=False,
@@ -582,5 +559,31 @@ if __name__ == "__main__":
             [stop_inference_button],
         )
         bot_msg.then(stop_inference_flag_False, None, None)
+
+        return demo
+def on_topicRadio(value, evt: gr.EventData):
+    logging.error(f"The {evt.target} component was selected, and its value was {value}.")
+
+
+if __name__ == "__main__":
+
+    # zhipuAI client:
+    zhipuai_client = ZhipuAI(api_key=os.getenv("ZHIPUAI_API_KEY"))
+    # # 测试zhipuai
+    # model = "glm-4-flash"
+    # response = zhipuai_api("请联网搜索，回答：美国大选最新情况", model=model)
+    # for chunk in response:
+    #     out = chunk.choices[0].delta.content
+
+    # gemini client:
+    genai_client = genai.Client(api_key="GEMINI_API_KEY")
+
+    # 全局变量
+    stop_inference_flag = False  # 停止推理初始值，全局变量
+    model = 'glm-4-flash'  # 初始假定值，作为全局变量
+    # streaming_chat = None  # gemini直播聊天对象；全局变量
+    present_message = None  # 当前消息，全局变量;因为chatbot显示的message与送入模型的message会有所不同;
+
+    demo = gradio_UI()
 
     demo.queue().launch(server_name='0.0.0.0')
