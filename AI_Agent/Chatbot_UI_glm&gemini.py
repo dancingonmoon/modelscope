@@ -247,13 +247,13 @@ def add_message(history, message):
     )
 
 
-def inference(history: list, new_topic: bool):
+def inference(history: list, new_topic: bool, ai_client=None):
     if 'gemini' in model:
-        yield from gemini_inference(history, new_topic)
+        yield from gemini_inference(history, new_topic, genai_client=ai_client)
     elif 'glm' in model:
-        yield from glm_inference(history, new_topic)
+        yield from glm_inference(history, new_topic, zhipuai_client=ai_client)
     elif 'agent' in model:
-        yield from openai_agents_inference(history, new_topic)
+        yield from openai_agents_inference(history, new_topic, agent=ai_client)
 
 
 def openai_agents_inference(
@@ -339,7 +339,7 @@ def gemini_inference(
 # def openai_agents_inference(history: list, new_topic: bool):
 
 def glm_inference(
-        history: list, new_topic: bool, zhipu_client: ZhipuAI = None):
+        history: list, new_topic: bool, zhipuai_client: ZhipuAI = None):
     global present_message
     try:
         if new_topic:
@@ -359,7 +359,7 @@ def glm_inference(
 
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
-        for chunk in zhipuai_messages_api(glm_prompt, model=model,zhipuai_client=zhipuai_client):
+        for chunk in zhipuai_messages_api(glm_prompt, model=model, zhipuai_client=zhipuai_client):
             if stop_inference_flag:
                 # print(f"return之前history:{history}")
                 yield history  # 先yield 再return ; 直接return history会导致history不输出
