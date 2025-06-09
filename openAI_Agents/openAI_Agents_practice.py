@@ -162,39 +162,6 @@ def load_img(image_path: str | pathlib.Path):
         "image_url": f"data:image/{img_format};base64,{base64_img}"}  # openAI-Aents格式
     return input_item
 
-def gradio_msg2openai_msg(history:list[dict]=None, gradio_msg: dict=None):
-    """
-    一次gradio的多媒体message(包含text,file)，转换成openAI兼容的message格式
-    :param history:
-    :param gradio_msg: gradio.MultiModalText.value,例如: {"text": "sample text", "files": [{path: "files/file.jpg", orig_name: "file.jpg", url: "http://image_url.jpg", size: 100}]}
-    :return:  openAI-Agents兼容的message格式
-    """
-    contents = []
-    input_item = []
-    if history is None:
-        history = [{"role": "user", "content": ""}]
-    text = gradio_msg.get("text", None)
-    files = gradio_msg.get("files", None)
-    if files is None:
-        pass
-    else:
-        for file in files:
-            file_path = pathlib.Path(file)
-            if file_path.exists() and file_path.is_file():
-                # 处理Image:
-                if file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp',
-                                                '.heic']:
-                    img_item = load_img(file_path)
-                    contents.append(img_item)
-                    input_item.append({"role": "user", "content": contents})
-                else:
-                    print("✅ 对话已结束,或者文档路径不存在")
-                    break
-
-
-        input_item.append({"role": "user", "content": msg_input})
-
-
 
 class mcp_stdio(BaseModel):
     command: str
