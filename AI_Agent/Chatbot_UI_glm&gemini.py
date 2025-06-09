@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-
+import asyncio
 sys.path.append(str(Path(__file__).parent.parent))  # 添加项目根目录
 
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
@@ -14,7 +14,7 @@ from typing import Literal
 import json
 # import google.generativeai as genai # 旧版
 from google import genai  # 新版
-# from openAI_Agents.openAI_Agents_practice import openAI_Agents_create
+from openAI_Agents.openAI_Agents_practice import openAI_Agents_create, save2file, _Qwen_MT_func
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -129,11 +129,11 @@ def add_message_v2(history: list[dict] = None, message: dict = None):
         }]
     text = message.get("text")
     files = message.get("files")
-    if 'agent' in model:
+    if 'agent' in model.lower():
         present_message = gradio_msg2LLM_msg(message, msg_format="openai_agents")
-    elif 'glm' in model:
+    elif 'glm' in model.lower():
         present_message = gradio_msg2LLM_msg(message, msg_format="glm", zhipuai_client=zhipuai_client)
-    elif 'gemini' in model:
+    elif 'gemini' in model.lower():
         present_message = gradio_msg2LLM_msg(message, msg_format="gemini", geniai_client=genai_client)
 
     # history.append(present_message)
@@ -247,16 +247,19 @@ def add_message(history, message):
     )
 
 
-def inference(history: list, new_topic: bool, ai_client=None):
-    if 'gemini' in model:
-        yield from gemini_inference(history, new_topic, genai_client=ai_client)
-    elif 'glm' in model:
-        yield from glm_inference(history, new_topic, zhipuai_client=ai_client)
-    elif 'agent' in model:
-        yield from openai_agents_inference(history, new_topic, agent=ai_client)
+async def inference(history: list, new_topic: bool, ):
+    if 'gemini' in model.lower():
+        async for chunk in gemini_inference(history, new_topic, genai_client=ai_client):
+            yield chunk
+    elif 'glm' in model.lower():
+        async for chunk in glm_inference(history, new_topic, zhipuai_client=ai_client):
+            yield chunk
+    elif 'agent' in model.lower():
+        async for chunk in openai_agents_inference(history, new_topic, agent=ai_client):
+            yield chunk
 
 
-def openai_agents_inference(
+async def openai_agents_inference(
         history: list, new_topic: bool, agent: Agent = None):
     try:
         if new_topic:
@@ -268,7 +271,7 @@ def openai_agents_inference(
 
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
-        for event in response.stream_events():
+        async for event in response.stream_events():
             if stop_inference_flag:
                 # print(f"return之前history:{history}")
                 yield history  # 先yield 再return ; 直接return history会导致history不输出
@@ -335,8 +338,6 @@ def gemini_inference(
         # print(history)
         yield history
 
-
-# def openai_agents_inference(history: list, new_topic: bool):
 
 def glm_inference(
         history: list, new_topic: bool, zhipuai_client: ZhipuAI = None):
@@ -421,7 +422,59 @@ def zhipuai_messages_api(messages: str | list[dict], model: str, zhipuai_client:
     )
     return response
 
+def openai_agents():
+    QwenVL_model = 'qwen-vl-plus-latest'
+    base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    QwenVL_agent_instruction = '''
+        您是一个助人为乐的助手，可以根据传入的图片来进行:
+        1)图像问答：描述图像中的内容或者对其进行分类打标，如识别人物、地点、花鸟鱼虫等。
+        2)数学题目解答：解答图像中的数学问题，适用于中小学、大学以及成人教育阶段。
+        3)视频理解：分析视频内容，如对具体事件进行定位并获取时间戳，或生成关键时间段的摘要。
+        4)物体定位：定位图像中的物体，返回外边界矩形框的左上角、右下角坐标或者中心点坐标。
+        5)文档解析：将图像类的文档（如扫描件/图片PDF）解析为 QwenVL HTML格式，该格式不仅能精准识别文本，还能获取图像、表格等元素的位置信息。
+        6)文字识别与信息抽取：识别图像中的文字、公式，或者抽取票据、证件、表单中的信息，支持格式化输出文本；可识别的语言有中文、英语、日语、韩语、阿拉伯语、越南语、法语、德语、意大利语、西班牙语和俄语。
+        你只对带有图片的prompt，做出响应。
+        '''
+    mcp_names = ['file_system']
+    mcp_params = [{
+        "command": "npx",
+        "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            ".",
+        ]}]
+    mcp_io_methods = ["MCPServerStdio"]
 
+    QwenVL_agent = openAI_Agents_create(agent_name='通义千问视觉理解智能体',
+                                        instruction=QwenVL_agent_instruction,
+                                        model=QwenVL_model,
+                                        base_url=None,
+                                        api_key=None,
+                                        tools=[save2file],
+                                        handoff_description="当prompt有图片时,使用QwenVL模型进行视觉推理,并且必要时，按要求将约定的内容存入本地文件"
+                                        )
+
+    Qwen_model = 'qwen-turbo-latest'
+    Qwen_model_instruction = """
+            你是一名助人为乐的助手,
+            1)当prompt中有文件时，请handoff至视觉推理模型;
+            2)否则，就直接回答问题;
+            3) 必要时，可以将约定的内容存入本地文件。
+            """
+    handoff_description = """
+            本模型仅仅处理不带有文件的prompt;当prompt图片文件时，请handoff至视觉推理模型，并给出结果。
+            """
+    Qwen3_agent = openAI_Agents_create(agent_name='通义千问智能体(general)',
+                                       instruction=Qwen_model_instruction,
+                                       model=Qwen_model,
+                                       base_url=None,
+                                       api_key=None,
+                                       tools=[save2file],
+                                       handoffs=[QwenVL_agent.agent],
+                                       handoff_description=handoff_description
+
+                                       )
+    return Qwen3_agent
 def vote(data: gr.LikeData):
     if data.liked:
         logging.error(f"You upvoted this response:  {data.index}, {data.value} ")
@@ -517,6 +570,7 @@ def gradio_UI():
             )
             models_dropdown = gr.Dropdown(
                 choices=[
+                    "openAI-Agents"
                     "glm-4-flash",
                     "glm-4-air",
                     "glm-4-plus",
@@ -585,8 +639,11 @@ if __name__ == "__main__":
     genai_client = genai.Client(api_key="GEMINI_API_KEY")
 
     # 全局变量
+    # ai_client = zhipuai_client
+    ai_client = openai_agents()
     stop_inference_flag = False  # 停止推理初始值，全局变量
-    model = 'glm-4-flash'  # 初始假定值，作为全局变量
+    # model = 'glm-4-flash'  # 初始假定值，作为全局变量
+    model = 'openai_agents'  # 初始假定值，作为全局变量
     # streaming_chat = None  # gemini直播聊天对象；全局变量
     present_message = {}  # 当前消息，全局变量;因为chatbot显示的message与送入模型的message会有所不同;
 
