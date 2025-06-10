@@ -267,7 +267,7 @@ class openAI_Agents_create:
         """
         初始化mcp_server,并初始化包含mcp_servers的agent
         :param mcp_names: [mcp_name] ,当有mcp server时，配置mcp name; mcp_names/mcp_params列表中一一对应;
-        :param mcp_parms: [mcp_parm],当有mcp server时，配置mcp params: 支持， stdio, sse, streamableHttp;mcp_names/mcp_params列表中一一对应
+        :param mcp_params: [mcp_parm],当有mcp server时，配置mcp params: 支持， stdio, sse, streamableHttp;mcp_names/mcp_params列表中一一对应
         :param mcp_io_methods: 对应每一个mcp server, stdio, sse, streamableHttp 三种io传输方式选一
         :param mcp_added_instructions: [mcp_added_instruction], 列表
         :return:
