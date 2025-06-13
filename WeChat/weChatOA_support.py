@@ -27,7 +27,7 @@ def setup_logger():
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(
         logging.Formatter(
-            "%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]"
+            "%(asctime)s %(name)-8s %(levelname)-8s %(gradio_message)s [%(filename)s:%(lineno)d]"
         )
     )
     logger.addHandler(console_handler)
@@ -36,7 +36,7 @@ def setup_logger():
     file_handler = logging.FileHandler("log.log", encoding="utf-8")
     file_handler.setFormatter(
         logging.Formatter(
-            "%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]"
+            "%(asctime)s %(name)-8s %(levelname)-8s %(gradio_message)s [%(filename)s:%(lineno)d]"
         )
     )
     logger.addHandler(file_handler)
@@ -76,7 +76,7 @@ def get_WeChat_accessToken(AppID, AppSecret, existing_aToken_dict=None):
         print(f"新生access_token:\n{result}")
         return result
     except Exception as err:
-        # err 中含有 code 和 message 属性，可帮助开发定位问题
+        # err 中含有 code 和 gradio_message 属性，可帮助开发定位问题
         return err
 
 

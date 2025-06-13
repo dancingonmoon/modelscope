@@ -18,7 +18,7 @@ client = ZhipuAI(api_key=api_key)
 #     ],
 #     stream=False,
 # )
-# print(response.choices[0].message)
+# print(response.choices[0].gradio_message)
 # for chunk in response:
 #     print(chunk.choices[0].delta.content)
 

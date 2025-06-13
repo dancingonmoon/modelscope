@@ -62,7 +62,7 @@ def GLM_callFunc_Async(zhipuai_client, question, query, LLM_model="glm-4-air", w
                 result_response = client.chat.asyncCompletions.retrieve_completion_result(id=task_id)
                 if 'choices' in result_response.dict():
                     # print(f"finish_reason: {result_response.choices[0].finish_reason}")
-                    # print(f"content: {result_response.choices[0].message.content}")
+                    # print(f"content: {result_response.choices[0].gradio_message.content}")
                     # print(f"response: {result_response.web_search}")
                     out_text = result_response.choices[0].message.content
                     if web_search_result_show:

@@ -456,7 +456,7 @@ def Qwen_MT_func(prompt: str, model: str = 'qwen-mt-turbo', api_key: str = None,
             "translation_options": translation_options
         }
     )
-    # print(completion.choices[0].message.content)
+    # print(completion.choices[0].gradio_message.content)
     return completion.choices[0].message.content
 
 

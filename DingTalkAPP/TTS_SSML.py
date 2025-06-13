@@ -399,7 +399,7 @@ class aliyun_TTS_threadsRUN:
         """
         if self.logger is not None:
             self.logger.info(f"callback_args:{args}; subtitle:{message}")
-        # return message
+        # return gradio_message
 
     def fun_on_data(self, data, *args):
         """

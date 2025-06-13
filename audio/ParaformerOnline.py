@@ -151,7 +151,7 @@ def RUN(audio_stream, speech_txt, vad_stream, vad_flag=False):
             # if speech_stride_vad_clip_result != []: # 例子中的代码,应该是错误的
             # (https://github.com/alibaba-damo-academy/FunASR/discussions/278)
             # the online model is used at each time of speech absence of voice activity detection(VAD)
-            # and should be feed the cache extracted from the history text.
+            # and should be feed the cache extracted from the history_llm text.
             if "text" in speech_stride_result:  # 语音识别出非空时,
                 speech_stride_punc_result = inference_pipeline_punc_online(
                     text_in=speech_stride_result["text"],

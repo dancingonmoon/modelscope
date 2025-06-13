@@ -7,7 +7,7 @@ import logging
 import sys
 
 # 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(gradio_message)s')
 
 
 # 当无法确定待上传的数据长度时，total_bytes的值为None。
@@ -46,7 +46,7 @@ class BucketObject:
         :return:
         """
         if logger is None:
-            logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+            logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(gradio_message)s')
             self.logger = logging.getLogger(__name__)
         else:
             self.logger = logger

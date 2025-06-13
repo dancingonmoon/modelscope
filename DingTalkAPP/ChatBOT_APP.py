@@ -107,7 +107,7 @@ def setup_logger():
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(
         logging.Formatter(
-            "%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]"
+            "%(asctime)s %(name)-8s %(levelname)-8s %(gradio_message)s [%(filename)s:%(lineno)d]"
         )
     )
     logger.addHandler(console_handler)
@@ -116,7 +116,7 @@ def setup_logger():
     file_handler = logging.FileHandler("log.log", encoding="utf-8")
     file_handler.setFormatter(
         logging.Formatter(
-            "%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]"
+            "%(asctime)s %(name)-8s %(levelname)-8s %(gradio_message)s [%(filename)s:%(lineno)d]"
         )
     )
     logger.addHandler(file_handler)
@@ -367,8 +367,8 @@ class VoiceChatHandler(ChatbotHandler_utilies):
         )
         mediaId = self.upload2media_id(media_content=audio_content, media_type="voice")
         self.logger.info(f"uploaded aliyun voice media_id: {mediaId}")
-        # 发送voice message:
-        # self.reply_voice_http(mediaId, duration, incoming_message)  # http方式发送voice message reqeust格式有误;
+        # 发送voice gradio_message:
+        # self.reply_voice_http(mediaId, duration, incoming_message)  # http方式发送voice gradio_message reqeust格式有误;
         self.reply_voice_SDK(mediaId, duration, incoming_message)
         self.reply_text(text, incoming_message)
         self.logger.info(f"assistant:{text}")

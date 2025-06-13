@@ -1,21 +1,25 @@
 import os
 import sys
 from pathlib import Path
-import asyncio
-
 sys.path.append(str(Path(__file__).parent.parent))  # 添加项目根目录
 
+import asyncio
+
+import gradio as gr  # gradio 5.5.0 需要python 3.10以上
+from gradio.data_classes import GradioModel,GradioRootModel, FileData
+
+
+from zhipuai import ZhipuAI
+# import google.generativeai as genai # 旧版
+from google import genai  # 新版
 from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
     function_tool, TResponseInputItem, ItemHelpers
 from openai.types.responses import ResponseTextDeltaEvent
-import gradio as gr  # gradio 5.5.0 需要python 3.10以上
-from zhipuai import ZhipuAI
+from openAI_Agents.openAI_Agents_practice import openAI_Agents_create, save2file, _Qwen_MT_func
+
 import base64
 from typing import Literal
 import json
-# import google.generativeai as genai # 旧版
-from google import genai  # 新版
-from openAI_Agents.openAI_Agents_practice import openAI_Agents_create, save2file, _Qwen_MT_func
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -23,12 +27,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 
 def gradio_msg2LLM_msg(gradio_msg: dict = None,
                        msg_format: Literal["openai_agents", "gemini", "glm"] = "openai_agents",
-                       geniai_client: genai.Client = None, zhipuai_client: ZhipuAI = None):
+                       genai_client: genai.Client = None, zhipuai_client: ZhipuAI = None):
     """
     一次gradio的多媒体message(包含text,file)，转换成各类LLM要求的message格式
     :param gradio_msg: gradio.MultiModalText.value,例如: {"text": "sample text", "files": [{path: "files/file.jpg", orig_name: "file.jpg", url: "http://image_url.jpg", size: 100}]}
     :param msg_format: "openai_agents", "gemini", "glm"
-    :param geniai_client: genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
+    :param genai_client: genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
     :param zhipuai_client: ZhipuAI(api_key=os.environ.get("ZHUIPU_API_KEY"))
     :return:  与msg_format兼容的message格式，以及History
     """
@@ -39,8 +43,8 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
     input_item = []
 
     text = gradio_msg.get("text", None)
-    files = gradio_msg.get("files", None)
-    # openAI-Agents message 格式处理:
+    files = gradio_msg.get("files", [])
+    # openAI-Agents gradio_message 格式处理:
     if msg_format == "openai_agents":
         if files:
             for file in files:
@@ -63,7 +67,7 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
                         contents.append(content)
                     else:
                         # 可以处理其它格式文件，例如:使用file.upload
-                        print("✅ 不合适的IMG格式")
+                        print("✅ 暂时只处理指定格式的IMG格式")
                         # break
                 else:
                     print("✅ 文档路径不存在")
@@ -72,9 +76,9 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
             input_item.append({"role": "user", "content": contents})
         input_item.append({"role": "user", "content": text})
 
-    # gemini message 格式处理:
+    # gemini gradio_message 格式处理:
     elif msg_format == "gemini":
-        # geniai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        # genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         if files:
             for file in files:
                 file_path = Path(file)
@@ -82,15 +86,16 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
                     # Gemini 1.5 Pro 和 1.5 Flash 最多支持 3,600 个文档页面。文档页面必须采用以下文本数据 MIME 类型之一：
                     # PDF - application/pdf,JavaScript - application/x-javascript、text/javascript,Python - application/x-python、text/x-python,
                     # TXT - text/plain,HTML - text/html, CSS - text/css,Markdown - text/md,CSV - text/csv,XML - text/xml,RTF - text/rtf
-                    content = geniai_client.files.upload(path=file)  # 环境变量缺省设置GEMINI_API_KEY
+                    content = genai_client.files.upload(path=file)  # 环境变量缺省设置GEMINI_API_KEY
                     contents.append(content)
                 else:
                     print("✅ 文档路径不存在")
                     # break
         contents.append(text)
         input_item.append({"role": "user", "content": contents})
+        print(f"genai input_item: {input_item}")
 
-    # glm message 格式处理:
+    # glm gradio_message 格式处理:
     elif msg_format == "glm":
         # zhipuai_client = ZhipuAI(api_key=os.getenv("ZHIPU_API_KEY"))
         if files:
@@ -119,40 +124,48 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
         else:
             contents = f'{text}'
         input_item.append({"role": "user", "content": contents})
+        print(f"gradio_msg2 input_item:{input_item}")
 
     return input_item
 
 
-def add_message_v2(history: list[dict] = None, message: dict = None):
-    global present_message
-    global model
+def add_message_v2(history_gradio: list[dict] = None, history_llm: list[dict] = None,
+                   gradio_message: dict = None, model:str= None):
 
-    if history is None:
-        history = [{
-            "role": "user",
-            "content": "",
-        }]
-    text = message.get("text")
-    files = message.get("files")
+    # gradio input gradio_message format:
+    # value= {"text": "sample text", "files": [{'path': "files/ file. jpg", 'orig_name': "file. jpg", 'url': "http:// image_url. jpg ", 'size': 100}]},
+    # global llm_message
+    # global model
+
+    if history_llm is None:
+        history_llm = []
+    if history_gradio is None:
+        history_gradio = []
+    text = gradio_message.get("text")
+    files = gradio_message.get("files")
+    llm_message = [{"role": "user", "content": text}]
     if 'agent' in model.lower():
-        present_message = gradio_msg2LLM_msg(message, msg_format="openai_agents")
+       llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="openai_agents")
     elif 'glm' in model.lower():
-        present_message = gradio_msg2LLM_msg(message, msg_format="glm", zhipuai_client=ai_client)
+        llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="glm", zhipuai_client=zhipuai_client)
     elif 'gemini' in model.lower():
-        present_message = gradio_msg2LLM_msg(message, msg_format="gemini", geniai_client=ai_client)
+        llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="gemini", genai_client=genai_client)
 
-    print(f"present_message (gradio_msg2LLM):{present_message}")
-    # history.append(present_message)
-    chatbot_display_prompt = text
-    if files and 'glm' in model:  # 假设gemini 以及 agent 模型的message格式，在gradio的chatbot_display上，不因files而显示大量内容（可以显示图片）
-        chatbot_display_prompt = f"{text}\n({files['path']})"
-    history.append({
-        "role": "user",
-        "content": chatbot_display_prompt,
-    })  # chatbot上只显示text ,不显示files_prompt,以及files_object, 避免显示内容过长
-    print(f"history:{history}")
+    # history_llm.append(llm_message)
+    # chatbot_display_prompt = text
+    # if files and 'glm' in model:  # 假设gemini 以及 agent 模型的message格式，在gradio的chatbot_display上，不因files而显示大量内容（可以显示图片）
+    #     chatbot_display_prompt = f"{text}\n({files['path']})"
+    # history_llm.append({
+    #     "role": "user",
+    #     "content": chatbot_display_prompt,
+    # })  # chatbot上只显示text ,不显示files_prompt,以及files_object, 避免显示内容过长
+    for item in llm_message:
+        history_llm.append(item)
+    history_gradio.append({"role": "user", "content": gradio_message})
+    print(f"add message_v2 history_llm:{history_llm}")
     return (
-        history,
+        history_gradio,
+        history_llm,
         gr.MultimodalTextbox(value=None, interactive=False),
         gr.Button(interactive=True, visible=True),
 
@@ -242,7 +255,7 @@ def add_message(history, message):
                 "role": "user",
                 "content": f"{text}",
             }
-    # history.append(present_message)
+    # history_llm.append(present_message)
     history.append({
         "role": "user",
         "content": f"{text}",
@@ -253,16 +266,29 @@ def add_message(history, message):
         gr.Button(interactive=True, visible=True),
     )
 
-
-def inference(history: list, new_topic: bool, ):
+def get_last_user_messages(history):
+    """
+    在history的列表中，寻找最后一个assistant消息之后的全部user消息。(history列表中，最后的消息总是user消息)
+    :param history:
+    :return:
+    """
+    user_msg = []
+    if history:  # 非空列表
+        for msg in reversed(history):
+            if msg.get("role", None) == "user":
+                user_msg.append(msg)
+            elif msg["role"] == "assistant":
+                break
+    return user_msg[::-1]
+def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model:str=None ):
     if 'gemini' in model.lower():
-        for history in gemini_inference(history, new_topic, genai_client=ai_client):
-            yield history
+        for history_gradio in gemini_inference(history_gradio, new_topic, genai_client=genai_client):
+            yield history_gradio
     elif 'glm' in model.lower():
-        for history in glm_inference(history, new_topic, zhipuai_client=ai_client):
-            yield history
+        for history_gradio, history_llm in glm_inference(history_gradio, history_llm, new_topic, model,zhipuai_client=zhipuai_client):
+            yield history_gradio, history_llm
     elif 'agent' in model.lower():
-        return openai_agents_inference(history, new_topic, agent=ai_client)
+        return openai_agents_inference(history_gradio, new_topic, agent=agent_client)
 
 
 async def openai_agents_inference(
@@ -272,14 +298,14 @@ async def openai_agents_inference(
             #  present_message取自全局变量
             response = Runner.run_streamed(agent, [present_message])
         else:
-            # response = asyncio.run(Runner.run(agent, history[:-1].append(present_message)))
+            # response = asyncio.run(Runner.run(agent, history_llm[:-1].append(present_message)))
             response = Runner.run_streamed(agent, history)  # 检查是否history与chatbot_display一致
 
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
         async for event in response.stream_events():
             if stop_inference_flag:
-                # print(f"return之前history:{history}")
+                # print(f"return之前history:{history_llm}")
                 yield history  # 先yield 再return ; 直接return history会导致history不输出
                 return
             if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
@@ -307,7 +333,7 @@ async def openai_agents_inference(
     except Exception as e:
         logging.error("Exception encountered:", str(e))
         history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
-        # print(history)
+        # print(history_llm)
         yield history
 
 
@@ -315,23 +341,24 @@ def gemini_inference(
         history: list, new_topic: bool, genai_client: genai.Client = None):
     # global streaming_chat
 
+
     try:
         if new_topic:
             # gemeni_model = genai.GenerativeModel(model)
-            # streaming_chat = gemeni_model.start_chat(history=None, )
+            # streaming_chat = gemeni_model.start_chat(history_llm=None, )
             streaming_chat = genai_client.chats.create(model=model, history=None)
         else:
-            # streaming_chat = genai_client.chats.create(model=model, history=history[:-1].append(present_message))
+            # streaming_chat = genai_client.chats.create(model=model, history_llm=history_llm[:-1].append(present_message))
             streaming_chat = genai_client.chats.create(model=model, history=history)
 
-        # present_message = history[-1]['content'] # present_message取自全局变量
-        response = streaming_chat.send_message_stream(present_message['content'])
+        present_message = get_last_user_messages(history)
+        response = streaming_chat.send_message_stream(present_message) # 是否只是输入content，而不是message全部格式，待确认
 
         present_response = ""
         history.append({"role": "assistant", "content": present_response})
         for chunk in response:
             if stop_inference_flag:
-                # print(f"return之前history:{history}")
+                # print(f"return之前history:{history_llm}")
                 yield history  # 先yield 再return ; 直接return history会导致history不输出
                 return
             out = chunk.text
@@ -342,51 +369,55 @@ def gemini_inference(
     except Exception as e:
         logging.error("Exception encountered:", str(e))
         history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
-        # print(history)
+        # print(history_llm)
         yield history
 
 
-def glm_inference(
-        history: list, new_topic: bool, zhipuai_client: ZhipuAI = None):
+def glm_inference(history_gradio:list[dict], history_llm: list[dict],
+                  new_topic: bool,  model:str=None, zhipuai_client: ZhipuAI = None):
     global present_message
     try:
         if new_topic:
-            # present_message = [history[-1]]
-            glm_prompt = present_message  # 取自全局变量
+            glm_prompt = get_last_user_messages(history_llm)
+            # glm_prompt = present_message  # 取自全局变量
         else:
             # glm模型文件作为prompt，非通过type方式，而是通过件文件内容放在到prompt内
             # history中连续的{"role": "user", "content"：""},是文件链接或内容的删除
-            glm_prompt = [
-                message
-                for message in history[:-1]  # 最后一条直接取自全局变量present_message
-                if not (
-                        message["role"] == "user" and isinstance(message["content"], tuple)
-                )
-            ]
-            print(f"glm_prompt之前:{glm_prompt}")
-            glm_prompt.extend(present_message)
+            # glm_prompt = [
+            #     gradio_message
+            #     for gradio_message in history_llm[:-1]  # 最后一条直接取自全局变量present_message
+            #     if not (
+            #             gradio_message["role"] == "user" and isinstance(gradio_message["content"], tuple)
+            #     )
+            # ]
+            # glm_prompt.extend(present_message)
+            glm_prompt = history_llm
 
         present_response = ""
-        history.append({"role": "assistant", "content": present_response})
-        print(f"present_message:{present_message};glm_prompt之后:{glm_prompt}")
+        history_gradio.append({"role": "assistant", "content": present_response})
+        history_llm.append({"role": "assistant", "content": present_response})
+        # print(f"present_message:{present_message};glm_prompt之后:{glm_prompt}")
         for chunk in zhipuai_messages_api(glm_prompt, model=model, zhipuai_client=zhipuai_client):
             if stop_inference_flag:
-                # print(f"return之前history:{history}")
-                yield history  # 先yield 再return ; 直接return history会导致history不输出
+                # print(f"return之前history:{history_llm}")
+                yield history_gradio, history_llm  # 先yield 再return ; 直接return history会导致history不输出
                 return
             out = chunk.choices[0].delta.content
             if out:
                 present_response += out  # extract text from streamed litellm chunks
-                history[-1] = {"role": "assistant", "content": present_response}
-                yield history
+                history_gradio[-1] = {"role": "assistant", "content": present_response}
+                history_llm[-1] = {"role": "assistant", "content": present_response}
+                yield history_gradio, history_llm
     except Exception as e:
         logging.error("Exception encountered:", str(e))
-        history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
-        yield history
+        history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
+        history_llm.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
+        yield history_gradio, history_llm
 
 
 def zhipuai_messages_api(messages: str | list[dict], model: str, zhipuai_client: ZhipuAI = None):
     prompt = []
+    print(f"zhipuai_message_api, model={model}, type={type(model)}")
     if "alltools" in model:
         if isinstance(messages, str):
             prompt.append(
@@ -488,10 +519,10 @@ def openai_agents():
 
 def vote(data: gr.LikeData):
     if data.liked:
-        logging.error(f"You upvoted this response:  {data.index}, {data.value} ")
+        logging.info(f"You upvoted this response:  {data.index}, {data.value} ")
     else:
-        logging.error("You downvoted this response: " + data.value)
-        logging.error(f"You downvoted this response: {data.index}, {data.value}")
+        logging.info(f"You downvoted this response: {data.index}, {data.value}")
+        logging.info(f"You downvoted this response: {data.index}, {data.value}")
 
 
 def handle_undo(history, undo_data: gr.UndoData):
@@ -530,7 +561,7 @@ def on_selectDropdown(evt: gr.SelectData) -> None:
     # if 'gemini' in model:
     #     try:
     #         # gemeni_model = genai.GenerativeModel(model)
-    #         streaming_chat = genai_client.chats.create(model=model,history=None, )
+    #         streaming_chat = genai_client.chats.create(model=model,history_llm=None, )
     #     except Exception as e:
     #         logging.error(e.args)
 
@@ -559,6 +590,9 @@ def gradio_UI():
             ),
         )
 
+        history_llm = gr.State([])
+        model = gr.State("glm-4-flash") # 初始值
+
         stop_inference_button = gr.Button(
             value="停止推理",
             variant="secondary",
@@ -578,7 +612,7 @@ def gradio_UI():
                 interactive=True,
                 file_count="multiple",
                 lines=1,
-                placeholder="Enter message or upload file...",
+                placeholder="Enter gradio_message or upload file...",
                 show_label=False,
                 scale=20,
             )
@@ -590,9 +624,10 @@ def gradio_UI():
                     "glm-4-plus",
                     "glm-4-alltools",
                     "gemini-1.5-flash",
-                    "gemini-1.5-pro",
-                    "gemini-1.5-flash-latest",
-                    "gemini-1.5-pro-latest",
+                    "gemini-2.0-flash-lite",
+                    "gemini-2.0-flash",
+                    "gemini-2.5-pro-preview-06-05",
+
                 ],
                 value="glm-4-flash",
                 multiselect=False,
@@ -614,14 +649,14 @@ def gradio_UI():
 
         chat_msg = chat_input.submit(
             add_message_v2,
-            [chatbot, chat_input],
-            [chatbot, chat_input, stop_inference_button],
+            [chatbot, history_llm,chat_input,model],
+            [chatbot, history_llm, chat_input, stop_inference_button],
             queue=False,
         )
         bot_msg = chat_msg.then(
             inference,
-            [chatbot, topicCheckbox],
-            [chatbot],
+            [chatbot, history_llm,topicCheckbox,model],
+            [chatbot,history_llm],
             api_name="bot_response",
         )
         bot_msg.then(lambda: gr.Checkbox(value=False), None, [topicCheckbox])
@@ -647,15 +682,15 @@ if __name__ == "__main__":
 
     # gemini client:
     genai_client = genai.Client(api_key="GEMINI_API_KEY")
-
+    # openai_agents:
+    agent_client = openai_agents()
     # 全局变量
-    ai_client = zhipuai_client
-    # ai_client = openai_agents()
+
     stop_inference_flag = False  # 停止推理初始值，全局变量
-    model = 'glm-4-flash'  # 初始假定值，作为全局变量
+    # model = 'glm-4-flash'  # 初始假定值，作为全局变量
     # model = 'openai_agents'  # 初始假定值，作为全局变量
     # streaming_chat = None  # gemini直播聊天对象；全局变量
-    present_message = {}  # 当前消息，全局变量;因为chatbot显示的message与送入模型的message会有所不同;
+    # present_message = {}  # 当前消息，全局变量;因为chatbot显示的message与送入模型的message会有所不同;
 
     demo = gradio_UI()
 

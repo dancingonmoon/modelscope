@@ -18,7 +18,7 @@ client = ZhipuAI(api_key=api_key)
 #     ],
 #     stream=False,
 # )
-# print(response.choices[0].message)
+# print(response.choices[0].gradio_message)
 # for chunk in response:
 #     print(chunk.choices[0].delta.content)
 
@@ -67,7 +67,7 @@ def image_to_base64(image_path):
 #     messages=messages,
 # )
 #
-# print(response.choices[0].message.content)
+# print(response.choices[0].gradio_message.content)
 # print(client.files.list)
 
 # 3 向量模型
@@ -144,7 +144,7 @@ prompt_template = """
 # )
 # # for chunk in response:
 # #     print(chunk.choices[0].delta)
-# print(response.choices[0].message.content)
+# print(response.choices[0].gradio_message.content)
 
 # web_search
 question = 'Tucker Carlson与普京的会面,都谈了些什么?'

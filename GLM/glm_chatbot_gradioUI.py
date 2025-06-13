@@ -103,7 +103,7 @@ def glm_inference(
     except Exception as e:
         print("Exception encountered:", str(e))
         history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
-        # print(history)
+        # print(history_llm)
         yield history
 
 
@@ -238,7 +238,7 @@ if __name__ == "__main__":
                 interactive=True,
                 file_count="multiple",
                 lines=1,
-                placeholder="Enter message or upload file...",
+                placeholder="Enter gradio_message or upload file...",
                 show_label=False,
                 scale=20,
             )

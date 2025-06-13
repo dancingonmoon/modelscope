@@ -53,8 +53,8 @@ class get_accessToken:
             # expireIn = response.body.expire_in # 有效时长 7200秒.即2小时;
             return response.body
         except Exception as err:
-            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
-            # err 中含有 code 和 message 属性，可帮助开发定位问题
+            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.gradio_message):
+            # err 中含有 code 和 gradio_message 属性，可帮助开发定位问题
             return err
 
 
@@ -95,8 +95,8 @@ class SendMessage_groupChat:
             client.private_chat_send_with_options(private_chat_send_request, private_chat_send_headers,
                                                   util_models.RuntimeOptions())
         except Exception as err:
-            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
-                # err 中含有 code 和 message 属性，可帮助开发定位问题
+            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.gradio_message):
+                # err 中含有 code 和 gradio_message 属性，可帮助开发定位问题
             print(err)
 
     @staticmethod
@@ -116,7 +116,7 @@ class SendMessage_groupChat:
                                                               util_models.RuntimeOptions())
         except Exception as err:
             if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
-                # err 中含有 code 和 message 属性，可帮助开发定位问题
+                # err 中含有 code 和 gradio_message 属性，可帮助开发定位问题
                 pass
 
 
@@ -160,8 +160,8 @@ class SendMessage_userChat:
             client.batch_send_otowith_options(batch_send_otorequest, batch_send_otoheaders,
                                               util_models.RuntimeOptions())
         except Exception as err:
-            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
-            # err 中含有 code 和 message 属性，可帮助开发定位问题
+            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.gradio_message):
+            # err 中含有 code 和 gradio_message 属性，可帮助开发定位问题
             print(err)
 
     @staticmethod
@@ -190,7 +190,7 @@ class SendMessage_userChat:
                                                           util_models.RuntimeOptions())
         except Exception as err:
             if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
-                # err 中含有 code 和 message 属性，可帮助开发定位问题
+                # err 中含有 code 和 gradio_message 属性，可帮助开发定位问题
                 pass
 
 

@@ -334,8 +334,8 @@ class OpenAPI_SendMessage:
             response = response.body
 
         except Exception as err:
-            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
-            # err 中含有 code 和 message 属性，可帮助开发定位问题
+            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.gradio_message):
+            # err 中含有 code 和 gradio_message 属性，可帮助开发定位问题
             response = err
 
         return response
@@ -363,7 +363,7 @@ class OpenAPI_SendMessage:
                                                              util_models.RuntimeOptions())
             response = response.body
         except Exception as err:
-            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.message):
-            # err 中含有 code 和 message 属性，可帮助开发定位问题
+            # if not UtilClient.empty(err.code) and not UtilClient.empty(err.gradio_message):
+            # err 中含有 code 和 gradio_message 属性，可帮助开发定位问题
             response = err
         return response

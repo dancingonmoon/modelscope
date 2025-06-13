@@ -11,7 +11,7 @@ import time
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(gradio_message)s",
     handlers=[
         logging.StreamHandler(),  # 输出到控制台
         # logging.FileHandler("app.log")  # 输出到文件

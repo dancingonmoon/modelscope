@@ -13,7 +13,7 @@ def inference(message, history):
     try:
         flattened_history = [item for sublist in history for item in sublist]
         full_message = " ".join(flattened_history + [message])
-        messages_litellm = [{"role": "user", "content": full_message}]  # litellm message format
+        messages_litellm = [{"role": "user", "content": full_message}]  # litellm gradio_message format
         partial_message = ""
         for chunk in litellm.completion(model=model,
                                         # add `openai/` prefix to model so litellm knows to route to OpenAI
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     #     model=model,
     #     messages=[{"role": "user", "content": "请介绍喀山这个城市"}]
     # )
-    # print(response.choices[0].message.content)
+    # print(response.choices[0].gradio_message.content)
 
     # audio_path = "H:/music/让我们荡起双桨 - 黑鸭子.mp3"
     #
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     #         }
     #     ],
     # )
-    # print(response.choices[0].message.content)
+    # print(response.choices[0].gradio_message.content)
 
     # openAI compatible endpoint   : GLM
 
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     #         }
     #     }]
     # )
-    # print(response.choices[0].message.content)
+    # print(response.choices[0].gradio_message.content)
     # print(response)
 
     # gradio web:

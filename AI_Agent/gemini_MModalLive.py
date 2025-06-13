@@ -37,7 +37,7 @@ client = genai.Client(
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(gradio_message)s",
     handlers=[
         logging.StreamHandler(),  # 输出到控制台
         # logging.FileHandler("app.log")  # 输出到文件
@@ -73,7 +73,7 @@ class GeminiLiveStream:
     Opens a websocket connecting to the Live API.Calls the initial setup method.
     Then enters the main loop where it alternates between send and recv until send returns False.
     send - Sends input text to the api, as screen snap video as well
-    The send method collects input text from the user, wraps it in a client_content message, and sends it to the model.
+    The send method collects input text from the user, wraps it in a client_content gradio_message, and sends it to the model.
     If the user sends a q this method returns False to signal that it's time to quit.
     recv - Collects audio from the API and plays it
     The recv method collects audio chunks in a loop. It breaks out of the loop once the model sends a turn_complete method, and then plays the audio.
@@ -164,7 +164,7 @@ class GeminiLiveStream:
         while True:
             text = await asyncio.to_thread(
                 input,
-                "message > ",
+                "gradio_message > ",
             )
             if text in ["pause", "p"]:
                 self.pause_stream = True
@@ -195,7 +195,7 @@ class GeminiLiveStream:
                     self.audio_out_queue.put_nowait(data)
                     # await self.audio_out_queue.put(data) # 使用await，可以保证，put操作是同步的，不会出现阻塞;
                 else:
-                    self.logger.debug(f"Unhandled server message! - {response}")
+                    self.logger.debug(f"Unhandled server gradio_message! - {response}")
                     if text := response.text:
                         print(text, end="")
 
