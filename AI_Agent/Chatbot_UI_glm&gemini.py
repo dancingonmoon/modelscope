@@ -187,7 +187,7 @@ def add_message_v2(history_gradio: list[gr.ChatMessage] = None, history_llm: lis
 
 def get_last_user_messages(history):
     """
-    在history的列表中，寻找最后一个assistant消息之后的全部user消息。(history列表中，最后的消息总是user消息)
+    在刚刚完成role:user输入后的history的列表中，寻找最后一个assistant消息之后的全部user消息。(history列表中，最后的消息总是user消息)
     :param history:
     :return:
     """
@@ -199,6 +199,21 @@ def get_last_user_messages(history):
             elif msg["role"] == "assistant":
                 break
     return user_msg[::-1]
+
+def undo_history(history:list[dict],):
+    """
+    移除history中最后一个role不是user的那组消息。最后一组消息role，如为user， 不变化；否则，/assistant/system/model,则移除该组消息
+    :param history:
+    :return:
+    """
+    index = -1
+    if history:  # 非空列表
+        for index, msg in enumerate(reversed(history)):
+            if msg.get("role", None) != "user":
+                continue
+            else:
+                break
+    return history[:index+1+1]
 def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model:str=None, stop_inference: bool = False ):
     if 'gemini' in model.lower():
         for history_gradio, history_llm in gemini_inference(history_gradio, history_llm, new_topic, model=model,genai_client=genai_client,  stop_inference_flag=stop_inference):
@@ -445,7 +460,6 @@ def vote(data: gr.LikeData):
         logging.info(f"You upvoted this response:  {data.index}, {data.value} ")
     else:
         logging.info(f"You downvoted this response: {data.index}, {data.value}")
-        logging.info(f"You downvoted this response: {data.index}, {data.value}")
 
 
 def handle_undo(history, undo_data: gr.UndoData):
@@ -453,24 +467,22 @@ def handle_undo(history, undo_data: gr.UndoData):
 
 
 def handle_retry(
-        history: str | list[dict],
+        history_gradio: list[dict],
+        history_llm: list[dict],
         new_topic: bool,
+        model: str,
+        stop_inference_flag: bool,
         retry_data: gr.RetryData,
 ):
-    new_history = history[: retry_data.index]
-    previous_prompt = history[retry_data.index]
-    new_history.append(previous_prompt)
-    if 'glm' in model:
-        yield from glm_inference(new_history, new_topic)
-    elif 'gemini' in model:
-        yield from gemini_inference(new_history, new_topic)
-
-
+    last_history_gradio = history_gradio[: retry_data.index+1]
+    last_history_llm = undo_history(history_llm)
+    # print(f"last_history_llm:{last_history_llm}")
+    # print(f"last_history_gradio:{last_history_gradio}")
+    for _gradio, _llm in inference(last_history_gradio, last_history_llm, new_topic, model,stop_inference_flag):
+        yield _gradio, _llm
 def stop_inference_flag_True():
     stop_inference_flag = True
     return stop_inference_flag
-
-
 
 def stop_inference_flag_False():
     stop_inference_flag = False
@@ -571,8 +583,8 @@ def gradio_UI():
         chatbot.like(vote, None, None)
         chatbot.retry(
             handle_retry,
-            [chatbot, topicCheckbox],
-            [chatbot],
+            [chatbot, history_llm, topicCheckbox, model, stop_inference_flag],
+            [chatbot,history_llm],
         )
 
         chat_msg = chat_input.submit(
