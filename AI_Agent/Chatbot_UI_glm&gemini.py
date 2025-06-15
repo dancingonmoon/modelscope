@@ -129,8 +129,8 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
     return input_item
 
 
-def add_message_v2(history_gradio: list[gr.ChatMessage] = None, history_llm: list[dict] = None,
-                   gradio_message: str | dict[str, str | list] = None, model: str = None):
+def add_message(history_gradio: list[gr.ChatMessage] = None, history_llm: list[dict] = None,
+                gradio_message: str | dict[str, str | list] = None, model: str = None):
     # gradio gr.MultiModalTextbox() 输出:
     # value= {"text": "sample text", "files": [{'path': "files/ file. jpg", 'orig_name': "file. jpg", 'url': "http:// image_url. jpg ", 'size': 100}]},
     # chatbot gr.Chatbot() 输入与输出：
@@ -210,53 +210,65 @@ def undo_history(history: list[dict], ):
     index = -1
     if history:  # 非空列表
         for index, msg in enumerate(reversed(history)):
-            if msg.get("role", None) != "user":
+            # print(f"undo_history type: {[type(msg) for msg in history]}:{history}")
+            # 此处问题： 当model为gemini时，history：[UserConent(parts=[...] role='user'),Content(parts=[...] role='model')]
+            if isinstance(msg, dict):
+                if msg.get("role", None) != "user":
+                    continue
+                else:
+                    break
+            elif isinstance(msg, genai.types.Content):
                 continue
-            else:
+            elif isinstance(msg, genai.types.UserContent):
                 break
     return history[:index + 1 + 1]
 
 
-def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
+async def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
               stop_inference: bool = False):
     if 'gemini' in model.lower():
-        for history_gradio, history_llm in gemini_inference(history_gradio, history_llm, new_topic, model=model,
+        async for history_gradio, history_llm in gemini_inference(history_gradio, history_llm, new_topic, model=model,
                                                             genai_client=genai_client,
                                                             stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
     elif 'glm' in model.lower():
-        for history_gradio, history_llm in glm_inference(history_gradio, history_llm, new_topic, model,
+        async for history_gradio, history_llm in glm_inference(history_gradio, history_llm, new_topic, model,
                                                          zhipuai_client=zhipuai_client,
                                                          stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
     elif 'agent' in model.lower():
-        return openai_agents_inference(history_gradio, new_topic, agent=agent_client,
-                                       stop_inference_flag=stop_inference)
+        async for history_gradio, history_llm in openai_agents_inference(history_gradio, history_llm, new_topic,
+                                                                         agent=agent_client,
+                                                                         stop_inference_flag=stop_inference):
+            yield history_gradio, history_llm
+
+# def async_inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
+#               stop_inference: bool = False):
 
 
 async def openai_agents_inference(
-        history: list, new_topic: bool, agent: Agent = None):
+        history_gradio: list[dict], history_llm: list[dict], new_topic: bool, agent: Agent = None,
+        stop_inference_flag: bool = False):
     try:
+        present_message = get_last_user_messages(history_llm)
         if new_topic:
-            #  present_message取自全局变量
-            response = Runner.run_streamed(agent, [present_message])
+            response = Runner.run_streamed(agent, present_message)
         else:
-            # response = asyncio.run(Runner.run(agent, history_llm[:-1].append(present_message)))
-            response = Runner.run_streamed(agent, history)  # 检查是否history与chatbot_display一致
+            response = Runner.run_streamed(agent, history_llm)
 
         present_response = ""
-        history.append({"role": "assistant", "content": present_response})
+        history_gradio.append({"role": "assistant", "content": present_response})
+        history_llm.append({"role": "assistant", "content": present_response})
         async for event in response.stream_events():
             if stop_inference_flag:
-                # print(f"return之前history:{history_llm}")
-                yield history  # 先yield 再return ; 直接return history会导致history不输出
+                yield history_gradio, history_llm  # 先yield 再return ; 直接return history会导致history不输出
                 return
             if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                 print(event.data.delta, end="", flush=True)
                 present_response += event.data.delta
             elif event.type == "agent_updated_stream_event":
                 print(f"Agent updated: {event.new_agent.name}")
-                present_response += f"\n{event.new_agent.name}"
+                present_response += f"\nAgent updated: {event.new_agent.name}"
                 continue
             elif event.type == "run_item_stream_event":
                 if event.item.type == "tool_call_item":
@@ -270,17 +282,18 @@ async def openai_agents_inference(
                     present_response += f"\n-- Message output:\n {ItemHelpers.text_message_output(event.item)}"
                 else:
                     pass  # Ignore other event types
-            history[-1] = {"role": "assistant", "content": present_response}
-            yield history
+            history_gradio[-1] = {"role": "assistant", "content": present_response}
+            history_llm[-1] = {"role": "assistant", "content": present_response}
+            yield history_gradio, history_llm
 
     except Exception as e:
         logging.error("Exception encountered:", str(e))
-        history.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
+        history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
         # print(history_llm)
-        yield history
+        yield history_gradio, history_llm
 
 
-def gemini_inference(
+async def gemini_inference(
         history_gradio: list[dict], history_llm: list[dict], new_topic: bool, genai_client: genai.Client = None,
         model: str = None, stop_inference_flag: bool = False, ):
     # global streaming_chat
@@ -289,7 +302,8 @@ def gemini_inference(
         google_search_tool = Tool(
             google_search=GoogleSearch()
         )
-        present_message = history_llm[-1].get('content')
+        #  当retry后，最后一条消息变成了Conent(parts=[...], role='model')
+        present_message = history_llm[-1].get("content")
         if new_topic:
             # gemeni_model = genai.GenerativeModel(model)
             # streaming_chat = gemeni_model.start_chat(history_llm=None, )
@@ -332,7 +346,7 @@ def gemini_inference(
         yield history_gradio, history_llm
 
 
-def glm_inference(history_gradio: list[dict], history_llm: list[dict],
+async def glm_inference(history_gradio: list[dict], history_llm: list[dict],
                   new_topic: bool, model: str = None, zhipuai_client: ZhipuAI = None,
                   stop_inference_flag: bool = False, ):
     global present_message
@@ -412,6 +426,7 @@ def zhipuai_messages_api(messages: str | list[dict], model: str, zhipuai_client:
             }
         ]
 
+    # 同步调用 （stream模式）
     response = zhipuai_client.chat.completions.create(
         model=model,  # 填写需要调用的模型名称
         tools=tools,
@@ -487,7 +502,7 @@ def handle_undo(history, undo_data: gr.UndoData):
     return history[: undo_data.index], history[undo_data.index]["content"]
 
 
-def handle_retry(
+async def handle_retry(
         history_gradio: list[dict],
         history_llm: list[dict],
         new_topic: bool,
@@ -499,7 +514,7 @@ def handle_retry(
     last_history_llm = undo_history(history_llm)
     # print(f"last_history_llm:{last_history_llm}")
     # print(f"last_history_gradio:{last_history_gradio}")
-    for _gradio, _llm in inference(last_history_gradio, last_history_llm, new_topic, model, stop_inference_flag):
+    async for _gradio, _llm in inference(last_history_gradio, last_history_llm, new_topic, model, stop_inference_flag):
         yield _gradio, _llm
 
 
@@ -581,7 +596,6 @@ def gradio_UI():
                     "glm-4-air",
                     "glm-4-plus",
                     "glm-4-alltools",
-                    "gemini-1.5-pro",
                     "gemini-2.0-flash",
                     "gemini-2.0-flash",
                     "gemini-2.5-flash-preview-05-20",
@@ -607,7 +621,7 @@ def gradio_UI():
         )
 
         chat_msg = chat_input.submit(
-            add_message_v2,
+            add_message,
             [chatbot, history_llm, chat_input, model],
             [chatbot, history_llm, chat_input, stop_inference_button],
             queue=False,
@@ -643,14 +657,6 @@ if __name__ == "__main__":
     genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     # openai_agents:
     agent_client = openai_agents()
-    # 全局变量
-
-    stop_inference_flag = False  # 停止推理初始值，全局变量
-    # model = 'glm-4-flash'  # 初始假定值，作为全局变量
-    # model = 'openai_agents'  # 初始假定值，作为全局变量
-    # streaming_chat = None  # gemini直播聊天对象；全局变量
-    # present_message = {}  # 当前消息，全局变量;因为chatbot显示的message与送入模型的message会有所不同;
 
     demo = gradio_UI()
-
     demo.queue().launch(server_name='0.0.0.0')
