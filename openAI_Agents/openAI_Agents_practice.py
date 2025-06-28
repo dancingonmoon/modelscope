@@ -56,8 +56,8 @@ async def agents_async_chat_once(agent: Agent, input_items: list[TResponseInputI
                     print("-- Tool was called")
                 elif event.item.type == "tool_call_output_item":
                     print(f"-- Tool output: {event.item.output}")
-                elif event.item.type == "message_output_item":
-                    print(f"-- Message output:\n {ItemHelpers.text_message_output(event.item)}")
+                # elif event.item.type == "message_output_item": # 如果完成后一次性输出
+                #     print(f"-- Message output:\n {ItemHelpers.text_message_output(event.item)}")
                 else:
                     pass  # Ignore other event types
     return result

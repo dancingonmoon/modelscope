@@ -227,18 +227,18 @@ def undo_history(history: list[dict], ):
 async def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
               stop_inference: bool = False):
     if 'gemini' in model.lower():
-        async for history_gradio, history_llm in gemini_inference(history_gradio, history_llm, new_topic, model=model,
+        for history_gradio, history_llm in gemini_inference(history_gradio, history_llm, new_topic, model=model,
                                                             genai_client=genai_client,
                                                             stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
     elif 'glm' in model.lower():
-        async for history_gradio, history_llm in glm_inference(history_gradio, history_llm, new_topic, model,
+        for history_gradio, history_llm in glm_inference(history_gradio, history_llm, new_topic, model,
                                                          zhipuai_client=zhipuai_client,
                                                          stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
     elif 'agent' in model.lower():
         async for history_gradio, history_llm in openai_agents_inference(history_gradio, history_llm, new_topic,
-                                                                         agent=agent_client,
+                                                                         agent=agent_client.agent,
                                                                          stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
 
@@ -267,8 +267,8 @@ async def openai_agents_inference(
                 print(event.data.delta, end="", flush=True)
                 present_response += event.data.delta
             elif event.type == "agent_updated_stream_event":
-                print(f"Agent updated: {event.new_agent.name}")
-                present_response += f"\nAgent updated: {event.new_agent.name}"
+                # print(f"Agent updated: {event.new_agent.name}")
+                present_response += f"\nAgent updated: {event.new_agent.name}\n"
                 continue
             elif event.type == "run_item_stream_event":
                 if event.item.type == "tool_call_item":
@@ -276,10 +276,10 @@ async def openai_agents_inference(
                     present_response += "\n-- Tool was called"
                 elif event.item.type == "tool_call_output_item":
                     print(f"-- Tool output: {event.item.output}")
-                    present_response += f"\n-- Tool output: {event.item.output}"
-                elif event.item.type == "message_output_item":
-                    print(f"-- Message output:\n {ItemHelpers.text_message_output(event.item)}")
-                    present_response += f"\n-- Message output:\n {ItemHelpers.text_message_output(event.item)}"
+                    present_response += f"\n-- Tool output: {event.item.output}\n"
+                # elif event.item.type == "message_output_item": # 如果完成后一次性输出
+                #     print(f"\n-- Message output:\n {ItemHelpers.text_message_output(event.item)}")
+                #     present_response += f"\n-- Message output:\n {ItemHelpers.text_message_output(event.item)}"
                 else:
                     pass  # Ignore other event types
             history_gradio[-1] = {"role": "assistant", "content": present_response}
@@ -293,7 +293,7 @@ async def openai_agents_inference(
         yield history_gradio, history_llm
 
 
-async def gemini_inference(
+def gemini_inference(
         history_gradio: list[dict], history_llm: list[dict], new_topic: bool, genai_client: genai.Client = None,
         model: str = None, stop_inference_flag: bool = False, ):
     # global streaming_chat
@@ -346,7 +346,7 @@ async def gemini_inference(
         yield history_gradio, history_llm
 
 
-async def glm_inference(history_gradio: list[dict], history_llm: list[dict],
+def glm_inference(history_gradio: list[dict], history_llm: list[dict],
                   new_topic: bool, model: str = None, zhipuai_client: ZhipuAI = None,
                   stop_inference_flag: bool = False, ):
     global present_message
@@ -488,6 +488,7 @@ def openai_agents():
                                        handoff_description=handoff_description
 
                                        )
+
     return Qwen3_agent
 
 
