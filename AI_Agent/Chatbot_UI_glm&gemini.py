@@ -224,8 +224,45 @@ def undo_history(history: list[dict], ):
     return history[:index + 1 + 1]
 
 
-async def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
+def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
               stop_inference: bool = False):
+    """
+    仅针对非异步函数的gemini以及glm模型，以实现yield生成器实现stream输出；当那种async异步函数定义的inference需要在async异步函数中执行，否则报错；
+    :param history_gradio:
+    :param history_llm:
+    :param new_topic:
+    :param model:
+    :param stop_inference:
+    :return:
+    """
+    if 'gemini' in model.lower():
+        for history_gradio, history_llm in gemini_inference(history_gradio, history_llm, new_topic, model=model,
+                                                            genai_client=genai_client,
+                                                            stop_inference_flag=stop_inference):
+            yield history_gradio, history_llm
+    elif 'glm' in model.lower():
+        for history_gradio, history_llm in glm_inference(history_gradio, history_llm, new_topic, model,
+                                                         zhipuai_client=zhipuai_client,
+                                                         stop_inference_flag=stop_inference):
+            yield history_gradio, history_llm
+    # elif 'agent' in model.lower():  #  openai_agents_inference()需要异步async函数
+    #     async for history_gradio, history_llm in openai_agents_inference(history_gradio, history_llm, new_topic,
+    #                                                                      agent=agent_client.agent,
+    #                                                                      stop_inference_flag=stop_inference):
+    #         yield history_gradio, history_llm
+
+
+async def async_inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
+                          stop_inference: bool = False):
+    """
+    异步函数中，对于glm及gemini这种非异步的函数inference会导致非流式输出,yield生成器，经过异步函数后，可以推理，但不再是stream输出，而是一次性输出；对于openaiAgents这种异步函数定义的推理，也需要在异步函数中执行infrence，实现stream输出；
+    :param history_gradio:
+    :param history_llm:
+    :param new_topic:
+    :param model:
+    :param stop_inference:
+    :return:
+    """
     if 'gemini' in model.lower():
         for history_gradio, history_llm in gemini_inference(history_gradio, history_llm, new_topic, model=model,
                                                             genai_client=genai_client,
@@ -241,9 +278,6 @@ async def inference(history_gradio: list[dict], history_llm: list[dict], new_top
                                                                          agent=agent_client.agent,
                                                                          stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
-
-# def async_inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
-#               stop_inference: bool = False):
 
 
 async def openai_agents_inference(
@@ -628,11 +662,12 @@ def gradio_UI():
             queue=False,
         )
         bot_msg = chat_msg.then(
-            inference,
+            async_inference,  # 如果是glm即gemini同步函数推理的模型，可以使用inference函数，这样可以实现流式输出；使用async_inference函数，可以正常推理，但不能实现流式输出。
             [chatbot, history_llm, topicCheckbox, model, stop_inference_flag],
             [chatbot, history_llm],
             api_name="bot_response",
         )
+
         bot_msg.then(lambda: gr.Checkbox(value=False), None, [topicCheckbox])
         bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
         bot_msg.then(
