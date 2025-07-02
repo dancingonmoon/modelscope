@@ -82,10 +82,10 @@ async def agents_chat_continuous(agent: Agent, runner_mode: Literal['async', 'st
             print("✅ 对话已结束")
             break
         if enable_fileloading:
-            file_input = input("\n📁 请输入图片或者文档路径(输入quit退出):")
+            file_input = input("\n📁 请输入图片或者文档路径(输入quit,q,退出):")
             file_input = file_input.strip("'\"")  # 文件路径去除首位引号，否则会pathlib.Path认为字符串
             file_path = pathlib.Path(file_input)
-            if file_input not in ['cancel', 'no_file', 'quit']:
+            if file_input not in ['cancel', 'no_file', 'quit', 'q']:
                 if file_path.exists() and file_path.is_file():
                     if file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp',
                                                     '.heic']:
@@ -96,7 +96,7 @@ async def agents_chat_continuous(agent: Agent, runner_mode: Literal['async', 'st
                     print(f"✅ 对话已结束,{file_path.suffix.lower()}图片格式不支持")
                     break
             else:
-                print("✅ 对话已结束, 文档不是文件或者不存在")
+                print("✅ 没有文件上传，或者文件上传取消。")
         input_item.append({"role": "user", "content": msg_input})
         result = await agents_async_chat_once(agent=agent, input_items=input_item, runner_mode=runner_mode)
         input_item = result.to_input_list()
