@@ -7,7 +7,7 @@ from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai
     function_tool, TResponseInputItem, ItemHelpers
 from agents.model_settings import ModelSettings
 from agents.mcp import MCPServer, MCPServerStdio, MCPServerSse, MCPServerStreamableHttp
-
+from agents.agent_output import AgentOutputSchemaBase
 from rich import print
 from rich.markdown import Markdown
 from typing import Literal
@@ -183,6 +183,7 @@ class openAI_Agents_create:
                  enable_citation: bool = True, citation_format: bool = "[ref_<number>]", search_strategy="pro",
                  tool_choice: str = None, parallel_tool_calls: bool = False, tools: list = None,
                  custom_extra_body: dict = None,
+                 output_type: type[any] | AgentOutputSchemaBase | None = None
                  ):
         """
         OpenAI-Agents初始化
@@ -194,21 +195,24 @@ class openAI_Agents_create:
         :param base_url: base_url, 譬如:'http://localhost:8000/v1'
         :param api_key:  模型api-key
         :param handoffs: 分诊agent列表
-        :param handoff_description: A description of the agent. This is used when the agent is used as a handoff, so that an
-    LLM knows what it does and when to invoke it
+        :param handoff_description: A description of the agent. This is used when the agent is used as a handoff, so that an LLM knows what it does and when to invoke it
         :param enable_thinking: 对于Qwen模型，仅在stream打开时，使用；
-        :param enable_search: # 开启联网搜索的参数
-        :param force_search: # 强制开启联网搜索
-        :param enable_source: # 使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
-        :param enable_citation: # 开启角标标注功能
-        :param citation_format: # 角标形式为[ref_i]
+        :param enable_search:  开启联网搜索的参数
+        :param force_search:  强制开启联网搜索
+        :param enable_source:  使返回结果包含搜索来源的信息，OpenAI 兼容方式暂不支持返回
+        :param enable_citation:  开启角标标注功能
+        :param citation_format:  角标形式为[ref_i]
         :param search_strategy: "pro"时,模型将搜索10条互联网信息
         :param instruction: 例如: "你是一个乐于助人的助理，按照用户需求，你先画图，再运行代码...."
         :param tools: 列表,包含自定义function_tool,或其它工具
         :param tool_choice: None, 'auto' 等
         :param parallel_tool_calls: bool
         :param custom_extra_body: dict 当custom_body != None时，将自定义extra_body,
-
+        :param output_type: The type of the output object. If not provided, the output will be `str`. In most cases, you should pass a regular Python type (e.g. a dataclass, Pydantic model, TypedDict, etc).
+                            You can customize this in two ways:
+                            1. If you want non-strict schemas, pass `AgentOutputSchema(MyClass, strict_json_schema=False)`.
+                            2. If you want to use a custom JSON schema (i.e. without using the SDK's automatic schema)
+                            creation, subclass and pass an `AgentOutputSchemaBase` subclass.
         """
         if api_key is None:
             api_key = os.getenv("DASHSCOPE_API_KEY")
@@ -255,6 +259,8 @@ class openAI_Agents_create:
             self.agent_params['handoffs'] = handoffs
         if handoff_description is not None:
             self.agent_params['handoff_description'] = handoff_description
+        if output_type is not None:
+            self.agent_params['output_type'] = output_type
 
         self.agent = Agent(**self.agent_params)
         self.instruction = instruction

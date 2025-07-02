@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import os
+from typing import Literal
+from dataclasses import dataclass
 from openAI_Agents.openAI_Agents_practice import openAI_Agents_create, save2file, _Qwen_MT_func
-
+from agents import Agent, Runner,TResponseInputItem, ItemHelpers
 import asyncio
 def qwen_VL():
     """
@@ -67,9 +69,13 @@ def qwen_VL():
     #                                                    mcp_params=mcp_params,
     #                                                    mcp_io_methods=mcp_io_methods)
     return Qwen3_agent
-
-def gemini_Translate():
-    model = "gemini-2.5-flash"
+@dataclass
+class EvaluationFeedback:
+    feedback: str
+    score: Literal["pass", "needs_improvement", "fail"]
+def gemini_translate_agent():
+    translate_model = "gemini-2.5-flash"
+    evaluation_model = "gemini-1.5-pro"
     api_key = os.getenv("GEMINI_API_KEY")
     base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
     extra_body = {
@@ -82,23 +88,71 @@ def gemini_Translate():
             }
         }
     }
-    agent_instruction = """
+    translate_agent_instruction = """
     你是一名翻译官，具备各类语言的文字，文档的翻译工作；并且根据原文的文体，原文谈及的领域，阅读对象，语气，使用合适的语言和文字，问题，语气来翻译，翻译结果专业，贴切。
+    """
+    evaluate_agent_instruction = """
+    1.你是一个翻译评价家，根据翻译结果，判断翻译质量是否合格;
+    2.如果不合格的话，你需要给出反馈意见，指明翻译需要改进的地方;
+    3.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格的决定。
     """
 
     translate_agent = openAI_Agents_create(
         agent_name='gemini2.5_flash_translator',
-        instruction=agent_instruction,
-        model=model,
+        instruction=translate_agent_instruction,
+        model=translate_model,
         base_url=base_url,
         api_key=api_key,
         custom_extra_body=extra_body,
         tools=[save2file]
     )
-    return translate_agent
+    evaluate_agent = openAI_Agents_create(
+        agent_name='gemini1.5_pro_evaluation',
+        instruction=evaluate_agent_instruction,
+        model=evaluation_model,
+        base_url=base_url,
+        api_key=api_key,
+        output_type=EvaluationFeedback
+
+    )
+
+
+    return translate_agent, evaluate_agent
+
+
+async def gemini_translator(translate_agent:Agent, evaluate_agent:Agent, input_items: list[TResponseInputItem] | TResponseInputItem):
+
+    while True:
+        # translate_result = await translate_agent.async_chat_once(input_items)
+        translate_result = await Runner.run(translate_agent, input_items)
+
+        input_items = translate_result.to_input_list()
+        latest_outline = ItemHelpers.text_message_outputs(translate_result.new_items)
+        print("translation generated")
+
+        evaluator_result = await Runner.run(evaluate_agent, input_items)
+        result: EvaluationFeedback = evaluator_result.final_output
+        print(f"Evaluator score: {result.score}")
+
+        if result.score == "pass":
+            print("translation is good enough, exiting.")
+            break
+
+        print("Re-running with feedback")
+
+        input_items.append({"content": f"Feedback: {result.feedback}", "role": "user"})
+
+    print(f"Final translation: {latest_outline}")
+    return latest_outline
 
 
 if __name__ == '__main__':
-    # agent = qwen_VL()
-    agent = gemini_Translate()
-    asyncio.run(agent.chat_continuous(runner_mode='stream', enable_fileloading=True))
+    agent = qwen_VL()
+    # asyncio.run(agent.chat_continuous(runner_mode='stream', enable_fileloading=True))
+
+    translate_agent, evaluate_agent = gemini_translate_agent()
+    msg = input("天下为公")
+    input_items: list[TResponseInputItem] = [{"content": msg, "role": "user"}]
+    asyncio.run(gemini_translator(translate_agent=translate_agent.agent,
+                                  evaluate_agent=evaluate_agent.agent,
+                                  input_items=input_items))
