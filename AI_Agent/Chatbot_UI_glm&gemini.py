@@ -16,7 +16,7 @@ from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai
     function_tool, TResponseInputItem, ItemHelpers
 from openai.types.responses import ResponseTextDeltaEvent
 from openAI_Agents.openAI_Agents_practice import openAI_Agents_create, save2file, _Qwen_MT_func
-
+from openAI_Agents.agents_warehouse import qwen_VL, gemini_translate_agent,gemini_translator
 import base64
 from typing import Literal
 import json
@@ -692,7 +692,13 @@ if __name__ == "__main__":
     # gemini client:
     genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     # openai_agents:
-    agent_client = openai_agents()
+    # agent_client = openai_agents()
+    agent_client = qwen_VL()
+    # translate_agent, evaluate_agent = gemini_translate_agent()
+    # agent_client = gemini_translator(translate_agent=translate_agent.agent,
+    #                                  evaluate_agent=evaluate_agent.agent,
+    #                                  )
+
 
     demo = gradio_UI()
     demo.queue().launch(server_name='0.0.0.0')

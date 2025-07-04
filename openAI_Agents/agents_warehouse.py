@@ -75,7 +75,8 @@ class EvaluationFeedback:
     score: Literal["pass", "needs_improvement", "fail"]
 def gemini_translate_agent():
     translate_model = "gemini-2.5-flash"
-    evaluation_model = "gemini-1.5-pro"
+    # evaluation_model = "gemini-1.5-pro"
+    evaluation_model = "gemini-2.5-flash"
     api_key = os.getenv("GEMINI_API_KEY")
     base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
     extra_body = {
@@ -112,6 +113,7 @@ def gemini_translate_agent():
         model=evaluation_model,
         base_url=base_url,
         api_key=api_key,
+        custom_extra_body=extra_body,
         output_type=EvaluationFeedback
 
     )
@@ -127,7 +129,7 @@ async def gemini_translator(translate_agent:Agent, evaluate_agent:Agent, input_i
 
         input_items = translate_result.to_input_list()
         latest_outline = ItemHelpers.text_message_outputs(translate_result.new_items)
-        print(f"translation generated:{latest_outline}")
+        print(f"translation generated:\n{latest_outline}")
 
         evaluator_result = await Runner.run(evaluate_agent, input_items)
         result: EvaluationFeedback = evaluator_result.final_output
@@ -143,7 +145,7 @@ async def gemini_translator(translate_agent:Agent, evaluate_agent:Agent, input_i
         input_items.append({"content": f"Feedback: {result.feedback}", "role": "user"})
 
     print(f"Final translation: {latest_outline}")
-    return latest_outline
+    return translate_result
 
 
 if __name__ == '__main__':
