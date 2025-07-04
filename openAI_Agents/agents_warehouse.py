@@ -123,16 +123,16 @@ def gemini_translate_agent():
 async def gemini_translator(translate_agent:Agent, evaluate_agent:Agent, input_items: list[TResponseInputItem] | TResponseInputItem):
 
     while True:
-        # translate_result = await translate_agent.async_chat_once(input_items)
         translate_result = await Runner.run(translate_agent, input_items)
 
         input_items = translate_result.to_input_list()
         latest_outline = ItemHelpers.text_message_outputs(translate_result.new_items)
-        print("translation generated")
+        print(f"translation generated:{latest_outline}")
 
         evaluator_result = await Runner.run(evaluate_agent, input_items)
         result: EvaluationFeedback = evaluator_result.final_output
         print(f"Evaluator score: {result.score}")
+        print(f"Evaluator feedback: {result.feedback}")
 
         if result.score == "pass":
             print("translation is good enough, exiting.")
@@ -147,11 +147,11 @@ async def gemini_translator(translate_agent:Agent, evaluate_agent:Agent, input_i
 
 
 if __name__ == '__main__':
-    agent = qwen_VL()
+    # agent = qwen_VL()
     # asyncio.run(agent.chat_continuous(runner_mode='stream', enable_fileloading=True))
 
     translate_agent, evaluate_agent = gemini_translate_agent()
-    msg = input("天下为公")
+    msg = input("请输入待翻译的语句：")
     input_items: list[TResponseInputItem] = [{"content": msg, "role": "user"}]
     asyncio.run(gemini_translator(translate_agent=translate_agent.agent,
                                   evaluate_agent=evaluate_agent.agent,
