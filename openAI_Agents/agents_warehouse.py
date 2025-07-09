@@ -3,8 +3,10 @@ import os
 from typing import Literal
 from dataclasses import dataclass
 from openAI_Agents.openAI_Agents_practice import openAI_Agents_create, save2file, _Qwen_MT_func
-from agents import Agent, Runner,TResponseInputItem, ItemHelpers
+from agents import Agent, Runner, TResponseInputItem, ItemHelpers
 import asyncio
+
+
 def qwen_VL():
     """
     openAI_Agents,llm为QwenVL,以及Qwen，根据prompt是否有图片，是否使用QwenVL,从而执行图片理解，并带有本地存储工具；
@@ -69,10 +71,14 @@ def qwen_VL():
     #                                                    mcp_params=mcp_params,
     #                                                    mcp_io_methods=mcp_io_methods)
     return Qwen3_agent
+
+
 @dataclass
 class EvaluationFeedback:
     feedback: str
-    score: Literal["pass", "needs_improvement", "fail"]
+    score: Literal["pass", "needs_improvement", "end", "user_comments"]
+
+
 def gemini_translate_agent():
     translate_model = "gemini-2.5-flash"
     # evaluation_model = "gemini-1.5-pro"
@@ -90,16 +96,22 @@ def gemini_translate_agent():
         }
     }
     translate_agent_instruction = """
-    你是一名翻译官，具备各类语言的文字，文档的翻译工作；并且根据原文的文体，原文谈及的领域，阅读对象，语气，使用合适的语言和文字，问题，语气来翻译，翻译结果专业，贴切。
+    你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文谈及的领域，阅读对象，语气，使用合适的语言和文字，问题，语气来翻译的能力，翻译结果专业，贴切。    
+    你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
     """
     evaluate_agent_instruction = """
-    1.你是一个翻译评价家，根据翻译结果，判断翻译质量是否合格;
-    2.如果不合格的话，你需要给出反馈意见，指明翻译需要改进的地方;
-    3.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格的决定。
+    1. 你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，判断翻译质量是否合格，给出评价意见, 你将输出pass, needs_improvement, end三种评价意见;
+        a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要给出反馈意见，指明翻译内容需要改进的地方;
+        b.如果你对翻译内容比较满意，则评估为合格(pass)，请按照正确的输出类型给出评估通过的意见;    
+        c.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格的决定。
+    2. 你还可以根据输入的内容,判断输入是否包含有效的需要待评估的翻译内容,以及是否需要user介入额外提供附加信息或者user的评估意见，或者是否必要继续提供评估意见了:
+        a. 当你判断出输入的内容，没有收到有效的翻译内容，或者说，你没有有效的评估对象的时候，请给出结束(end)的评估意见;
+        b. 当你判断出输入的内容中，有需要user介入以便额外给出附加信息或者评估意见时，请给出user_comments的输出; 请切记：非关键必要，请不需要user介入。 
+        d. 当从输入内容中，判断出，没有必要再给出评估意见时，请直接输出结束(end)    
     """
 
     translate_agent = openAI_Agents_create(
-        agent_name='gemini2.5_flash_translator',
+        agent_name=f'{translate_model}_translator',
         instruction=translate_agent_instruction,
         model=translate_model,
         base_url=base_url,
@@ -108,7 +120,7 @@ def gemini_translate_agent():
         tools=[save2file]
     )
     evaluate_agent = openAI_Agents_create(
-        agent_name='gemini1.5_pro_evaluation',
+        agent_name=f'{evaluation_model}_evaluator',
         instruction=evaluate_agent_instruction,
         model=evaluation_model,
         base_url=base_url,
@@ -118,33 +130,43 @@ def gemini_translate_agent():
 
     )
 
-
     return translate_agent, evaluate_agent
 
 
-async def gemini_translator(translate_agent:Agent, evaluate_agent:Agent, input_items: list[TResponseInputItem] | TResponseInputItem):
-
+async def gemini_translator(translate_agent: Agent, evaluate_agent: Agent,
+                            input_items: list[TResponseInputItem] | TResponseInputItem):
     while True:
         translate_result = await Runner.run(translate_agent, input_items)
 
         input_items = translate_result.to_input_list()
         latest_outline = ItemHelpers.text_message_outputs(translate_result.new_items)
-        print(f"translation generated:\n{latest_outline}")
+        print(f"**translation generated:**\n{latest_outline}")
 
         evaluator_result = await Runner.run(evaluate_agent, input_items)
         result: EvaluationFeedback = evaluator_result.final_output
-        print(f"Evaluator score: {result.score}")
-        print(f"Evaluator feedback: {result.feedback}")
+        print(f"**Evaluator score:** {result.score}")
+        print(f"**Evaluator feedback:** {result.feedback}")
 
         if result.score == "pass":
-            print("translation is good enough, exiting.")
+            print("**translation is good enough, exiting.**")
             break
+        if result.score == "end":
+            print("**evaluation progress end, exiting.**")
+            break
+        if result.score == "user_comments":
+            print("**waiting for user comments**")
+            # user_comments = input("Please enter your comments: ")
+            loop = asyncio.get_event_loop()
+            user_comments = await loop.run_in_executor(None, input, "Please enter your comments: ")
 
-        print("Re-running with feedback")
+            input_items.append({"content": user_comments, "role": "user"})
+            continue
+
+        print("**Re-running with feedback**")
 
         input_items.append({"content": f"Feedback: {result.feedback}", "role": "user"})
 
-    print(f"Final translation: {latest_outline}")
+    print(f"**Final translation:** {latest_outline}")
     return translate_result
 
 
@@ -153,7 +175,12 @@ if __name__ == '__main__':
     # asyncio.run(agent.chat_continuous(runner_mode='stream', enable_fileloading=True))
 
     translate_agent, evaluate_agent = gemini_translate_agent()
-    msg = input("请输入待翻译的语句：")
+    # msg = input("请输入待翻译的语句：")
+    msg = """
+    	集群共网系统：
+是指由运营商负责建设和维护，多个集团或部门可以通过VPN等方式共同使用网络，并实现一定的服务质量保证和优先级功能。通常物流、市政建设、石油化工等部门使用集群共网。共网相比专网更能有效利用有限资源，加强应对紧急、突发事件的快速反应和抗风险的能力，提高管理效率。
+    以上文字是关于集群通信系统（mission-critical communication)的一段文字，请将它翻译成英文
+    """
     input_items: list[TResponseInputItem] = [{"content": msg, "role": "user"}]
     asyncio.run(gemini_translator(translate_agent=translate_agent.agent,
                                   evaluate_agent=evaluate_agent.agent,
