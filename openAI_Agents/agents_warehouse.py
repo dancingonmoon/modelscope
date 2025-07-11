@@ -76,7 +76,7 @@ def qwen_VL():
 @dataclass
 class EvaluationFeedback:
     feedback: str
-    score: Literal["pass", "needs_improvement", "end", "user_comments"]
+    score: Literal["pass", "needs_improvement", "end"]
 
 
 def gemini_translate_agent():
@@ -102,12 +102,9 @@ def gemini_translate_agent():
     evaluate_agent_instruction = """
     1. 你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，判断翻译质量是否合格，给出评价意见, 你将输出pass, needs_improvement, end三种评价意见;
         a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要给出反馈意见，指明翻译内容需要改进的地方;
-        b.如果你对翻译内容比较满意，则评估为合格(pass)，请按照正确的输出类型给出评估通过的意见;    
-        c.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格的决定。
-    2. 你还可以根据输入的内容,判断输入是否包含有效的需要待评估的翻译内容,以及是否需要user介入额外提供附加信息或者user的评估意见，或者是否必要继续提供评估意见了:
-        a. 当你判断出输入的内容，没有收到有效的翻译内容，或者说，你没有有效的评估对象的时候，请给出结束(end)的评估意见;
-        b. 当你判断出输入的内容中，有需要user介入以便额外给出附加信息或者评估意见时，请给出user_comments的输出; 请切记：非关键必要，请不需要user介入。 
-        d. 当从输入内容中，判断出，没有必要再给出评估意见时，请直接输出结束(end)    
+        b.如果你对翻译内容比较满意，则评估为合格(pass)，请按照正确的输出类型给出评估通过的意见; 
+        c.如果你认为，不需要给出评估意见了，则给出结束(end)的评估意见;
+        d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格的决定。
     """
 
     translate_agent = openAI_Agents_create(
@@ -132,9 +129,19 @@ def gemini_translate_agent():
 
     return translate_agent, evaluate_agent
 
-
 async def gemini_translator(translate_agent: Agent, evaluate_agent: Agent,
                             input_items: list[TResponseInputItem] | TResponseInputItem):
+    """
+    两个模型，一个用于翻译，一个用于评估；评估模型有三个输出: pass, needs_inprovement, end;
+    pass: 翻译结果已经很好，不需要再进行改进与评估了;
+    needs_inprovement: 翻译结果需要改进，给出改进意见，翻译模型根据改进意见进行改进;
+    end: 评估模型认为不需要再进行评估的情况，评估结束，不需要再进行评估了;
+
+    :param translate_agent:
+    :param evaluate_agent:
+    :param input_items:
+    :return:
+    """
     while True:
         translate_result = await Runner.run(translate_agent, input_items)
 
@@ -151,16 +158,8 @@ async def gemini_translator(translate_agent: Agent, evaluate_agent: Agent,
             print("**translation is good enough, exiting.**")
             break
         if result.score == "end":
-            print("**evaluation progress end, exiting.**")
+            print("**evaluation progress comes to an end, exiting.**")
             break
-        if result.score == "user_comments":
-            print("**waiting for user comments**")
-            # user_comments = input("Please enter your comments: ")
-            loop = asyncio.get_event_loop()
-            user_comments = await loop.run_in_executor(None, input, "Please enter your comments: ")
-
-            input_items.append({"content": user_comments, "role": "user"})
-            continue
 
         print("**Re-running with feedback**")
 

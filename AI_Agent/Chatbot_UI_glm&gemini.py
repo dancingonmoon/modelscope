@@ -12,11 +12,9 @@ from zhipuai import ZhipuAI
 # import google.generativeai as genai # 旧版
 from google import genai  # 新版
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
-from agents import OpenAIChatCompletionsModel, Agent, Runner, set_default_openai_client, set_tracing_disabled, \
-    function_tool, TResponseInputItem, ItemHelpers
+from agents import  Agent, Runner
 from openai.types.responses import ResponseTextDeltaEvent
-from openAI_Agents.openAI_Agents_practice import openAI_Agents_create, save2file, _Qwen_MT_func
-from openAI_Agents.agents_warehouse import qwen_VL, gemini_translate_agent,gemini_translator
+from openAI_Agents.agents_warehouse import qwen_VL, gemini_translate_agent,EvaluationFeedback
 import base64
 from typing import Literal
 import json
@@ -86,7 +84,7 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
                     # Gemini 1.5 Pro 和 1.5 Flash 最多支持 3,600 个文档页面。文档页面必须采用以下文本数据 MIME 类型之一：
                     # PDF - application/pdf,JavaScript - application/x-javascript、text/javascript,Python - application/x-python、text/x-python,
                     # TXT - text/plain,HTML - text/html, CSS - text/css,Markdown - text/md,CSV - text/csv,XML - text/xml,RTF - text/rtf
-                    content = genai_client.files.upload(file=file_path)  # 环境变量缺省设置GEMINI_API_KEY
+                    content = genai_client.files.upload(path=file)  # 环境变量缺省设置GEMINI_API_KEY
                     contents.append(content)
                 else:
                     print("✅ 文档路径不存在")
@@ -278,6 +276,12 @@ async def async_inference(history_gradio: list[dict], history_llm: list[dict], n
                                                                          agent=agent_client.agent,
                                                                          stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
+    elif 'translator' in model.lower():
+        async for history_gradio, history_llm in translator_agents_inference(history_gradio, history_llm, new_topic,
+                                                                         translator_agent=translate_agent.agent,
+                                                                        evaluator_agent=evaluate_agent.agent,
+                                                                         stop_inference_flag=stop_inference):
+            yield history_gradio, history_llm
 
 
 async def openai_agents_inference(
@@ -286,9 +290,10 @@ async def openai_agents_inference(
     try:
         present_message = get_last_user_messages(history_llm)
         if new_topic:
-            response = Runner.run_streamed(agent, present_message)
+            input_message = present_message
         else:
-            response = Runner.run_streamed(agent, history_llm)
+            input_message = history_llm
+        response = Runner.run_streamed(agent, input_message)
 
         present_response = ""
         history_gradio.append({"role": "assistant", "content": present_response})
@@ -301,7 +306,7 @@ async def openai_agents_inference(
                 print(event.data.delta, end="", flush=True)
                 present_response += event.data.delta
             elif event.type == "agent_updated_stream_event":
-                # print(f"Agent updated: {event.new_agent.name}")
+                print(f"Agent updated: {event.new_agent.name}")
                 present_response += f"\nAgent updated: {event.new_agent.name}\n"
                 continue
             elif event.type == "run_item_stream_event":
@@ -326,7 +331,53 @@ async def openai_agents_inference(
         # print(history_llm)
         yield history_gradio, history_llm
 
+async def translator_agents_inference(
+        history_gradio: list[dict], history_llm: list[dict], new_topic: bool,
+        translator_agent: Agent = None,evaluator_agent:Agent=None,
+        stop_inference_flag: bool = False):
+    try:
+        while True:
+            # stream 输出 translator_agent
+            async for history_gradio, history_llm in openai_agents_inference(history_gradio, history_llm, new_topic,
+                                                                             agent=translator_agent,
+                                                                             stop_inference_flag=stop_inference_flag):
+                yield history_gradio, history_llm
 
+            # input_items = translate_result.to_input_list()
+            # latest_outline = ItemHelpers.text_message_outputs(translate_result.new_items)
+            # print(f"**translation generated:**\n{latest_outline}")
+
+            # 同步输出 evaluator_agent
+            evaluator_result = await Runner.run(evaluate_agent, history_llm)
+            result: EvaluationFeedback = evaluator_result.final_output
+            print(f"**Evaluator score:** {result.score}")
+            print(f"**Evaluator feedback:** {result.feedback}")
+            history_gradio.append ({"role": "assistant", "content": f"Evaluator score: {result.score}"})
+            history_gradio.append ( {"role": "assistant", "content": f"Evaluator feedback: {result.feedback}"})
+
+            if result.score == "pass":
+                print("**translation is good enough, exiting.**")
+                history_gradio.append( {"role": "assistant", "content": "translation is good enough, exiting."})
+                break
+            if result.score == "end":
+                print("**evaluation progress comes to an end, exiting.**")
+                history_gradio.append( {"role": "assistant", "content": "evaluation progress comes to an end, exiting."})
+                break
+
+            print("**Re-running with feedback**")
+            history_gradio.append( {"role": "assistant", "content": "Re-running with feedback"})
+
+            # 以user身份，向translator_agents输入feedback:
+            # input_items.append({"content": f"Feedback: {result.feedback}", "role": "user"})
+            history_llm.append( {"role": "user", "content": f"Feedback: {result.feedback}"})
+
+        # print(f"**Final translation:** {latest_outline}")
+
+    except Exception as e:
+        logging.error("Exception encountered:", str(e))
+        history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
+        # print(history_llm)
+        yield history_gradio, history_llm
 def gemini_inference(
         history_gradio: list[dict], history_llm: list[dict], new_topic: bool, genai_client: genai.Client = None,
         model: str = None, stop_inference_flag: bool = False, ):
@@ -469,61 +520,6 @@ def zhipuai_messages_api(messages: str | list[dict], model: str, zhipuai_client:
     )
     return response
 
-
-def openai_agents():
-    QwenVL_model = 'qwen-vl-plus-latest'
-    base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    QwenVL_agent_instruction = '''
-        您是一个助人为乐的助手，可以根据传入的图片来进行:
-        1)图像问答：描述图像中的内容或者对其进行分类打标，如识别人物、地点、花鸟鱼虫等。
-        2)数学题目解答：解答图像中的数学问题，适用于中小学、大学以及成人教育阶段。
-        3)视频理解：分析视频内容，如对具体事件进行定位并获取时间戳，或生成关键时间段的摘要。
-        4)物体定位：定位图像中的物体，返回外边界矩形框的左上角、右下角坐标或者中心点坐标。
-        5)文档解析：将图像类的文档（如扫描件/图片PDF）解析为 QwenVL HTML格式，该格式不仅能精准识别文本，还能获取图像、表格等元素的位置信息。
-        6)文字识别与信息抽取：识别图像中的文字、公式，或者抽取票据、证件、表单中的信息，支持格式化输出文本；可识别的语言有中文、英语、日语、韩语、阿拉伯语、越南语、法语、德语、意大利语、西班牙语和俄语。
-        你只对带有图片的prompt，做出响应。
-        '''
-    mcp_names = ['file_system']
-    mcp_params = [{
-        "command": "npx",
-        "args": [
-            "-y",
-            "@modelcontextprotocol/server-filesystem",
-            ".",
-        ]}]
-    mcp_io_methods = ["MCPServerStdio"]
-
-    QwenVL_agent = openAI_Agents_create(agent_name='通义千问视觉理解智能体',
-                                        instruction=QwenVL_agent_instruction,
-                                        model=QwenVL_model,
-                                        base_url=None,
-                                        api_key=None,
-                                        tools=[save2file],
-                                        handoff_description="当prompt有图片时,使用QwenVL模型进行视觉推理,并且必要时，按要求将约定的内容存入本地文件"
-                                        )
-
-    Qwen_model = 'qwen-turbo-latest'
-    Qwen_model_instruction = """
-            你是一名助人为乐的助手,
-            1)当prompt中有文件时，请handoff至视觉推理模型;
-            2)否则，就直接回答问题;
-            3) 必要时，可以将约定的内容存入本地文件。
-            """
-    handoff_description = """
-            本模型仅仅处理不带有文件的prompt;当prompt图片文件时，请handoff至视觉推理模型，并给出结果。
-            """
-    Qwen3_agent = openAI_Agents_create(agent_name='通义千问智能体(general)',
-                                       instruction=Qwen_model_instruction,
-                                       model=Qwen_model,
-                                       base_url=None,
-                                       api_key=None,
-                                       tools=[save2file],
-                                       handoffs=[QwenVL_agent.agent],
-                                       handoff_description=handoff_description
-
-                                       )
-
-    return Qwen3_agent
 
 
 def vote(data: gr.LikeData):
@@ -692,12 +688,14 @@ if __name__ == "__main__":
     # gemini client:
     genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     # openai_agents:
-    # agent_client = openai_agents()
+    # 1
     agent_client = qwen_VL()
-    # translate_agent, evaluate_agent = gemini_translate_agent()
-    # agent_client = gemini_translator(translate_agent=translate_agent.agent,
+    # 2
+    translate_agent, evaluate_agent = gemini_translate_agent()
+    # translator = gemini_translator(translate_agent=translate_agent.agent,
     #                                  evaluate_agent=evaluate_agent.agent,
     #                                  )
+
 
 
     demo = gradio_UI()
