@@ -12,9 +12,9 @@ from zhipuai import ZhipuAI
 # import google.generativeai as genai # 旧版
 from google import genai  # 新版
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
-from agents import  Agent, Runner
+from agents import Agent, Runner
 from openai.types.responses import ResponseTextDeltaEvent
-from openAI_Agents.agents_warehouse import qwen_VL, gemini_translate_agent,EvaluationFeedback
+from openAI_Agents.agents_warehouse import qwen_VL, gemini_translate_agent, EvaluationFeedback
 import base64
 from typing import Literal
 import json
@@ -84,7 +84,7 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
                     # Gemini 1.5 Pro 和 1.5 Flash 最多支持 3,600 个文档页面。文档页面必须采用以下文本数据 MIME 类型之一：
                     # PDF - application/pdf,JavaScript - application/x-javascript、text/javascript,Python - application/x-python、text/x-python,
                     # TXT - text/plain,HTML - text/html, CSS - text/css,Markdown - text/md,CSV - text/csv,XML - text/xml,RTF - text/rtf
-                    content = genai_client.files.upload(path=file)  # 环境变量缺省设置GEMINI_API_KEY
+                    content = genai_client.files.upload(file=file_path)  # 环境变量缺省设置GEMINI_API_KEY
                     contents.append(content)
                 else:
                     print("✅ 文档路径不存在")
@@ -243,12 +243,6 @@ def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bo
                                                          zhipuai_client=zhipuai_client,
                                                          stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
-    # elif 'agent' in model.lower():  #  openai_agents_inference()需要异步async函数
-    #     async for history_gradio, history_llm in openai_agents_inference(history_gradio, history_llm, new_topic,
-    #                                                                      agent=agent_client.agent,
-    #                                                                      stop_inference_flag=stop_inference):
-    #         yield history_gradio, history_llm
-
 
 async def async_inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
                           stop_inference: bool = False):
@@ -261,7 +255,7 @@ async def async_inference(history_gradio: list[dict], history_llm: list[dict], n
     :param stop_inference:
     :return:
     """
-    if 'gemini' in model.lower():
+    if 'gemini' in model.lower() and 'translator' not in model.lower():
         for history_gradio, history_llm in gemini_inference(history_gradio, history_llm, new_topic, model=model,
                                                             genai_client=genai_client,
                                                             stop_inference_flag=stop_inference):
@@ -278,9 +272,9 @@ async def async_inference(history_gradio: list[dict], history_llm: list[dict], n
             yield history_gradio, history_llm
     elif 'translator' in model.lower():
         async for history_gradio, history_llm in translator_agents_inference(history_gradio, history_llm, new_topic,
-                                                                         translator_agent=translate_agent.agent,
-                                                                        evaluator_agent=evaluate_agent.agent,
-                                                                         stop_inference_flag=stop_inference):
+                                                                             translator_agent=translator_agent.agent,
+                                                                             evaluator_agent=evaluator_agent.agent,
+                                                                             stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
 
 
@@ -331,9 +325,10 @@ async def openai_agents_inference(
         # print(history_llm)
         yield history_gradio, history_llm
 
+
 async def translator_agents_inference(
         history_gradio: list[dict], history_llm: list[dict], new_topic: bool,
-        translator_agent: Agent = None,evaluator_agent:Agent=None,
+        translator_agent: Agent = None, evaluator_agent: Agent = None,
         stop_inference_flag: bool = False):
     try:
         while True:
@@ -343,33 +338,29 @@ async def translator_agents_inference(
                                                                              stop_inference_flag=stop_inference_flag):
                 yield history_gradio, history_llm
 
-            # input_items = translate_result.to_input_list()
-            # latest_outline = ItemHelpers.text_message_outputs(translate_result.new_items)
-            # print(f"**translation generated:**\n{latest_outline}")
-
             # 同步输出 evaluator_agent
-            evaluator_result = await Runner.run(evaluate_agent, history_llm)
+            evaluator_result = await Runner.run(evaluator_agent, history_llm)
             result: EvaluationFeedback = evaluator_result.final_output
             print(f"**Evaluator score:** {result.score}")
             print(f"**Evaluator feedback:** {result.feedback}")
-            history_gradio.append ({"role": "assistant", "content": f"Evaluator score: {result.score}"})
-            history_gradio.append ( {"role": "assistant", "content": f"Evaluator feedback: {result.feedback}"})
+            history_gradio.append({"role": "assistant", "content": f"**Evaluator score:** {result.score}"})
+            history_gradio.append({"role": "assistant", "content": f"**Evaluator feedback**: {result.feedback}"})
 
             if result.score == "pass":
                 print("**translation is good enough, exiting.**")
-                history_gradio.append( {"role": "assistant", "content": "translation is good enough, exiting."})
+                history_gradio.append({"role": "assistant", "content": "translation is good enough, exiting."})
                 break
             if result.score == "end":
                 print("**evaluation progress comes to an end, exiting.**")
-                history_gradio.append( {"role": "assistant", "content": "evaluation progress comes to an end, exiting."})
+                history_gradio.append({"role": "assistant", "content": "evaluation progress comes to an end, exiting."})
                 break
 
             print("**Re-running with feedback**")
-            history_gradio.append( {"role": "assistant", "content": "Re-running with feedback"})
+            history_gradio.append({"role": "assistant", "content": "Re-running with feedback"})
 
             # 以user身份，向translator_agents输入feedback:
             # input_items.append({"content": f"Feedback: {result.feedback}", "role": "user"})
-            history_llm.append( {"role": "user", "content": f"Feedback: {result.feedback}"})
+            history_llm.append({"role": "user", "content": f"Feedback: {result.feedback}"})
 
         # print(f"**Final translation:** {latest_outline}")
 
@@ -378,6 +369,8 @@ async def translator_agents_inference(
         history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
         # print(history_llm)
         yield history_gradio, history_llm
+
+
 def gemini_inference(
         history_gradio: list[dict], history_llm: list[dict], new_topic: bool, genai_client: genai.Client = None,
         model: str = None, stop_inference_flag: bool = False, ):
@@ -434,7 +427,7 @@ def gemini_inference(
 def glm_inference(history_gradio: list[dict], history_llm: list[dict],
                   new_topic: bool, model: str = None, zhipuai_client: ZhipuAI = None,
                   stop_inference_flag: bool = False, ):
-    global present_message
+    # global present_message
     try:
         if new_topic:
             glm_prompt = get_last_user_messages(history_llm)
@@ -521,7 +514,6 @@ def zhipuai_messages_api(messages: str | list[dict], model: str, zhipuai_client:
     return response
 
 
-
 def vote(data: gr.LikeData):
     if data.liked:
         logging.info(f"You upvoted this response:  {data.index}, {data.value} ")
@@ -545,8 +537,14 @@ async def handle_retry(
     last_history_llm = undo_history(history_llm)
     # print(f"last_history_llm:{last_history_llm}")
     # print(f"last_history_gradio:{last_history_gradio}")
-    async for _gradio, _llm in inference(last_history_gradio, last_history_llm, new_topic, model, stop_inference_flag):
-        yield _gradio, _llm
+    if 'agent' in model or 'translator' in model:  # 异步inference
+        async for _gradio, _llm in async_inference(last_history_gradio, last_history_llm, new_topic, model,
+                                                   stop_inference_flag):
+            yield _gradio, _llm
+    else:  # 同步inference
+        for _gradio, _llm in inference(last_history_gradio, last_history_llm, new_topic, model,
+                                       stop_inference_flag):
+            yield _gradio, _llm
 
 
 def stop_inference_flag_True():
@@ -559,13 +557,13 @@ def stop_inference_flag_False():
     return stop_inference_flag
 
 
-def on_selectDropdown(history_gradio: list[dict], history_llm: list[dict], evt: gr.SelectData) -> None:
+def on_selectDropdown(history_gradio: list[dict], history_llm: list[dict], evt: gr.SelectData):
     # global streaming_chat
     # global model
     model = evt.value
     logging.info(f"下拉菜单选择了{evt.value},当前状态是evt.selected:{evt.selected}")
-    history_gradio = []
-    history_llm = []
+    history_gradio: list[dict] = []
+    history_llm: list[dict] = []
     return history_gradio, history_llm, model
 
 
@@ -622,6 +620,7 @@ def gradio_UI():
             )
             models_dropdown = gr.Dropdown(
                 choices=[
+                    "google_translator_evaluator",
                     "openAI-Agents",
                     "glm-4-flash",
                     "glm-4-air",
@@ -691,12 +690,10 @@ if __name__ == "__main__":
     # 1
     agent_client = qwen_VL()
     # 2
-    translate_agent, evaluate_agent = gemini_translate_agent()
+    translator_agent, evaluator_agent = gemini_translate_agent()
     # translator = gemini_translator(translate_agent=translate_agent.agent,
     #                                  evaluate_agent=evaluate_agent.agent,
     #                                  )
 
-
-
     demo = gradio_UI()
-    demo.queue().launch(server_name='0.0.0.0')
+    demo.queue().launch(server_name='127.0.0.1')
