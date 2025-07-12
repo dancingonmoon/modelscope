@@ -1,11 +1,9 @@
 import os
 import sys
 from pathlib import Path
-
 sys.path.append(str(Path(__file__).parent.parent))  # 添加项目根目录
 
-import asyncio
-
+# import asyncio
 import gradio as gr  # gradio 5.5.0 需要python 3.10以上
 
 from zhipuai import ZhipuAI
@@ -244,6 +242,7 @@ def inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bo
                                                          stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
 
+
 async def async_inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, model: str = None,
                           stop_inference: bool = False):
     """
@@ -342,27 +341,33 @@ async def translator_agents_inference(
             evaluator_result = await Runner.run(evaluator_agent, history_llm)
             result: EvaluationFeedback = evaluator_result.final_output
             print(f"**Evaluator score:** {result.score}")
-            print(f"**Evaluator feedback:** {result.feedback}")
-            history_gradio.append({"role": "assistant", "content": f"**Evaluator score:** {result.score}"})
-            history_gradio.append({"role": "assistant", "content": f"**Evaluator feedback**: {result.feedback}"})
+            history_gradio.append({"role": "assistant", "content": f"**Evaluator score: {result.score}**"})
 
             if result.score == "pass":
                 print("**translation is good enough, exiting.**")
-                history_gradio.append({"role": "assistant", "content": "translation is good enough, exiting."})
+                history_gradio.append({"role": "assistant", "content": "**translation is good enough, exiting.**"})
+                yield history_gradio, history_llm
                 break
-            if result.score == "end":
+            elif result.score == "end":
                 print("**evaluation progress comes to an end, exiting.**")
-                history_gradio.append({"role": "assistant", "content": "evaluation progress comes to an end, exiting."})
+                history_gradio.append(
+                    {"role": "assistant", "content": "**evaluation progress comes to an end, exiting.**"})
+                yield history_gradio, history_llm
                 break
+            elif result.score == "needs_improvement":
+                print(f"**Evaluator feedback:** {result.feedback}")
+                history_gradio.append({"role": "assistant", "content": f"**Evaluator feedback**: {result.feedback}"})
 
-            print("**Re-running with feedback**")
-            history_gradio.append({"role": "assistant", "content": "Re-running with feedback"})
+                print("**Re-running with feedback**")
+                history_gradio.append({"role": "assistant", "content": "**Re-running with feedback**"})
 
-            # 以user身份，向translator_agents输入feedback:
-            # input_items.append({"content": f"Feedback: {result.feedback}", "role": "user"})
-            history_llm.append({"role": "user", "content": f"Feedback: {result.feedback}"})
+                # 以user身份，向translator_agents输入feedback:
+                history_llm.append({"role": "user", "content": f"Feedback: {result.feedback}"})
+                yield history_gradio, history_llm
 
-        # print(f"**Final translation:** {latest_outline}")
+        yield history_gradio, history_llm
+
+
 
     except Exception as e:
         logging.error("Exception encountered:", str(e))
