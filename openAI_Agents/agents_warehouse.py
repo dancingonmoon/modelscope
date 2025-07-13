@@ -89,7 +89,9 @@ def gemini_translate_agent():
         'extra_body': {
             "google": {
                 "thinking_config": {
-                    "thinking_budget": 800,
+                    "thinking_budget": -1,
+                    # 将 thinkingBudget 设置为 -1 可启用动态思考，这意味着模型会根据请求的复杂程度调整预算
+                    # thinkingBudget 仅在 Gemini 2.5 Flash、2.5 Pro 和 2.5 Flash-Lite 中受支持。
                     "include_thoughts": True
                 }
             }

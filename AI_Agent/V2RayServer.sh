@@ -19,3 +19,6 @@ echo "现在可以尝试一下输入 v2ray 回车，即可管理 V2Ray"
 echo "将v2ray 配置的端口暴露给外网： sudo ufw allow PortNo"
 echo "查看某个IP地址下的指定端口，全球访问情况：https://tcp.ping.pe/45.76.163.104:80"
 
+# V2RayServer.sh 文件夹位置: "E:/Python_WorkSpace/modelscope/AI_Agent\V2RayServer.sh"
+# scp "E:/Python_WorkSpace/modelscope/AI_Agent\V2RayServer.sh" root@ :/root
+

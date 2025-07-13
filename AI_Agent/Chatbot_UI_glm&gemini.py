@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).parent.parent))  # 添加项目根目录
 
 # import asyncio
@@ -164,6 +165,8 @@ def add_message(history_gradio: list[gr.ChatMessage] = None, history_llm: list[d
         llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="glm", zhipuai_client=zhipuai_client)
     elif 'gemini' in model.lower():
         llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="gemini", genai_client=genai_client)
+    elif 'translator' in model.lower():  # translator_agent由openai_agents SDK生成;
+        llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="openai_agents")
     else:
         llm_message = [{"role": "user", "content": text}]
 
@@ -300,15 +303,15 @@ async def openai_agents_inference(
                 present_response += event.data.delta
             elif event.type == "agent_updated_stream_event":
                 print(f"Agent updated: {event.new_agent.name}")
-                present_response += f"\nAgent updated: {event.new_agent.name}\n"
+                present_response += f"\n**Agent updated: {event.new_agent.name}**\n"
                 continue
             elif event.type == "run_item_stream_event":
                 if event.item.type == "tool_call_item":
                     print("-- Tool was called")
-                    present_response += "\n-- Tool was called"
+                    present_response += "\n**-- Tool was called**"
                 elif event.item.type == "tool_call_output_item":
                     print(f"-- Tool output: {event.item.output}")
-                    present_response += f"\n-- Tool output: {event.item.output}\n"
+                    present_response += f"\n**-- Tool output: {event.item.output}**\n"
                 # elif event.item.type == "message_output_item": # 如果完成后一次性输出
                 #     print(f"\n-- Message output:\n {ItemHelpers.text_message_output(event.item)}")
                 #     present_response += f"\n-- Message output:\n {ItemHelpers.text_message_output(event.item)}"
@@ -329,6 +332,17 @@ async def translator_agents_inference(
         history_gradio: list[dict], history_llm: list[dict], new_topic: bool,
         translator_agent: Agent = None, evaluator_agent: Agent = None,
         stop_inference_flag: bool = False):
+    """
+    translator_agent为翻译模型，Stream输出翻译结果；再送入evaluator_agent评估模型。evaluator_agent的output_type的key: score及feedback.
+    根据score的值[pass,needs_improvement,end]来判断是否需要进一步改进翻译，或者通过（合格），或者结束（end)
+    :param history_gradio:
+    :param history_llm:
+    :param new_topic:
+    :param translator_agent: 翻译模型Agent
+    :param evaluator_agent: 评估模型Agent
+    :param stop_inference_flag:
+    :return:
+    """
     try:
         while True:
             # stream 输出 translator_agent
@@ -379,7 +393,6 @@ async def translator_agents_inference(
 def gemini_inference(
         history_gradio: list[dict], history_llm: list[dict], new_topic: bool, genai_client: genai.Client = None,
         model: str = None, stop_inference_flag: bool = False, ):
-    # global streaming_chat
 
     try:
         google_search_tool = Tool(
@@ -436,18 +449,7 @@ def glm_inference(history_gradio: list[dict], history_llm: list[dict],
     try:
         if new_topic:
             glm_prompt = get_last_user_messages(history_llm)
-            # glm_prompt = present_message  # 取自全局变量
         else:
-            # glm模型文件作为prompt，非通过type方式，而是通过件文件内容放在到prompt内
-            # history中连续的{"role": "user", "content"：""},是文件链接或内容的删除
-            # glm_prompt = [
-            #     gradio_message
-            #     for gradio_message in history_llm[:-1]  # 最后一条直接取自全局变量present_message
-            #     if not (
-            #             gradio_message["role"] == "user" and isinstance(gradio_message["content"], tuple)
-            #     )
-            # ]
-            # glm_prompt.extend(present_message)
             glm_prompt = history_llm
 
         present_response = ""
