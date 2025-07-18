@@ -115,7 +115,7 @@ class langchain_qwen_llm:
                     is_end = False
                 print(msg.content, end="", flush=True)
 
-    async def multi_turn_conversation(self,):
+    async def multi_turn_conversation(self,thread_id: str = None):
         while True:
             try:
                 user_input = input("\nUser: ")
@@ -123,8 +123,7 @@ class langchain_qwen_llm:
                     print("Goodbye!")
                     break
 
-                # stream_graph_updates(user_input)
-                await self.astreamPrint(user_input)
+                await self.astreamPrint(user_input, thread_id=thread_id)
             except Exception as e:
                 print(f"发生错误: {str(e)}")
                 break
@@ -220,7 +219,14 @@ class graph_agent:
                     print(tool_msg.content, end="", flush=True)
 
 
-    async def multi_turn_conversation(self,):
+    async def multi_turn_conversation(self, stream_mode: Literal['values', 'updates', 'custom', 'messages', 'debug'] = 'updates',
+                       thread_id: str | None = None):
+        """
+        多轮对话(似乎不设置thread_id时，也是具备会话的记忆)
+        :param stream_mode: Literal['values', 'updates', 'custom', 'messages', 'debug']
+        :param thread_id: Short-term memory (thread-level persistence) enables agents to track multi-turn conversations
+        :return:
+        """
         while True:
             try:
                 user_input = input("\nUser: ")
@@ -228,7 +234,8 @@ class graph_agent:
                     print("Goodbye!")
                     break
 
-                await self.astreamPrint(user_input)
+                await self.astreamPrint(user_input, stream_mode=stream_mode,
+                                        thread_id=thread_id)
             except Exception as e:
                 print(f"发生错误: {str(e)}")
                 break
@@ -240,8 +247,7 @@ class graph_agent:
 class State(TypedDict):
     messages: Annotated[list, add_messages]
 
-
-graph_builder = StateGraph(State)
+# graph_builder = StateGraph(State)
 
 # Initialize Tavily Search Tool
 # https://python.langchain.com/docs/integrations/tools/tavily_search/
