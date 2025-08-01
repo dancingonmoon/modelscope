@@ -294,10 +294,10 @@ LocalFileSystem = FileManagementToolkit(
 ).get_tools()
 print(f"LocalFileSystem目录: {LocalFileSystem}")
 
-def Qwen_ML_node(state: QwenML_translationoptions)->Command[Literal[END]]:
+def Qwen_ML_node(state: QwenML_translationoptions)->Command[Literal['END','evaluator']]:
     end = state.end
     if end:
-        state:State = {"messages": "翻译结束")] }
+        trans_agent_state:State = {"messages": "翻译结束"}
         return
     else:
         text, source_lang, target_lang, domains= state.text, state.source_lang, state.target_lang, state.domains,
