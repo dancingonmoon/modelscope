@@ -258,6 +258,7 @@ class State(TypedDict):
 
 
 class QwenML_translationoptions(TypedDict):
+    response: str  # Qwen_ML模型就非翻译请求的响应
     text: str  # 待翻译的文本
     source_lang: str  # "Chinese"
     target_lang: str  # "English"
@@ -294,46 +295,83 @@ LocalFileSystem = FileManagementToolkit(
 ).get_tools()
 print(f"LocalFileSystem目录: {LocalFileSystem}")
 
-def Qwen_ML_node(state: QwenML_translationoptions)->Command[Literal['END','evaluator']]:
-    end = state.end
+
+def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator', END]]:
+    end = state['end']
     if end:
-        trans_agent_state:State = {"messages": "翻译结束"}
-        return
+        return Command(
+            # Specify which agent to call next
+            goto=END,
+            # Update the graph state
+            update={"messages": [state['response']]}
+        )
     else:
-        text, source_lang, target_lang, domains= state.text, state.source_lang, state.target_lang, state.domains,
-    return
+        text, source_lang, target_lang, domains = state["text"], state["source_lang"], state["target_lang"], state[
+            "domains"]
+        extra_body = {
+            "translation_options": {
+                "source_lang": source_lang,
+                "target_lang": target_lang,
+                "domains": domains,
+            }
+        }
+        Qwen_MT = langchain_qwen_llm(model='qwen-mt-plus', extra_body=extra_body)
+        QwenML_trans_agent = langgraph_agent(model=Qwen_MT.model,
+                                             system_instruction="""
+                                                 你是个专业的翻译，善于在多语言之间翻译各个领域的文档
+                                                 """)
+        response = QwenML_trans_agent.agent.invoke(text)
+
+        return Command(
+            goto="evaluator",
+            update={"messages": [response]},
+        )
+
 
 if __name__ == '__main__':
     prompt = '请总结今日国际新闻3条'
     Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, )
     Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
     Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
-    Qwen_MT = langchain_qwen_llm(model='qwen-mt-plus')
+    # Qwen_MT = langchain_qwen_llm(model='qwen-mt-plus')
     QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
                                                structure_output=QwenML_translationoptions,
                                                system_instruction="""
-                                               你对接收的Input进行分析，并做如下分析和输出：
-                                               1) 如果Input不是对一段文本进行语言翻译的请求，请结构化输出: end=True;否则，请结构化输出: end=False ;
-                                               2) 从Input中分析待翻译的文本，并使用一段自然语言(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
-                                               3) 从Input中分析出翻译需求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
+                                               你是一个优秀的助手。你对接收的Input进行分析，并做如下分析和输出：
+                                               1) 对Input是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False; 
+                                               2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
+                                               3) 从Input中取出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
+                                               4) 从Input中分析出翻译需求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
                                                """)
-    QwenML_trans_agent = langgraph_agent(model=Qwen_MT.model,
-                                         system_instruction="""
-                                         你是个专业的翻译，善于在多语言之间翻译各个领域的文档
-                                         """)
+    # QwenML_trans_agent = langgraph_agent(model=Qwen_MT.model,
+    #                                      system_instruction="""
+    #                                      你是个专业的翻译，善于在多语言之间翻译各个领域的文档
+    #                                      """)
     Qwen_VL_agent = langgraph_agent(model=Qwen_VL.model,
                                     structure_output=QwenML_translationoptions,
                                     system_instruction="""
-                                    你善于识图理解，请识别输入的图片，获取其全部内容，然后做如下分析和输出：
-                                    1) 如果Input不是对一段文本进行语言翻译的请求，请结构化输出: end=True;否则，请结构化输出: end=False ;
-                                    2) 从Input中分析待翻译的文本，并使用一段自然语言(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
-                                    3) 从Input中分析出翻译需求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
+                                    你善于识图理解，请识别输入的图片或文件，获取其全部内容，然后做如下分析和输出：
+                                    1) 对Input的text部分(非图片或文件部分），是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False; 
+                                    2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
+                                    3) 从Input中取出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
+                                    4) 从Input中分析出翻译需求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
                                     """)
+
+    builder = StateGraph(State)
+    builder.add_node("QwenML_transOption_agent", QwenML_transOption_agent.agent)
+    builder.add_node("Qwen_ML_node", Qwen_ML_node)
+
+    builder.add_edge(START, "QwenML_transOption_agent")
+
+    translation_agent = builder.compile()
+    graph_png_path = r"./translation_agent_graph.png"
+    translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path)
+
     # graph_draw_path = r"E:/Python_WorkSpace/modelscope/LangGraph/graph_draw.png"
     # # langgraph_agent.agent.get_graph().draw_mermaid_png(output_file_path=graph_draw_path)
 
     # asyncio.run(Qwen_VL_agent.astreamPrint(prompt))
-    asyncio.run(QwenML_transOption_agent.multi_turn_conversation())
+    # asyncio.run(QwenML_transOption_agent.multi_turn_conversation())
     ## 测试 webBaseLoader:
     # url= r"https://www.eastcom.com"
     # docs = asyncio.run(web_txtLoader(url))
@@ -342,3 +380,5 @@ if __name__ == '__main__':
     # file_path = r"E:/Working Documents/Eastcom/产品/无集/2019年中国专网通信产业全景图谱.docx"
     # docs = asyncio.run(docx_txtLoader(file_path))
     # print(docs[0])
+
+
