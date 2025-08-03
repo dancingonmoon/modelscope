@@ -26,6 +26,8 @@ from langgraph.prebuilt.chat_agent_executor import AgentState
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 
+from dataclasses import dataclass
+
 import asyncio
 
 
@@ -264,6 +266,13 @@ class QwenML_translationoptions(TypedDict):
     target_lang: str  # "English"
     domains: str  # 翻译的风格具备某领域的特性，自然语言(英文)描述
     end: bool  # 表明输入是否是关于语言翻译的请求，如True，则结束对话
+    img: bool  # 是否prompt中带有图片，handoff至Qwen_VL
+
+
+@dataclass
+class EvaluationFeedback:
+    feedback: str
+    score: Literal["pass", "needs_improvement", "end"]
 
 
 # graph_builder = StateGraph(State)
@@ -296,6 +305,22 @@ LocalFileSystem = FileManagementToolkit(
 print(f"LocalFileSystem目录: {LocalFileSystem}")
 
 
+def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qwen_VL_agent', END]]:
+    response = QwenML_transOption_agent.agent.invoke(input=state['messages'][-1].content)
+    if response['end']:
+        goto = END
+    else:
+        goto = "Qwen_ML_node"
+    if response['img']:
+        goto = "Qwen_VL_agent"
+
+    return Command(
+        # Specify which agent to call next
+        goto=goto,
+        # Update the graph state
+        update={"messages": [response]})
+
+
 def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator', END]]:
     end = state['end']
     if end:
@@ -323,9 +348,23 @@ def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator
         response = QwenML_trans_agent.agent.invoke(text)
 
         return Command(
-            goto="evaluator",
+            goto='evaluator',
             update={"messages": [response]},
         )
+
+
+def evaluator_node(state: State) -> Command[Literal['translator', END]]:
+    response = evaluator.agent.invoke(input=state)
+    if response.score == 'end' or response.score == 'pass':
+        goto = END
+    elif response.score == "needs_improvement":
+        goto = "translator"
+    else:
+        goto = END
+
+    return Command(
+        goto=goto,
+        update={"messages": [response.feedback]}, )
 
 
 if __name__ == '__main__':
@@ -333,39 +372,57 @@ if __name__ == '__main__':
     Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, )
     Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
     Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
-    # Qwen_MT = langchain_qwen_llm(model='qwen-mt-plus')
     QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
                                                structure_output=QwenML_translationoptions,
                                                system_instruction="""
                                                你是一个优秀的助手。你对接收的Input进行分析，并做如下分析和输出：
-                                               1) 对Input是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False; 
-                                               2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
-                                               3) 从Input中取出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
-                                               4) 从Input中分析出翻译需求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
+                                               1) 首先对Input是否包含图片，做出判断，如果Input包含有图片，则结构化输出: img=True,否则，img=False;
+                                               2) 再Input是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False;
+                                               3) 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
+                                               4) 从Input中取出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
+                                               5) 从Input中分析出翻译需求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
                                                """)
-    # QwenML_trans_agent = langgraph_agent(model=Qwen_MT.model,
-    #                                      system_instruction="""
-    #                                      你是个专业的翻译，善于在多语言之间翻译各个领域的文档
-    #                                      """)
+
     Qwen_VL_agent = langgraph_agent(model=Qwen_VL.model,
                                     structure_output=QwenML_translationoptions,
                                     system_instruction="""
-                                    你善于识图理解，请识别输入的图片或文件，获取其全部内容，然后做如下分析和输出：
+                                    你善于识图理解，请识别Input的图片或文件，获取其全部内容，然后做如下分析和输出：
                                     1) 对Input的text部分(非图片或文件部分），是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False; 
                                     2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
-                                    3) 从Input中取出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
-                                    4) 从Input中分析出翻译需求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
+                                    3) 根据Input中的翻译请求，结合识图理解的内容，整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
+                                    4) 从Input中分析出翻译请求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
                                     """)
 
-    builder = StateGraph(State)
-    builder.add_node("QwenML_transOption_agent", QwenML_transOption_agent.agent)
-    builder.add_node("Qwen_ML_node", Qwen_ML_node)
+    evaluator = langgraph_agent(model=Qwen_plus.model,
+                                structure_output=EvaluationFeedback,
+                                system_instruction="""
+                                你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，判断翻译质量是否合格，给出评价意见, 你将输出pass, needs_improvement, end三种评价意见;
+                                    a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要给出反馈意见，指明翻译内容需要改进的地方;
+                                    b.如果你对翻译内容比较满意，则评估为合格(pass)，请按照正确的输出类型给出评估合格的意见; 
+                                    c.如果你认为，不需要给出评估意见了，请按照正确的输出类型给出结束(end)的评估意见;
+                                    d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格的决定。
+                                """)
 
-    builder.add_edge(START, "QwenML_transOption_agent")
+    translator = langgraph_agent(model=Qwen_plus.model,
+                                 system_instruction="""
+                                  你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文内容的领域，阅读对象，语气，使用恰当的目标语言和文字，术语，语气来翻译原文的能力，翻译结果专业，贴切。    
+                                  你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
+                                  """)
+
+    builder = StateGraph(State)
+    builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
+    builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
+    builder.add_node("Qwen_ML_node", Qwen_ML_node)
+    builder.add_node("evaluator", evaluator_node)
+    builder.add_node("translator", translator.agent)
+
+    builder.add_edge(START, 'QwenML_transOption_node')
+    builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
+    builder.add_edge("translator", "evaluator")
 
     translation_agent = builder.compile()
     graph_png_path = r"./translation_agent_graph.png"
-    translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path)
+    translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
 
     # graph_draw_path = r"E:/Python_WorkSpace/modelscope/LangGraph/graph_draw.png"
     # # langgraph_agent.agent.get_graph().draw_mermaid_png(output_file_path=graph_draw_path)
@@ -380,5 +437,3 @@ if __name__ == '__main__':
     # file_path = r"E:/Working Documents/Eastcom/产品/无集/2019年中国专网通信产业全景图谱.docx"
     # docs = asyncio.run(docx_txtLoader(file_path))
     # print(docs[0])
-
-
