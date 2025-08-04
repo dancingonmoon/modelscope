@@ -1,4 +1,5 @@
 import os
+import json
 from typing import Literal, Union
 
 import typing_extensions
@@ -89,10 +90,10 @@ class langchain_qwen_llm:
             extra_body=extra_body
         )
         if tools is not None:
-            self.model.bind_tools(tools)
+            self.model = self.model.bind_tools(tools)
 
         if structure_output is not None:
-            self.model.with_structured_output(structure_output)
+            self.model = self.model.with_structured_output(structure_output)
 
     async def astreamPrint(self, prompt,
                            thread_id: str = None):
@@ -154,7 +155,7 @@ class langgraph_agent:
         """
         :param model: str
         :param tools: list
-        :param structure_output: TypedDict
+        :param structure_output: TypedDict; requires the model to support `.with_structured_output`
         :param system_instruction: str
         """
         checkpointer = InMemorySaver()
@@ -167,6 +168,7 @@ class langgraph_agent:
             params['tools'] = tools
         else:
             params['tools'] = []
+
         if structure_output is not None:
             params['response_format'] = structure_output
 
@@ -259,8 +261,8 @@ class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
-class QwenML_translationoptions(TypedDict):
-    response: str  # Qwen_ML模型就非翻译请求的响应
+class QwenML_translationoptions(BaseModel):
+    response: list[AnyMessage]  # Qwen_ML模型就非翻译请求的响应
     text: str  # 待翻译的文本
     source_lang: str  # "Chinese"
     target_lang: str  # "English"
@@ -279,35 +281,35 @@ class EvaluationFeedback:
 
 # Initialize Tavily Search Tool
 # https://python.langchain.com/docs/integrations/tools/tavily_search/
-tavily_search_tool = TavilySearch(
-    max_results=5,
-    topic="general",
-    # include_answer=False,
-    # include_raw_content=False,
-    # include_images=False,
-    # include_image_descriptions=False,
-    # search_depth="basic",
-    # time_range="day",
-    # include_domains=None,
-    # exclude_domains=None
-)
+# tavily_search_tool = TavilySearch(
+#     max_results=5,
+#     topic="general",
+#     # include_answer=False,
+#     # include_raw_content=False,
+#     # include_images=False,
+#     # include_image_descriptions=False,
+#     # search_depth="basic",
+#     # time_range="day",
+#     # include_domains=None,
+#     # exclude_domains=None
+# )
 # result = tavily_search_tool.invoke(input="今日国际新闻3条")
 # result.keys:dict_keys(['query', 'follow_up_questions', 'answer', 'images', 'results', 'response_time'])
 # result.results[0].keys:dict_keys(['url', 'title', 'content', 'score', 'raw_content'])
 
-# We'll make a temporary directory to avoid clutter
-working_directory = TemporaryDirectory(dir='.')
-LocalFileSystem = FileManagementToolkit(
-    root_dir=str(working_directory.name),  # pass the temporary directory in as a root directory as a workspace
-    # # [CopyFileTool, DeleteFileTool, FileSearchTool, MoveFileTool, ReadFileTool, WriteFileTool, ListDirectoryTool]
-    selected_tools=["read_file", "write_file", "list_directory"],
-).get_tools()
-print(f"LocalFileSystem目录: {LocalFileSystem}")
+# # We'll make a temporary directory to avoid clutter
+# working_directory = TemporaryDirectory(dir='.')
+# LocalFileSystem = FileManagementToolkit(
+#     root_dir=str(working_directory.name),  # pass the temporary directory in as a root directory as a workspace
+#     # # [CopyFileTool, DeleteFileTool, FileSearchTool, MoveFileTool, ReadFileTool, WriteFileTool, ListDirectoryTool]
+#     selected_tools=["read_file", "write_file", "list_directory"],
+# ).get_tools()
+# print(f"LocalFileSystem目录: {LocalFileSystem}")
 
 
 def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qwen_VL_agent', END]]:
-    response = QwenML_transOption_agent.agent.invoke(input=state['messages'][-1].content)
-    if response['end']:
+    response = QwenML_transOption_agent.agent.invoke(input=state)
+    if response['messages']['end']:
         goto = END
     else:
         goto = "Qwen_ML_node"
@@ -368,12 +370,14 @@ def evaluator_node(state: State) -> Command[Literal['translator', END]]:
 
 
 if __name__ == '__main__':
-    prompt = '请总结今日国际新闻3条'
+    # prompt = '请总结今日国际新闻3条'
     Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, )
     Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
+    Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo", structure_output=QwenML_translationoptions)
     Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
     QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
                                                structure_output=QwenML_translationoptions,
+
                                                system_instruction="""
                                                你是一个优秀的助手。你对接收的Input进行分析，并做如下分析和输出：
                                                1) 首先对Input是否包含图片，做出判断，如果Input包含有图片，则结构化输出: img=True,否则，img=False;
@@ -421,9 +425,14 @@ if __name__ == '__main__':
     builder.add_edge("translator", "evaluator")
 
     translation_agent = builder.compile()
-    graph_png_path = r"./translation_agent_graph.png"
-    translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
+    # graph_png_path = r"./translation_agent_graph.png"
+    # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
 
+    prompt = '今天的日期'
+    state_message = {"messages":
+                     HumanMessage(content=prompt)}
+    response = translation_agent.invoke(state_message)
+    print(response)
     # graph_draw_path = r"E:/Python_WorkSpace/modelscope/LangGraph/graph_draw.png"
     # # langgraph_agent.agent.get_graph().draw_mermaid_png(output_file_path=graph_draw_path)
 
