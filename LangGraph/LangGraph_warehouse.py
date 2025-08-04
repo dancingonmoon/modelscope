@@ -309,12 +309,16 @@ class EvaluationFeedback:
 
 def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qwen_VL_agent', END]]:
     response = QwenML_transOption_agent.agent.invoke(input=state)
-    if response['messages']['end']:
-        goto = END
+    structured_response = json.loads(response['messages'][-1].content)
+    if isinstance(structured_response,dict):
+        if structured_response.get('end', False):
+            goto = END
+        else:
+            goto = "Qwen_ML_node"
+        if response['img']:
+            goto = "Qwen_VL_agent"
     else:
-        goto = "Qwen_ML_node"
-    if response['img']:
-        goto = "Qwen_VL_agent"
+        goto = END
 
     return Command(
         # Specify which agent to call next
