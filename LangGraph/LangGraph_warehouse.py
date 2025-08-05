@@ -26,6 +26,7 @@ from langgraph.prebuilt import create_react_agent
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import GraphRecursionError
 
 from dataclasses import dataclass
 
@@ -57,7 +58,7 @@ class langchain_qwen_llm:
     def __init__(self,
                  model: str = 'qwen-turbo-latest',
                  base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 阿里云国内站点(默认为国际站点),
-                 streaming: bool = True,
+                 streaming: bool = False,
                  enable_thinking: bool = False,
                  thinking_budget: int = 100,
                  extra_body: dict = None,
@@ -262,13 +263,13 @@ class State(TypedDict):
 
 
 class QwenML_translationoptions(BaseModel):
-    response: list[AnyMessage]|str  # Qwen_ML模型就非翻译请求的响应 = “”
-    text: str = "" # 待翻译的文本
-    source_lang: str  = "auto"  # "Chinese"
-    target_lang: str  = "" # "English"
-    domains: str =""  # 翻译的风格具备某领域的特性，自然语言(英文)描述
+    response: list[AnyMessage] | str = ""  # Qwen_ML模型就非翻译请求的响应 = “”
+    text: str = ""  # 待翻译的文本
+    source_lang: str = "auto"  # "Chinese"
+    target_lang: str = ""  # "English"
+    domains: str = ""  # 翻译的风格具备某领域的特性，自然语言(英文)描述
     translate_request: bool = False  # 表明输入是否是关于语言翻译的请求，如True，则结束对话
-    img: bool = False # 是否prompt中带有图片，handoff至Qwen_VL
+    img: bool = False  # 是否prompt中带有图片，handoff至Qwen_VL
 
 
 @dataclass
@@ -308,30 +309,35 @@ class EvaluationFeedback:
 
 
 def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qwen_VL_agent', END]]:
+    print(f"+ **prompt预分析:**")
     response = QwenML_transOption_agent.agent.invoke(input=state)
-    structured_response = json.loads(response['messages'][-1].content)
+    if response['structured_response'] is None:  # 有时候，由于prompt对于结构化输出的类的各个item生成有遗漏，会导致structure_response=None
+        structured_response = json.loads(response['messages'][-1].content)
+    else:
+        structured_response = response['structured_response']
+        if isinstance(structured_response, BaseModel):
+            structured_response = structured_response.model_dump()  # 将BaseModel对象转换为字典,为使得Pydantic类型接受get方法
     update_state = {'messages': AIMessage(structured_response.get('response', 'no response is available'))}
-    if isinstance(structured_response,dict):
+    if isinstance(structured_response, dict):
         if not structured_response.get('translate_request', False):
             goto = END
         else:
             goto = "Qwen_ML_node"
+            # 构造一个包含所有必要字段的新状态
+            update_state = QwenML_translationoptions(
+                response=structured_response.get('response', 'no response is available'),
+                text=structured_response.get('text', ''),
+                source_lang=structured_response.get('source_lang', 'auto'),
+                target_lang=structured_response.get('target_lang', ''),
+                domains=structured_response.get('domains', ''),
+                translate_request=structured_response.get('translate_request', False),
+                img=structured_response.get('img', False),
+            )
         if structured_response.get('img', False):
             goto = "Qwen_VL_agent"
-            # 构造一个包含所有必要字段的新状态
-            update_state = {
-                "response": [structured_response.get('response', 'no response is available')],
-                "text": structured_response.get('text', ''),
-                "source_lang": structured_response.get('source_lang', 'auto'),
-                "target_lang": structured_response.get('target_lang', ''),
-                "domains": structured_response.get('domains', ''),
-                "end": structured_response.get('translate_request', False),
-                "img": structured_response.get('img', False),
-            }
+
     else:
         goto = END
-
-
 
     return Command(
         # Specify which agent to call next
@@ -341,17 +347,16 @@ def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qw
 
 
 def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator', END]]:
-    end = state['translate_request']
-    if end:
+    print(f"+ **进入Qwen_ML_node，启动首次翻译:**")
+    if not state.translate_request:
         return Command(
             # Specify which agent to call next
             goto=END,
             # Update the graph state
-            update={"messages": [state['response']]}
+            update={"messages": [AIMessage(content=state.response)]}
         )
     else:
-        text, source_lang, target_lang, domains = state["text"], state["source_lang"], state["target_lang"], state[
-            "domains"]
+        text, source_lang, target_lang, domains = state.text , state.source_lang , state.target_lang , state.domains
         extra_body = {
             "translation_options": {
                 "source_lang": source_lang,
@@ -359,49 +364,67 @@ def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator
                 "domains": domains,
             }
         }
-        Qwen_MT = langchain_qwen_llm(model='qwen-mt-plus', extra_body=extra_body)
-        QwenML_trans_agent = langgraph_agent(model=Qwen_MT.model,
-                                             system_instruction="""
-                                                 你是个专业的翻译，善于在多语言之间翻译各个领域的文档
-                                                 """)
-        response = QwenML_trans_agent.agent.invoke(text)
+        Qwen_MT = langchain_qwen_llm(model='qwen-mt-plus',
+                                     streaming=False,
+                                     extra_body=extra_body,)
+        message = [{"role": "user", "content": text}]
+        try:
+            response = Qwen_MT.model.invoke(input=message)
+        except Exception as e:
+            response = str(e)
 
+        print(f"**首次翻译:**\n  {response.content}")
         return Command(
             goto='evaluator',
-            update={"messages": [response]},
+            update={"messages": [AIMessage(content=response.content)]},
         )
 
 
 def evaluator_node(state: State) -> Command[Literal['translator', END]]:
+    print(f"+ **进入翻译评估阶段**")
     response = evaluator.agent.invoke(input=state)
-    if response.score == 'end' or response.score == 'pass':
-        goto = END
-    elif response.score == "needs_improvement":
-        goto = "translator"
-    else:
-        goto = END
-
+    goto = END
+    update = {"messages": [response['messages'][-1]]},
+    if response['structured_response'] is not None:
+        if response['structured_response']['score'] == 'end' or response['structured_response']['score'] == 'pass':
+            goto = END
+        elif response['structured_response']['score'] == "needs_improvement":
+            goto = "translator"
+            update = {"messages": [HumanMessage(response['structured_response']['feedback'])]}
+            print(f"**评估score: {response['structured_response']['score']}**")
+            print(f"**评估feedback:\n  {response['structured_response']['feedback']}")
     return Command(
         goto=goto,
-        update={"messages": [response.feedback]}, )
+        update=update, )
+
+def translator_node(state: State) -> Command[Literal['evaluator']]:
+    print(f"+ **进入翻译改进阶段**")
+    response = translator.agent.invoke(input=state)
+    update = {"messages": [AIMessage(response['messages'][-1].content)]}
+    print(f"**翻译改进:**\n  {response['messages'][-1].content}")
+    return Command(
+        goto='evaluator',
+        update=update, )
 
 
 if __name__ == '__main__':
     # prompt = '请总结今日国际新闻3条'
-    Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, )
+    Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True )
     Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
-    Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo", structure_output=QwenML_translationoptions)
+    Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo",
+                                                            structure_output=QwenML_translationoptions)
     Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
     QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
                                                structure_output=QwenML_translationoptions,
 
                                                system_instruction="""
-                                               你是一个优秀的助手。你对接收的prompt进行分析，并做如下分析,并将结果按照QwenML_translationoptions的Pydantic类型，进行structure_response：
-                                               1) 首先对prompt中是否包含图片，做出判断，如果prompt包含有图片，则结构化输出: img=True,否则，img=False;
-                                               2) 再对prompt是否包含有语言翻译的请求，做出判断，如果包含有语言翻译请求，结构化输出：translate_request=True；否则translate_request=False;                                               
-                                               3) 如果prompt包含有语言翻译的请求，请从中整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;否则domains="";
-                                               4) 如果prompt包含有语言翻译的请求，请从中分析出翻译请求的源语言，目标语言，以及整理出的待翻译的文本，并分别结构化输出到 source_lang, target_lang, text; 否则 source_lang='auto', target_lang='', text='';
-                                               5) 如果prompt包含有语言翻译的请求，请结构化输出： response=''; 否则，尽你所能，进行回答问题或者提供帮助，并将响应内容结构化输出到response;
+                                               你是一个优秀的助手。你对接收的prompt进行分析，并按照如下指示,将结果按照structured_response事先定义的Pydantic类，进行结构化输出每个字段：
+                                               1) 首先对prompt中是否包含图片，做出判断，如果prompt包含有图片，则结构化输出字段: img=True,否则，img=False;
+                                               2) 再对prompt是否包含有语言翻译的请求，做出判断，如果包含有语言翻译请求，结构化输出字段：translate_request=True；否则,translate_request=False;                                               
+                                               3) 如果prompt包含有语言翻译的请求，请从中整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出字段domains;否则,domains="";
+                                               4) 如果prompt包含有语言翻译的请求，请从中分析出翻译请求的源语言，目标语言，以及整理出的待翻译的文本，并分别结构化输出到字段 source_lang, target_lang, text; 否则, source_lang='auto', target_lang='', text='';
+                                               5) 如果prompt包含有语言翻译的请求，请结构化输出字段：response=''; 否则，尽你所能，进行回答问题或者提供帮助，并将响应内容结构化输出到response;
+                                               6) 事先定义的用于结构化输出Pydantic的各个字段(field)中，如果以上指示中有遗漏，请使用默认值，最后完整结构化输出该事先定义的Pydantic类。
                                                """)
 
     Qwen_VL_agent = langgraph_agent(model=Qwen_VL.model,
@@ -435,20 +458,24 @@ if __name__ == '__main__':
     builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
     builder.add_node("Qwen_ML_node", Qwen_ML_node)
     builder.add_node("evaluator", evaluator_node)
-    builder.add_node("translator", translator.agent)
+    builder.add_node("translator", translator_node)
 
     builder.add_edge(START, 'QwenML_transOption_node')
     builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
-    builder.add_edge("translator", "evaluator")
+    # builder.add_edge("translator", "evaluator")
 
     translation_agent = builder.compile()
     # graph_png_path = r"./translation_agent_graph.png"
     # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
 
     prompt = '请翻译以下文字至英文：和光同尘'
-    state_message = {"messages":
-                     HumanMessage(content=prompt)}
-    response = translation_agent.invoke(state_message)
+    # prompt = '请问今天日期'
+    # state_message = {"messages": HumanMessage(content=prompt)}
+    state_message = {"messages": {"role": "user", "content": prompt}}
+    try:
+        response = translation_agent.invoke(state_message,{"recursion_limit": 10})
+    except GraphRecursionError:
+        response = "Recursion Error"
     print(response)
     # graph_draw_path = r"E:/Python_WorkSpace/modelscope/LangGraph/graph_draw.png"
     # # langgraph_agent.agent.get_graph().draw_mermaid_png(output_file_path=graph_draw_path)
