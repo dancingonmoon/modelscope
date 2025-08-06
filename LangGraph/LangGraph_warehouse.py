@@ -1,4 +1,5 @@
 import os
+import operator
 import json
 from typing import Literal, Union
 
@@ -262,7 +263,12 @@ class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
-class QwenML_translationoptions(BaseModel):
+class nodeloopState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    loop_count: Annotated[int, operator.add]
+
+
+class QwenML_trasOptions(BaseModel):
     response: list[AnyMessage] | str = ""  # Qwen_ML模型就非翻译请求的响应 = “”
     text: str = ""  # 待翻译的文本
     source_lang: str = "auto"  # "Chinese"
@@ -324,7 +330,7 @@ def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qw
         else:
             goto = "Qwen_ML_node"
             # 构造一个包含所有必要字段的新状态
-            update_state = QwenML_translationoptions(
+            update_state = QwenML_trasOptions(
                 response=structured_response.get('response', 'no response is available'),
                 text=structured_response.get('text', ''),
                 source_lang=structured_response.get('source_lang', 'auto'),
@@ -346,7 +352,7 @@ def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qw
         update=update_state)
 
 
-def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator', END]]:
+def Qwen_ML_node(state: QwenML_trasOptions) -> Command[Literal['evaluator', END]]:
     print(f"+ **进入Qwen_ML_node，启动首次翻译:**")
     if not state.translate_request:
         return Command(
@@ -356,7 +362,7 @@ def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator
             update={"messages": [AIMessage(content=state.response)]}
         )
     else:
-        text, source_lang, target_lang, domains = state.text , state.source_lang , state.target_lang , state.domains
+        text, source_lang, target_lang, domains = state.text, state.source_lang, state.target_lang, state.domains
         extra_body = {
             "translation_options": {
                 "source_lang": source_lang,
@@ -366,7 +372,7 @@ def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator
         }
         Qwen_MT = langchain_qwen_llm(model='qwen-mt-plus',
                                      streaming=False,
-                                     extra_body=extra_body,)
+                                     extra_body=extra_body, )
         message = [{"role": "user", "content": text}]
         try:
             response = Qwen_MT.model.invoke(input=message)
@@ -374,33 +380,45 @@ def Qwen_ML_node(state: QwenML_translationoptions) -> Command[Literal['evaluator
             response = str(e)
 
         print(f"**首次翻译:**\n  {response.content}")
+        update = {"messages": [AIMessage(content=response.content)],
+                  "loop_count": 1,  # operator.add会自动增加1,分别统计循环次数
+                  }
         return Command(
             goto='evaluator',
-            update={"messages": [AIMessage(content=response.content)]},
+            update=update,
         )
 
 
-def evaluator_node(state: State) -> Command[Literal['translator', END]]:
-    print(f"+ **进入翻译评估阶段**")
+def evaluator_node(state: nodeloopState) -> Command[Literal['translator', END]]:
+    loop_account = state.get("loop_count", 0)
+    print(f"+ **进入翻译评估阶段, 当前第{loop_account}次翻译评估**")
     response = evaluator.agent.invoke(input=state)
     goto = END
-    update = {"messages": [response['messages'][-1]]},
+    update = {"messages": [AIMessage(content=response['messages'][-1].content)]}
     if response['structured_response'] is not None:
         if response['structured_response']['score'] == 'end' or response['structured_response']['score'] == 'pass':
             goto = END
+            update = {"messages": [HumanMessage(response['structured_response']['feedback'])],
+                      }  # END时，state输出结果无需loop_count; END state与input state相同；
         elif response['structured_response']['score'] == "needs_improvement":
             goto = "translator"
-            update = {"messages": [HumanMessage(response['structured_response']['feedback'])]}
-            print(f"**评估score: {response['structured_response']['score']}**")
-            print(f"**评估feedback:\n  {response['structured_response']['feedback']}")
+            update = {"messages": [HumanMessage(response['structured_response']['feedback'])],
+                      'loop_count': 0}  # operator.add会自动增加0,统计循环次数;(评估次数为翻译次数相等,增加0)
+
+        print(f"**评估score: {response['structured_response']['score']}**")
+        print(f"**评估feedback:\n  {response['structured_response']['feedback']}")
     return Command(
         goto=goto,
         update=update, )
 
-def translator_node(state: State) -> Command[Literal['evaluator']]:
-    print(f"+ **进入翻译改进阶段**")
+
+def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]:
+    loop_account = state.get("loop_count", 0)
+    print(f"+ **进入翻译改进阶段, 当前第{loop_account}次改进**")
     response = translator.agent.invoke(input=state)
-    update = {"messages": [AIMessage(response['messages'][-1].content)]}
+    update = {"messages": [AIMessage(response['messages'][-1].content)],
+              "loop_count": 1,  # operator.add会自动增加1,统计循环次数
+              }
     print(f"**翻译改进:**\n  {response['messages'][-1].content}")
     return Command(
         goto='evaluator',
@@ -409,13 +427,13 @@ def translator_node(state: State) -> Command[Literal['evaluator']]:
 
 if __name__ == '__main__':
     # prompt = '请总结今日国际新闻3条'
-    Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True )
+    Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True)
     Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
     Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo",
-                                                            structure_output=QwenML_translationoptions)
+                                                            structure_output=QwenML_trasOptions)
     Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
     QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
-                                               structure_output=QwenML_translationoptions,
+                                               structure_output=QwenML_trasOptions,
 
                                                system_instruction="""
                                                你是一个优秀的助手。你对接收的prompt进行分析，并按照如下指示,将结果按照structured_response事先定义的Pydantic类，进行结构化输出每个字段：
@@ -428,7 +446,7 @@ if __name__ == '__main__':
                                                """)
 
     Qwen_VL_agent = langgraph_agent(model=Qwen_VL.model,
-                                    structure_output=QwenML_translationoptions,
+                                    structure_output=QwenML_trasOptions,
                                     system_instruction="""
                                     你善于识图理解，请识别Input的图片或文件，获取其全部内容，然后做如下分析和输出：
                                     1) 对Input的text部分(非图片或文件部分），是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False; 
@@ -453,7 +471,7 @@ if __name__ == '__main__':
                                   你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
                                   """)
 
-    builder = StateGraph(State)
+    builder = StateGraph(State, )
     builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
     builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
     builder.add_node("Qwen_ML_node", Qwen_ML_node)
@@ -462,21 +480,25 @@ if __name__ == '__main__':
 
     builder.add_edge(START, 'QwenML_transOption_node')
     builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
-    # builder.add_edge("translator", "evaluator")
+
 
     translation_agent = builder.compile()
     # graph_png_path = r"./translation_agent_graph.png"
     # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
 
-    prompt = '请翻译以下文字至英文：和光同尘'
-    # prompt = '请问今天日期'
+    # prompt = '请翻译以下文字至英文：和光同尘'
+    prompt = '请问今天日期'
     # state_message = {"messages": HumanMessage(content=prompt)}
     state_message = {"messages": {"role": "user", "content": prompt}}
     try:
-        response = translation_agent.invoke(state_message,{"recursion_limit": 10})
+        for chunk in translation_agent.stream(state_message,
+                                                     stream_mode="updates",
+                                                     config={"recursion_limit": 10}):
+            print(chunk)
+        # response = translation_agent.invoke(state_message, {"recursion_limit": 15})
     except GraphRecursionError:
         response = "Recursion Error"
-    print(response)
+        print(response)
     # graph_draw_path = r"E:/Python_WorkSpace/modelscope/LangGraph/graph_draw.png"
     # # langgraph_agent.agent.get_graph().draw_mermaid_png(output_file_path=graph_draw_path)
 
