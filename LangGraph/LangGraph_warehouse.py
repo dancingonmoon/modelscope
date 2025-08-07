@@ -408,7 +408,7 @@ def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]:
                               'loop_count': 0}  # operator.add会自动增加0,统计循环次数;(评估次数为翻译次数相等,增加0)
                     command_params = {'goto': goto, 'update': update}
 
-        print(f"**评估score: {response['structured_response']['score']}**")
+                print(f"**评估score: {score}**")
         # print(f"**评估feedback:\n  {response['structured_response']['feedback']}")
     return Command(**command_params)
 
