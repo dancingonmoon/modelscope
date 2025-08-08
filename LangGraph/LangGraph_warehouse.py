@@ -177,7 +177,8 @@ class langgraph_agent:
         self.agent = create_react_agent(**params)
 
     async def astreamPrint(self, prompt,
-                           stream_mode: Literal['values', 'updates', 'custom', 'messages', 'debug'] = 'updates',
+                           stream_modes: Literal['values', 'updates', 'custom', 'messages', 'debug'] | list[
+                               Literal['values', 'updates', 'custom', 'messages', 'debug']] = 'updates',
                            thread_id: str = None):
         """
         异步流式打印Agent response
@@ -188,53 +189,107 @@ class langgraph_agent:
                                              usage_metadata={},
                                              output_token_details={})]}}
         :param prompt:
-        :param stream_mode: str
+        :param stream_modes: str,或者包含多个stream_mode的列表
         :param thread_id: Short-term memory (thread-level persistence) enables agents to track multi-turn conversations
         :return:
         """
+        if isinstance(stream_modes, str):
+            stream_modes = [stream_modes]
+
         message = {"messages": prompt}
         config = {"configurable": {"thread_id": thread_id}}
-        response = self.agent.astream(input=message, config=config, stream_mode=stream_mode)
+        response = self.agent.astream(input=message, config=config, stream_mode=stream_modes)
         # response json: {'agent':{'messages':[AIMessage(content='',
         #                                      additional_kwargs={'reasoning_content': '正在思考中...'},
         #                                      response_metadata={'finish_reason','model_name'},
         #                                      id='',
         #                                      usage_metadata={},
         #                                      output_token_details={})
+
         is_first = True
-        is_end = False
-        async for msg in response:
+        # is_end = False
+        async for stream_mode, msg in response:
             # print(f'response: {msg}')
-            agent_msgs = {}
-            tool_msgs = {}
-            # 处理agent消息
-            if 'agent' in msg:
-                if 'messages' in msg['agent']:
-                    agent_msgs = msg['agent']["messages"]  # 消息列表
-            for agent_msg in agent_msgs:
-                if hasattr(agent_msg, 'additional_kwargs') and "reasoning_content" in agent_msg.additional_kwargs:
-                    if is_first:
-                        print("Starting to think...")
-                        is_first = False
-                        is_end = True
-                    print(agent_msg.additional_kwargs["reasoning_content"], end="", flush=True)
-                if hasattr(agent_msg, 'content') and agent_msg.content:
-                    if is_end:
-                        print("\nThinking ended")
-                        is_end = False
-                    print(agent_msg.content, end="", flush=True)
-            # 处理tools消息
-            if 'tools' in msg:
-                if 'messages' in msg['tools']:
-                    tool_msgs = msg['tools']["messages"]  # 消息列表
-            for tool_msg in tool_msgs:
-                if hasattr(tool_msg, 'name'):
-                    print(f"tool: {tool_msg.name}, invoked ")
-                if hasattr(tool_msg, 'content') and tool_msg.content:
-                    print(tool_msg.content, end="", flush=True)
+            if stream_mode == 'updates':
+                agent_msgs = []
+                tool_msgs = []
+                # 处理agent消息
+                if 'agent' in msg:
+                    if 'messages' in msg['agent']:
+                        agent_msgs = msg['agent']["messages"]  # 消息列表
+                    for agent_msg in agent_msgs:
+                        #  输出reasoning:
+                        if hasattr(agent_msg, 'additional_kwargs') and "reasoning_content" in agent_msg.additional_kwargs:
+                            if is_first:
+                                print("\n*Starting to think...*  \n")
+                                is_first = False
+                            print(agent_msg.additional_kwargs["reasoning_content"], end="", flush=True)
+                        if hasattr(agent_msg, 'response_metadata') and agent_msg.response_metadata.get('finish_reason',
+                                                                                                       None) == "stop":
+                            print("\n*Ending to think...*  \n")
+                        #  输出content:
+                        if hasattr(agent_msg, 'content') and agent_msg.content:
+                            print(agent_msg.content, end="", flush=True)
+                # 处理tools消息
+                if 'tools' in msg:
+                    if 'messages' in msg['tools']:
+                        tool_msgs = msg['tools']["messages"]  # 消息列表
+                    for tool_msg in tool_msgs:
+                        if hasattr(tool_msg, 'name'):
+                            print(f"tool: {tool_msg.name}, invoked ")
+                        if hasattr(tool_msg, 'content') and tool_msg.content:
+                            print(tool_msg.content, end="", flush=True)
+
+                # 处理{generate_structured_response:{'structured_response': None}}:
+                if 'generate_structured_response' in msg:
+                    if 'structured_response' in msg['generate_structured_response']:
+                        structured_response = msg['generate_structured_response']
+                        print(f"\nstructured_response: {structured_response}\n")
+                    else:
+                        print(f"\nagent没有生成structured_response\n")
+
+            if stream_mode == 'messages':
+                llm_token, metadata = msg
+                # print(f"llm_token:{llm_token}")
+                # print(f"metadata: {metadata}")
+                # 输出reasoning:
+                if hasattr(llm_token,"additional_kwargs"):
+                    add_kwargs = llm_token.additional_kwargs
+                    if 'reasoning_content' in add_kwargs:
+                        if is_first:
+                            print("\n*Start Thinking...*  \n")
+                            is_first = False
+                        print(add_kwargs['reasoning_content'], end="", flush=True)
+                    if 'tool_calls' in add_kwargs:
+                        print("\n*Start tools_call...*  \n")
+                        for dict in add_kwargs['tool_calls']:
+                            if 'function' in dict:
+                                if 'arguments' in dict['function']:
+                                    print(dict['function']['arguments'], end="", flush=True)
+
+                    if hasattr(llm_token,"response_metadata") :
+                        resp_metadata = llm_token.response_metadata
+                        finish_reason = resp_metadata.get('finish_reason', None)
+                        if finish_reason == "stop":
+                            print("\n*End Thinking...*  \n")
+                        if finish_reason == "tool_calls":
+                            print("\n*End tool_calls...*  \n")
+
+
+
+
+                # 输出content:
+                if hasattr(llm_token, 'content'):
+                    if llm_token.content:
+                        print(llm_token.content, end="", flush=True)
+
+
+
 
     async def multi_turn_conversation(self, stream_mode: Literal[
-        'values', 'updates', 'custom', 'messages', 'debug'] = 'updates',
+                                                             'values', 'updates', 'custom', 'messages', 'debug'] | list[
+                                                             Literal[
+                                                                 'values', 'updates', 'custom', 'messages', 'debug']] = 'updates',
                                       thread_id: str | None = None):
         """
         多轮对话(似乎不设置thread_id时，也是具备会话的记忆)
@@ -249,7 +304,7 @@ class langgraph_agent:
                     print("Goodbye!")
                     break
 
-                await self.astreamPrint(user_input, stream_mode=stream_mode,
+                await self.astreamPrint(user_input, stream_modes=stream_mode,
                                         thread_id=thread_id)
             except Exception as e:
                 print(f"发生错误: {str(e)}")
@@ -373,7 +428,7 @@ def Qwen_ML_node(state: QwenML_trasOptions) -> Command[Literal['evaluator']]:
         except Exception as e:
             response = str(e)
 
-        print(f"**首次翻译:**\n  {response.content}")
+        # print(f"**首次翻译:**\n  {response.content}")
         update = {"messages": [AIMessage(content=response.content)],
                   "loop_count": 1,  # operator.add会自动增加1,分别统计循环次数
                   }
@@ -385,7 +440,7 @@ def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]:
     loop_account = state.get("loop_count", 0)
     print(f"+ **进入翻译评估阶段, 当前第{loop_account}次翻译评估**")
     # response = evaluator.agent.invoke(input=state)
-    response = evaluator.agent.stream(input=state, stream_mode=['updates','messages'],)
+    response = evaluator.agent.stream(input=state, stream_mode=['updates', 'messages'], )
     # update = {"messages": [AIMessage(content=response['messages'][-1].content)]}
     command_params = {}
     for stream_mode, chunk in response:
@@ -393,9 +448,10 @@ def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]:
             llm_token, metadata = chunk
             print(llm_token.content, end="", flush=True)
         if stream_mode == 'updates':
-            update = {"messages": [AIMessage(content=chunk['evaluator']['messages'][-1].content)]}
+            state = chunk['agent']
+            update = {"messages": [AIMessage(content=state['messages'][-1].content)]}
             command_params = {'update': update}  # 节点无goto, command后，不再handoff,自行结束;
-            if chunk['evaluator']['structured_response'] is not None:
+            if chunk['agent']['structured_response'] is not None:
                 score = chunk['evaluator']['structured_response']['score']
                 feedback = chunk['evaluator']['structured_response']['feedback']
                 if score == 'end' or feedback == 'pass':
@@ -492,18 +548,18 @@ if __name__ == '__main__':
     state_message = {"messages": {"role": "user", "content": prompt}}
     try:
         for stream_mode, chunk in translation_agent.stream(state_message,
-                                                           stream_mode=["messages", "updates"],
+                                                           stream_mode=["updates"],
                                                            config={"recursion_limit": 10}):
-            graph_node = 'QwenML_transOption_node'
-            if stream_mode == "messages":
-                token, metadata = chunk
-                print(f"graph运行节点: {metadata['langgraph_node']}")
-                graph_node = metadata['langgraph_node']
-                if token.content:
-                    print(token.content, end="", flush=True)
+            # if stream_mode == "messages":
+            #     token, metadata = chunk
+            #     # print(f"graph运行节点: {metadata['langgraph_node']}")
+            #     if token.content:
+            #         print(token.content, end="", flush=True)
             if stream_mode == "updates":
-                print(chunk[graph_node])
-
+                # print(f"graph当前update了node: {[*chunk.keys()]}")
+                for node in chunk.keys():
+                    print(f"graph当前update的node: {node}")
+                    print(f"其State为:{chunk[node]}")
     except GraphRecursionError:
         response = "Recursion Error"
         print(response)
