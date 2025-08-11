@@ -147,6 +147,10 @@ class langchain_qwen_llm:
                 break
 
 
+class State(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+
+
 class langgraph_agent:
     def __init__(self,
                  model: Union[str, chat_models] = 'qwen-turbo',
@@ -176,13 +180,18 @@ class langgraph_agent:
 
         self.agent = create_react_agent(**params)
 
-    async def astreamPrint(self, prompt,
-                           stream_modes: Literal['values', 'updates', 'custom', 'messages', 'debug'] | list[
-                               Literal['values', 'updates', 'custom', 'messages', 'debug']] = 'updates',
-                           thread_id: str = None):
+    async def astreamOutput(self, input: str | State,
+                            stream_modes: Literal['values', 'updates', 'custom', 'messages', 'debug'] | list[
+                                Literal['values', 'updates', 'custom', 'messages', 'debug']] = 'updates',
+                            thread_id: str = None,
+                            print_mode: Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None'):
         """
-        异步流式打印Agent response
-        response json: {'agent':{'messages':[AIMessage(content='',
+        异步流式打印Agent response,可以同时接受'updates','messages'两种stream_mode,以便同时stream token,和输出structured_response;
+        messages特点: 1) stream输出llm token,包括reason_content,以及模型content;
+                     2) 不能输出generate_structured_response;
+        updates特点: 不是token级别stream输出,是每个步骤输出.例如,只输出两条update messages:
+                        a)模型输出(带思考在一条message内) b)structured_response
+        千文模型 response json: {'agent':{'messages':[AIMessage(content='',
                                              additional_kwargs={'reasoning_content': '正在思考中...'},
                                              response_metadata={'finish_reason','model_name'},
                                              id='',
@@ -191,12 +200,26 @@ class langgraph_agent:
         :param prompt:
         :param stream_modes: str,或者包含多个stream_mode的列表
         :param thread_id: Short-term memory (thread-level persistence) enables agents to track multi-turn conversations
-        :return:
+        :param print_mode:
+            'token': to print streaming token_level for "messages"
+            'think': to print streaming think
+            'tools': to print tools
+            'model_output': to print model_output
+            'None': no printing
+        :return: 根据stream_mode返回不同元组：
+            1) if stream_mode = 'updates', return: updates_think_content, updates_modelOutput, updates_finish_reason, structrued_response
+            2) if stream_mode = 'messages', return: msg_think_content, msg_modelOutput, msg_finish_reason, structed_response
+            3) if stream_mode = ['updates', 'messages'], return ((updates returns), (messages returns))
         """
         if isinstance(stream_modes, str):
             stream_modes = [stream_modes]
 
-        message = {"messages": prompt}
+        if isinstance(input, str):
+            message = {"messages": input}
+        else:
+            message = input
+
+
         config = {"configurable": {"thread_id": thread_id}}
         response = self.agent.astream(input=message, config=config, stream_mode=stream_modes)
         # response json: {'agent':{'messages':[AIMessage(content='',
@@ -206,45 +229,74 @@ class langgraph_agent:
         #                                      usage_metadata={},
         #                                      output_token_details={})
 
-        is_first = True
-        # is_end = False
+        isFirst_updates_think = True
+        isFirst_updates_modelOutput = True
+        isFirst_updates_toolCalls = True
+        isFirst_msg_think = True
+        isFirst_msg_toolCalls = True
+        isFirst_msg_modelOutput = True
+        updates_think_content = ""
+        updates_modelOutput = ""
+        updates_finish_reason = ""
+        structured_response = {}
+
+        msg_think_content = ""
+        msg_modelOutput = ""
+        msg_finish_reason = ""
+
         async for stream_mode, msg in response:
             # print(f'response: {msg}')
             if stream_mode == 'updates':
                 agent_msgs = []
                 tool_msgs = []
-                # 处理agent消息
+                # 处理节点(agent)消息
                 if 'agent' in msg:
                     if 'messages' in msg['agent']:
                         agent_msgs = msg['agent']["messages"]  # 消息列表
                     for agent_msg in agent_msgs:
                         #  输出reasoning:
-                        if hasattr(agent_msg, 'additional_kwargs') and "reasoning_content" in agent_msg.additional_kwargs:
-                            if is_first:
+                        if hasattr(agent_msg,
+                                   'additional_kwargs') and "reasoning_content" in agent_msg.additional_kwargs:
+                            if isFirst_updates_think:
                                 print("\n*Starting to think...*  \n")
-                                is_first = False
-                            print(agent_msg.additional_kwargs["reasoning_content"], end="", flush=True)
-                        if hasattr(agent_msg, 'response_metadata') and agent_msg.response_metadata.get('finish_reason',
-                                                                                                       None) == "stop":
-                            print("\n*Ending to think...*  \n")
+                                isFirst_updates_think = False
+                            updates_think_content = agent_msg.additional_kwargs["reasoning_content"]
+                            if 'think' in print_mode and 'token' not in print_mode:
+                                print(updates_think_content, end="", flush=True)
                         #  输出content:
                         if hasattr(agent_msg, 'content') and agent_msg.content:
-                            print(agent_msg.content, end="", flush=True)
+                            if isFirst_updates_modelOutput:
+                                print("\n*Starting model output...*  \n")
+                                isFirst_updates_modelOutput = False
+                            updates_modelOutput = agent_msg.content
+                            if 'model_output' in print_mode and 'token' not in print_mode:
+                                print(updates_modelOutput, end="", flush=True)
+                        if hasattr(agent_msg, 'response_metadata'):
+                            updates_finish_reason = agent_msg.response_metadata.get('finish_reason', None)
+                            if updates_finish_reason == "stop":
+                                print("\n*Ending model output...*  \n")
+                                isFirst_updates_modelOutput = True
+                            if updates_finish_reason == "tool_calls":
+                                print("\n*Ending tool calls...*  \n")
+                                isFirst_updates_toolCalls = True
                 # 处理tools消息
                 if 'tools' in msg:
                     if 'messages' in msg['tools']:
                         tool_msgs = msg['tools']["messages"]  # 消息列表
                     for tool_msg in tool_msgs:
                         if hasattr(tool_msg, 'name'):
-                            print(f"tool: {tool_msg.name}, invoked ")
+                            if isFirst_updates_toolCalls:
+                                print(f"tool: {tool_msg.name}, invoked ")
+                                isFirst_updates_toolCalls = False
                         if hasattr(tool_msg, 'content') and tool_msg.content:
-                            print(tool_msg.content, end="", flush=True)
+                            if 'tools' in print_mode:
+                                print(tool_msg.content, end="", flush=True)
 
-                # 处理{generate_structured_response:{'structured_response': None}}:
+                # 处理{generate_structured_response:{'structured_response': None}}消息:
                 if 'generate_structured_response' in msg:
                     if 'structured_response' in msg['generate_structured_response']:
-                        structured_response = msg['generate_structured_response']
-                        print(f"\nstructured_response: {structured_response}\n")
+                        structured_response = msg['generate_structured_response']['structured_response']
+                        # print(f"\nstructured_response: {structured_response}\n")
                     else:
                         print(f"\nagent没有生成structured_response\n")
 
@@ -253,38 +305,52 @@ class langgraph_agent:
                 # print(f"llm_token:{llm_token}")
                 # print(f"metadata: {metadata}")
                 # 输出reasoning:
-                if hasattr(llm_token,"additional_kwargs"):
+                if hasattr(llm_token, "additional_kwargs"):
                     add_kwargs = llm_token.additional_kwargs
                     if 'reasoning_content' in add_kwargs:
-                        if is_first:
+                        msg_think_content = add_kwargs['reasoning_content']
+                        if isFirst_msg_think:
                             print("\n*Start Thinking...*  \n")
-                            is_first = False
-                        print(add_kwargs['reasoning_content'], end="", flush=True)
+                            isFirst_msg_think = False
+                        if 'think' in print_mode:
+                            print(msg_think_content, end="", flush=True)
                     if 'tool_calls' in add_kwargs:
-                        print("\n*Start tools_call...*  \n")
+                        if isFirst_msg_toolCalls:
+                            print("\n*Start tools_call...*  \n")
+                            isFirst_msg_toolCalls = False
                         for dict in add_kwargs['tool_calls']:
                             if 'function' in dict:
                                 if 'arguments' in dict['function']:
-                                    print(dict['function']['arguments'], end="", flush=True)
+                                    if 'tools' in print_mode:
+                                        print(dict['function']['arguments'], end="", flush=True)
 
-                    if hasattr(llm_token,"response_metadata") :
+                    if hasattr(llm_token, "response_metadata"):
                         resp_metadata = llm_token.response_metadata
-                        finish_reason = resp_metadata.get('finish_reason', None)
-                        if finish_reason == "stop":
-                            print("\n*End Thinking...*  \n")
-                        if finish_reason == "tool_calls":
-                            print("\n*End tool_calls...*  \n")
-
-
-
+                        msg_finish_reason = resp_metadata.get('finish_reason', None)
+                        if msg_finish_reason == "stop":
+                            print("\n*Ending model output...*  \n")
+                            isFirst_msg_modelOutput = True
+                        if msg_finish_reason == "tool_calls":
+                            print("\n*Ending tool_calls...*  \n")
 
                 # 输出content:
                 if hasattr(llm_token, 'content'):
                     if llm_token.content:
-                        print(llm_token.content, end="", flush=True)
+                        msg_modelOutput = llm_token.content
+                        if isFirst_msg_modelOutput:
+                            print("\n*Starting model output...*  \n")
+                            isFirst_msg_modelOutput = False
+                        if 'model_output' in print_mode:
+                            print(msg_modelOutput, end="", flush=True)
+                        print(msg_modelOutput, end="", flush=True)
 
-
-
+            if 'updates' in stream_modes and 'messages ' not in stream_modes:
+                yield updates_think_content, updates_modelOutput, updates_finish_reason, structured_response
+            if 'updates' not in stream_modes and 'messages ' in stream_modes:
+                yield msg_think_content, msg_modelOutput, msg_finish_reason, structured_response
+            if 'updates' in stream_modes and 'messages' in stream_modes:
+                yield (updates_think_content, updates_modelOutput, updates_finish_reason, structured_response), (
+                    msg_think_content, msg_modelOutput, msg_finish_reason)
 
     async def multi_turn_conversation(self, stream_mode: Literal[
                                                              'values', 'updates', 'custom', 'messages', 'debug'] | list[
@@ -314,12 +380,7 @@ class langgraph_agent:
                 break
 
 
-class State(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
-
-
-class nodeloopState(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
+class nodeloopState(State):
     loop_count: Annotated[int, operator.add]
 
 
@@ -436,50 +497,47 @@ def Qwen_ML_node(state: QwenML_trasOptions) -> Command[Literal['evaluator']]:
     return Command(**command_params)
 
 
-def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]:
+async def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]:
     loop_account = state.get("loop_count", 0)
     print(f"+ **进入翻译评估阶段, 当前第{loop_account}次翻译评估**")
     # response = evaluator.agent.invoke(input=state)
-    response = evaluator.agent.stream(input=state, stream_mode=['updates', 'messages'], )
+    # response = evaluator.agent.stream(input=state, stream_mode=['updates', 'messages'], )
+    response = evaluator.astreamOutput(input=state, stream_modes='updates',print_mode='None',thread_id=None)
     # update = {"messages": [AIMessage(content=response['messages'][-1].content)]}
-    command_params = {}
-    for stream_mode, chunk in response:
-        if stream_mode == 'messages':
-            llm_token, metadata = chunk
-            print(llm_token.content, end="", flush=True)
-        if stream_mode == 'updates':
-            state = chunk['agent']
-            update = {"messages": [AIMessage(content=state['messages'][-1].content)]}
-            command_params = {'update': update}  # 节点无goto, command后，不再handoff,自行结束;
-            if chunk['agent']['structured_response'] is not None:
-                score = chunk['evaluator']['structured_response']['score']
-                feedback = chunk['evaluator']['structured_response']['feedback']
-                if score == 'end' or feedback == 'pass':
-                    update = {"messages": [HumanMessage(feedback)],
-                              }  # 节点结束时，state输出结果无需loop_count; state与input state相同;
-                    command_params = {'update': update}  # 节点无goto, command后，不再handoff,自行结束;
-                elif score == "needs_improvement":
-                    goto = "translator"
-                    update = {"messages": [HumanMessage(feedback)],
-                              'loop_count': 0}  # operator.add会自动增加0,统计循环次数;(评估次数为翻译次数相等,增加0)
-                    command_params = {'goto': goto, 'update': update}
+    command_params = {'update': [AIMessage("agent doesn't generate structured_response, exit!")]}
+    async for think, modelOutput, finish_reason, structured_response in response:
+        if structured_response is not None and not structured_response:  # 非空{}非None
+            score = structured_response['score']
+            feedback = structured_response['feedback']
+            if score == 'end' or feedback == 'pass':
+                update = {"messages": [AIMessage(modelOutput)],
+                          }  # 节点结束时，state输出结果无需loop_count; state与input state相同;
+                command_params = {'update': update}  # 节点无goto, command后，不再handoff,自行结束;
+            elif score == "needs_improvement":
+                goto = "translator"
+                update = {"messages": [HumanMessage(feedback)],
+                          'loop_count': 0}  # operator.add会自动增加0,统计循环次数;(评估次数为翻译次数相等,增加0)
+                command_params = {'goto': goto, 'update': update}
 
-                print(f"**评估score: {score}**")
-        # print(f"**评估feedback:\n  {response['structured_response']['feedback']}")
-    return Command(**command_params)
+            print(f"**评估score: {score}**")
+            # print(f"**评估feedback:\n  {response['structured_response']['feedback']}")
+        yield Command(**command_params)
 
 
-def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]:
+async def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]:
     loop_account = state.get("loop_count", 0)
     print(f"+ **进入翻译改进阶段, 当前第{loop_account}次改进**")
-    response = translator.agent.invoke(input=state)
-    update = {"messages": [AIMessage(response['messages'][-1].content)],
-              "loop_count": 1,  # operator.add会自动增加1,统计循环次数
-              }
-    print(f"**翻译改进:**\n  {response['messages'][-1].content}")
-    return Command(
-        goto='evaluator',
-        update=update, )
+    # response = translator.agent.invoke(input=state)
+    response = translator.astreamOutput(input=state, stream_modes='updates',print_mode='None',thread_id=None)
+    async for think, modelOutput, finish_reason, structured_response in response:
+        if modelOutput:
+            update = {"messages": [AIMessage(response['messages'][-1].content)],
+                  "loop_count": 1,  # operator.add会自动增加1,统计循环次数
+                  }
+            print(f"**翻译改进:**\n  {modelOutput}")
+            yield Command(
+                goto='evaluator',
+                update=update, )
 
 
 if __name__ == '__main__':
@@ -515,11 +573,11 @@ if __name__ == '__main__':
     evaluator = langgraph_agent(model=Qwen_plus.model,
                                 structure_output=EvaluationFeedback,
                                 system_instruction="""
-                                你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，判断翻译质量是否合格，给出评价意见, 你将输出pass, needs_improvement, end三种评价意见;
-                                    a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要给出反馈意见，指明翻译内容需要改进的地方;
-                                    b.如果你对翻译内容比较满意，则评估为合格(pass)，请按照正确的输出类型给出评估合格的意见; 
-                                    c.如果你认为，不需要给出评估意见了，请按照正确的输出类型给出结束(end)的评估意见;
-                                    d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格的决定。
+                                你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，评估翻译质量是否合格，并给出评价意见, 你将结构化输出: score: 评估结论,包含pass,needs_improvement,end; feedback: 反馈意见;
+                                    a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要结构化输出: score="needs_improvement", feedback为反馈意见，指明翻译内容需要改进的地方;
+                                    b.如果你对翻译内容比较满意，则结构化输出: score="pass", feedback=''; 
+                                    c.如果你认为，不需要给出评估意见，请结构化输出: score="end", feedback=''; 然后,你可以结束进一步推理,停止任何响应,停止任何输出,结束你的工作,退出.
+                                    d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格(pass)的决定。
                                 """)
 
     translator = langgraph_agent(model=Qwen_plus.model,
@@ -559,7 +617,7 @@ if __name__ == '__main__':
                 # print(f"graph当前update了node: {[*chunk.keys()]}")
                 for node in chunk.keys():
                     print(f"graph当前update的node: {node}")
-                    print(f"其State为:{chunk[node]}")
+                    # print(f"其State为:{chunk[node]}")
     except GraphRecursionError:
         response = "Recursion Error"
         print(response)
