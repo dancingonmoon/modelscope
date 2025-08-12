@@ -3,6 +3,7 @@ import operator
 import json
 from typing import Literal, Union
 
+import langgraph.graph.state
 import typing_extensions
 from typing_extensions import TypedDict
 from typing import Annotated
@@ -21,6 +22,7 @@ from langchain_tavily import TavilySearch
 
 from langgraph.graph.message import add_messages
 from langgraph.graph import MessageGraph, MessagesState, StateGraph, START, END
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from langgraph.prebuilt import create_react_agent
@@ -506,7 +508,7 @@ async def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]
     # update = {"messages": [AIMessage(content=response['messages'][-1].content)]}
     command_params = {'update': [AIMessage("agent doesn't generate structured_response, exit!")]}
     async for think, modelOutput, finish_reason, structured_response in response:
-        if structured_response is not None and not structured_response:  # 非空{}非None
+        if structured_response is not None and structured_response:  # 非空{},非None
             score = structured_response['score']
             feedback = structured_response['feedback']
             if score == 'end' or feedback == 'pass':
@@ -531,17 +533,16 @@ async def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]
     response = translator.astreamOutput(input=state, stream_modes='updates',print_mode='None',thread_id=None)
     async for think, modelOutput, finish_reason, structured_response in response:
         if modelOutput:
-            update = {"messages": [AIMessage(response['messages'][-1].content)],
+            update = {"messages": [AIMessage(modelOutput)],
                   "loop_count": 1,  # operator.add会自动增加1,统计循环次数
                   }
-            print(f"**翻译改进:**\n  {modelOutput}")
+            # print(f"**翻译改进:**\n  {modelOutput}")
             yield Command(
                 goto='evaluator',
                 update=update, )
 
 
-if __name__ == '__main__':
-    # prompt = '请总结今日国际新闻3条'
+def translation_graph():
     Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True)
     Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
     Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo",
@@ -551,40 +552,40 @@ if __name__ == '__main__':
                                                structure_output=QwenML_trasOptions,
 
                                                system_instruction="""
-                                               你是一个优秀的助手。你对接收的prompt进行分析，并按照如下指示,将结果按照structured_response事先定义的Pydantic类，进行结构化输出每个字段：
-                                               1) 首先对prompt中是否包含图片，做出判断，如果prompt包含有图片，则结构化输出字段: img=True,否则，img=False;
-                                               2) 再对prompt是否包含有语言翻译的请求，做出判断，如果包含有语言翻译请求，结构化输出字段：translate_request=True；否则,translate_request=False;                                               
-                                               3) 如果prompt包含有语言翻译的请求，请从中整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出字段domains;否则,domains="";
-                                               4) 如果prompt包含有语言翻译的请求，请从中分析出翻译请求的源语言，目标语言，以及整理出的待翻译的文本，并分别结构化输出到字段 source_lang, target_lang, text; 否则, source_lang='auto', target_lang='', text='';
-                                               5) 如果prompt包含有语言翻译的请求，请结构化输出字段：response=''; 否则，尽你所能，进行回答问题或者提供帮助，并将响应内容结构化输出到response;
-                                               6) 事先定义的用于结构化输出Pydantic的各个字段(field)中，如果以上指示中有遗漏，请使用默认值，最后完整结构化输出该事先定义的Pydantic类。
-                                               """)
+                                                   你是一个优秀的助手。你对接收的prompt进行分析，并按照如下指示,将结果按照structured_response事先定义的Pydantic类，进行结构化输出每个字段：
+                                                   1) 首先对prompt中是否包含图片，做出判断，如果prompt包含有图片，则结构化输出字段: img=True,否则，img=False;
+                                                   2) 再对prompt是否包含有语言翻译的请求，做出判断，如果包含有语言翻译请求，结构化输出字段：translate_request=True；否则,translate_request=False;                                               
+                                                   3) 如果prompt包含有语言翻译的请求，请从中整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出字段domains;否则,domains="";
+                                                   4) 如果prompt包含有语言翻译的请求，请从中分析出翻译请求的源语言，目标语言，以及整理出的待翻译的文本，并分别结构化输出到字段 source_lang, target_lang, text; 否则, source_lang='auto', target_lang='', text='';
+                                                   5) 如果prompt包含有语言翻译的请求，请结构化输出字段：response=''; 否则，尽你所能，进行回答问题或者提供帮助，并将响应内容结构化输出到response;
+                                                   6) 事先定义的用于结构化输出Pydantic的各个字段(field)中，如果以上指示中有遗漏，请使用默认值，最后完整结构化输出该事先定义的Pydantic类。
+                                                   """)
 
     Qwen_VL_agent = langgraph_agent(model=Qwen_VL.model,
                                     structure_output=QwenML_trasOptions,
                                     system_instruction="""
-                                    你善于识图理解，请识别Input的图片或文件，获取其全部内容，然后做如下分析和输出：
-                                    1) 对Input的text部分(非图片或文件部分），是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False; 
-                                    2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
-                                    3) 根据Input中的翻译请求，结合识图理解的内容，整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
-                                    4) 从Input中分析出翻译请求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
-                                    """)
+                                        你善于识图理解，请识别Input的图片或文件，获取其全部内容，然后做如下分析和输出：
+                                        1) 对Input的text部分(非图片或文件部分），是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False; 
+                                        2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
+                                        3) 根据Input中的翻译请求，结合识图理解的内容，整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
+                                        4) 从Input中分析出翻译请求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
+                                        """)
 
     evaluator = langgraph_agent(model=Qwen_plus.model,
                                 structure_output=EvaluationFeedback,
                                 system_instruction="""
-                                你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，评估翻译质量是否合格，并给出评价意见, 你将结构化输出: score: 评估结论,包含pass,needs_improvement,end; feedback: 反馈意见;
-                                    a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要结构化输出: score="needs_improvement", feedback为反馈意见，指明翻译内容需要改进的地方;
-                                    b.如果你对翻译内容比较满意，则结构化输出: score="pass", feedback=''; 
-                                    c.如果你认为，不需要给出评估意见，请结构化输出: score="end", feedback=''; 然后,你可以结束进一步推理,停止任何响应,停止任何输出,结束你的工作,退出.
-                                    d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格(pass)的决定。
-                                """)
+                                    你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，评估翻译质量是否合格，并给出评价意见, 你将结构化输出: score: 评估结论,包含pass,needs_improvement,end; feedback: 反馈意见;
+                                        a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要结构化输出: score="needs_improvement", feedback为反馈意见，指明翻译内容需要改进的地方;
+                                        b.如果你对翻译内容比较满意，则结构化输出: score="pass", feedback=''; 
+                                        c.如果你认为，不需要给出评估意见，请结构化输出: score="end", feedback=''; 然后,你可以结束进一步推理,停止任何响应,停止任何输出,结束你的工作,退出.
+                                        d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格(pass)的决定。
+                                    """)
 
     translator = langgraph_agent(model=Qwen_plus.model,
                                  system_instruction="""
-                                  你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文内容的领域，阅读对象，语气，使用恰当的目标语言和文字，术语，语气来翻译原文的能力，翻译结果专业，贴切。    
-                                  你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
-                                  """)
+                                      你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文内容的领域，阅读对象，语气，使用恰当的目标语言和文字，术语，语气来翻译原文的能力，翻译结果专业，贴切。    
+                                      你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
+                                      """)
 
     builder = StateGraph(State, )
     builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
@@ -600,27 +601,112 @@ if __name__ == '__main__':
     # graph_png_path = r"./translation_agent_graph.png"
     # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
 
-    prompt = '请翻译以下文字至英文：和光同尘'
-    # prompt = '请问今天日期'
-    # state_message = {"messages": HumanMessage(content=prompt)}
-    state_message = {"messages": {"role": "user", "content": prompt}}
+    return translation_agent
+
+async def graph_astream(graph: StateGraph|CompiledStateGraph, state:State,
+                        stream_mode:Literal['messages', 'updates'] = "updates",
+                        config: dict = None):
+    if isinstance(stream_mode,str):
+        stream_mode = [stream_mode]
     try:
-        for stream_mode, chunk in translation_agent.stream(state_message,
-                                                           stream_mode=["updates"],
-                                                           config={"recursion_limit": 10}):
-            # if stream_mode == "messages":
-            #     token, metadata = chunk
-            #     # print(f"graph运行节点: {metadata['langgraph_node']}")
-            #     if token.content:
-            #         print(token.content, end="", flush=True)
+        async for stream_mode, chunk in graph.astream(state,
+                                                           stream_mode=stream_mode,
+                                                           config=config):
+            if stream_mode == "messages":
+                token, metadata = chunk
+                # print(f"graph运行节点: {metadata['langgraph_node']}")
+                if token.content:
+                    print(token.content, end="", flush=True)
+
             if stream_mode == "updates":
                 # print(f"graph当前update了node: {[*chunk.keys()]}")
                 for node in chunk.keys():
                     print(f"graph当前update的node: {node}")
                     # print(f"其State为:{chunk[node]}")
+                    #  print modeloutput.content
+                    if isinstance(chunk[node], dict):
+                        if 'messages' in chunk[node]:
+                            modeloutput = chunk[node]['messages']  # list
+                            for msg in modeloutput:
+                                if msg.content:
+                                    print(msg.content)
+
+
     except GraphRecursionError:
         response = "Recursion Error"
         print(response)
+
+print(f"graph: {graph.name} 响应完成 !")
+
+
+if __name__ == '__main__':
+    # prompt = '请总结今日国际新闻3条'
+    Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True)
+    Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
+    Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo",
+                                                            structure_output=QwenML_trasOptions)
+    Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
+    QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
+                                               structure_output=QwenML_trasOptions,
+
+                                               system_instruction="""
+                                               你是一个优秀的助手。你对接收的prompt进行分析，并按照如下指示,将结果按照structured_response事先定义的Pydantic类，进行结构化输出每个字段：
+                                               1) 首先对prompt中是否包含图片，做出判断，如果prompt包含有图片，则结构化输出字段: img=True,否则，img=False;
+                                               2) 再对prompt是否包含有语言翻译的请求，做出判断，如果包含有语言翻译请求，结构化输出字段：translate_request=True；否则,translate_request=False;
+                                               3) 如果prompt包含有语言翻译的请求，请从中整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出字段domains;否则,domains="";
+                                               4) 如果prompt包含有语言翻译的请求，请从中分析出翻译请求的源语言，目标语言，以及整理出的待翻译的文本，并分别结构化输出到字段 source_lang, target_lang, text; 否则, source_lang='auto', target_lang='', text='';
+                                               5) 如果prompt包含有语言翻译的请求，请结构化输出字段：response=''; 否则，尽你所能，进行回答问题或者提供帮助，并将响应内容结构化输出到response;
+                                               6) 事先定义的用于结构化输出Pydantic的各个字段(field)中，如果以上指示中有遗漏，请使用默认值，最后完整结构化输出该事先定义的Pydantic类。
+                                               """)
+
+    Qwen_VL_agent = langgraph_agent(model=Qwen_VL.model,
+                                    structure_output=QwenML_trasOptions,
+                                    system_instruction="""
+                                    你善于识图理解，请识别Input的图片或文件，获取其全部内容，然后做如下分析和输出：
+                                    1) 对Input的text部分(非图片或文件部分），是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False;
+                                    2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
+                                    3) 根据Input中的翻译请求，结合识图理解的内容，整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
+                                    4) 从Input中分析出翻译请求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
+                                    """)
+
+    evaluator = langgraph_agent(model=Qwen_plus.model,
+                                structure_output=EvaluationFeedback,
+                                system_instruction="""
+                                你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，评估翻译质量是否合格，并给出评价意见, 你将结构化输出: score: 评估结论,包含pass,needs_improvement,end; feedback: 反馈意见;
+                                    a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要结构化输出: score="needs_improvement", feedback为反馈意见，指明翻译内容需要改进的地方;
+                                    b.如果你对翻译内容比较满意，则结构化输出: score="pass", feedback='';
+                                    c.如果你认为，不需要给出评估意见，请结构化输出: score="end", feedback=''; 然后,你可以结束进一步推理,停止任何响应,停止任何输出,结束你的工作,退出.
+                                    d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格(pass)的决定。
+                                """)
+
+    translator = langgraph_agent(model=Qwen_plus.model,
+                                 system_instruction="""
+                                  你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文内容的领域，阅读对象，语气，使用恰当的目标语言和文字，术语，语气来翻译原文的能力，翻译结果专业，贴切。
+                                  你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
+                                  """)
+
+    builder = StateGraph(State, )
+    builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
+    builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
+    builder.add_node("Qwen_ML_node", Qwen_ML_node)
+    builder.add_node("evaluator", evaluator_node)
+    builder.add_node("translator", translator_node)
+
+    builder.add_edge(START, 'QwenML_transOption_node')
+    builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
+
+    translation_agent = builder.compile()
+
+    # graph_png_path = r"./translation_agent_graph.png"
+    # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
+
+    prompt = '请翻译以下文字至英文：和光同尘'
+    # prompt = '请问今天日期'
+    # state_message = {"messages": HumanMessage(content=prompt)}
+    state_message = {"messages": {"role": "user", "content": prompt}}
+    asyncio.run(graph_astream(translation_agent,state_message,
+                                             config={"recursion_limit": 10}))
+
     # graph_draw_path = r"E:/Python_WorkSpace/modelscope/LangGraph/graph_draw.png"
     # # langgraph_agent.agent.get_graph().draw_mermaid_png(output_file_path=graph_draw_path)
 
