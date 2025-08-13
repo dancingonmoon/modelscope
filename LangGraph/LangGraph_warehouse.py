@@ -1,9 +1,9 @@
 import os
+import uuid
 import operator
 import json
 from typing import Literal, Union
 
-import langgraph.graph.state
 import typing_extensions
 from typing_extensions import TypedDict
 from typing import Annotated
@@ -21,13 +21,11 @@ from langchain_core.messages import AnyMessage
 from langchain_tavily import TavilySearch
 
 from langgraph.graph.message import add_messages
-from langgraph.graph import MessageGraph, MessagesState, StateGraph, START, END
+from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from langgraph.prebuilt import create_react_agent
-from langgraph.prebuilt.chat_agent_executor import AgentState
-from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.errors import GraphRecursionError
 
@@ -157,6 +155,7 @@ class langgraph_agent:
     def __init__(self,
                  model: Union[str, chat_models] = 'qwen-turbo',
                  tools: list = None,
+                 checkpointer: InMemorySaver | None = None,
                  structure_output: dict[str, typing_extensions.Any] | BaseModel | type | None = None,
                  system_instruction: str | list[AnyMessage] = "You are a helpful assistant."
                  ):
@@ -166,7 +165,8 @@ class langgraph_agent:
         :param structure_output: TypedDict; requires the model to support `.with_structured_output`
         :param system_instruction: str
         """
-        checkpointer = InMemorySaver()
+        if checkpointer is None:
+            checkpointer = InMemorySaver()
         params = dict(
             model=model,
             response_format=structure_output,
@@ -210,7 +210,7 @@ class langgraph_agent:
             'None': no printing
         :return: 根据stream_mode返回不同元组：
             1) if stream_mode = 'updates', return: updates_think_content, updates_modelOutput, updates_finish_reason, structrued_response
-            2) if stream_mode = 'messages', return: msg_think_content, msg_modelOutput, msg_finish_reason, structed_response
+            2) if stream_mode = 'messages', return: msg_think_content, msg_modelOutput, msg_finish_reason, structed_response(为与updates对应，无意义)
             3) if stream_mode = ['updates', 'messages'], return ((updates returns), (messages returns))
         """
         if isinstance(stream_modes, str):
@@ -220,7 +220,6 @@ class langgraph_agent:
             message = {"messages": input}
         else:
             message = input
-
 
         config = {"configurable": {"thread_id": thread_id}}
         response = self.agent.astream(input=message, config=config, stream_mode=stream_modes)
@@ -354,26 +353,44 @@ class langgraph_agent:
                 yield (updates_think_content, updates_modelOutput, updates_finish_reason, structured_response), (
                     msg_think_content, msg_modelOutput, msg_finish_reason)
 
-    async def multi_turn_conversation(self, stream_mode: Literal[
-                                                             'values', 'updates', 'custom', 'messages', 'debug'] | list[
-                                                             Literal[
-                                                                 'values', 'updates', 'custom', 'messages', 'debug']] = 'updates',
+    async def multi_turn_conversation(self, stream_modes: Literal[
+                                                              'values', 'updates', 'custom', 'messages', 'debug'] |
+                                                          list[
+                                                              Literal[
+                                                                  'values', 'updates', 'custom', 'messages', 'debug']] = 'updates',
+                                      print_mode: Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None',
                                       thread_id: str | None = None):
         """
         多轮对话(似乎不设置thread_id时，也是具备会话的记忆)
-        :param stream_mode: Literal['values', 'updates', 'custom', 'messages', 'debug']
+        :param stream_modes: Literal['values', 'updates', 'custom', 'messages', 'debug']
         :param thread_id: Short-term memory (thread-level persistence) enables agents to track multi-turn conversations
         :return:
         """
+        if isinstance(stream_modes, str):
+            stream_modes = [stream_modes]
         while True:
             try:
                 user_input = input("\nUser: ")
                 if user_input.lower() in ["quit", "exit", "q"]:
                     print("Goodbye!")
                     break
+                # 以下待完成：根据print_mode参数，print不同内容
+                response = self.astreamOutput(user_input, stream_modes=stream_modes,
+                                              print_mode=print_mode, thread_id=thread_id)
 
-                await self.astreamPrint(user_input, stream_modes=stream_mode,
-                                        thread_id=thread_id)
+                if 'updates' in stream_modes and 'messages ' not in stream_modes:
+                    async for updates_think_content, updates_modelOutput, updates_finish_reason, structured_response in response:
+                        print(f"")
+                if 'updates' not in stream_modes and 'messages ' in stream_modes:
+                    msg_think_content, msg_modelOutput, msg_finish_reason, structured_response = response
+                    async for msg_think_content,msg_modelOutput,msg_finish_reason,structured_response in response:
+                        print(f"")
+                if 'updates' in stream_modes and 'messages' in stream_modes:
+                    async for (updates_think_content, updates_modelOutput, updates_finish_reason, structured_response), (
+                        msg_think_content, msg_modelOutput, msg_finish_reason) in response:
+                        print(f"")
+
+
             except Exception as e:
                 print(f"发生错误: {str(e)}")
                 break
@@ -434,7 +451,7 @@ class EvaluationFeedback:
 
 def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qwen_VL_agent']]:
     print(f"+ **prompt预分析:**")
-    response = QwenML_transOption_agent.agent.invoke(input=state, )
+    response = QwenML_transOption_agent.agent.invoke(input=state, config=config)
     if response['structured_response'] is None:  # 有时候，由于prompt对于结构化输出的类的各个item生成有遗漏，会导致structure_response=None
         structured_response = json.loads(response['messages'][-1].content)
     else:
@@ -442,7 +459,6 @@ def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qw
         if isinstance(structured_response, BaseModel):
             structured_response = structured_response.model_dump()  # 将BaseModel对象转换为字典,为使得Pydantic类型接受get方法
     update_state = {'messages': AIMessage(structured_response.get('response', 'no response is available'))}
-    command_params = {}
     if isinstance(structured_response, dict):
         if structured_response.get('translate_request', False):
             goto = "Qwen_ML_node"
@@ -487,7 +503,7 @@ def Qwen_ML_node(state: QwenML_trasOptions) -> Command[Literal['evaluator']]:
                                      extra_body=extra_body, )
         message = [{"role": "user", "content": text}]
         try:
-            response = Qwen_MT.model.invoke(input=message)
+            response = Qwen_MT.model.invoke(input=message, config=config)
         except Exception as e:
             response = str(e)
 
@@ -502,10 +518,7 @@ def Qwen_ML_node(state: QwenML_trasOptions) -> Command[Literal['evaluator']]:
 async def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]:
     loop_account = state.get("loop_count", 0)
     print(f"+ **进入翻译评估阶段, 当前第{loop_account}次翻译评估**")
-    # response = evaluator.agent.invoke(input=state)
-    # response = evaluator.agent.stream(input=state, stream_mode=['updates', 'messages'], )
-    response = evaluator.astreamOutput(input=state, stream_modes='updates',print_mode='None',thread_id=None)
-    # update = {"messages": [AIMessage(content=response['messages'][-1].content)]}
+    response = evaluator.astreamOutput(input=state, stream_modes='updates', print_mode='None', thread_id=thread_id)
     command_params = {'update': [AIMessage("agent doesn't generate structured_response, exit!")]}
     async for think, modelOutput, finish_reason, structured_response in response:
         if structured_response is not None and structured_response:  # 非空{},非None
@@ -529,89 +542,27 @@ async def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]
 async def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]:
     loop_account = state.get("loop_count", 0)
     print(f"+ **进入翻译改进阶段, 当前第{loop_account}次改进**")
-    # response = translator.agent.invoke(input=state)
-    response = translator.astreamOutput(input=state, stream_modes='updates',print_mode='None',thread_id=None)
+    response = translator.astreamOutput(input=state, stream_modes='updates', print_mode='None', thread_id=thread_id)
     async for think, modelOutput, finish_reason, structured_response in response:
         if modelOutput:
             update = {"messages": [AIMessage(modelOutput)],
-                  "loop_count": 1,  # operator.add会自动增加1,统计循环次数
-                  }
+                      "loop_count": 1,  # operator.add会自动增加1,统计循环次数
+                      }
             # print(f"**翻译改进:**\n  {modelOutput}")
             yield Command(
                 goto='evaluator',
                 update=update, )
 
 
-def translation_graph():
-    Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True)
-    Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
-    Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo",
-                                                            structure_output=QwenML_trasOptions)
-    Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
-    QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
-                                               structure_output=QwenML_trasOptions,
-
-                                               system_instruction="""
-                                                   你是一个优秀的助手。你对接收的prompt进行分析，并按照如下指示,将结果按照structured_response事先定义的Pydantic类，进行结构化输出每个字段：
-                                                   1) 首先对prompt中是否包含图片，做出判断，如果prompt包含有图片，则结构化输出字段: img=True,否则，img=False;
-                                                   2) 再对prompt是否包含有语言翻译的请求，做出判断，如果包含有语言翻译请求，结构化输出字段：translate_request=True；否则,translate_request=False;                                               
-                                                   3) 如果prompt包含有语言翻译的请求，请从中整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出字段domains;否则,domains="";
-                                                   4) 如果prompt包含有语言翻译的请求，请从中分析出翻译请求的源语言，目标语言，以及整理出的待翻译的文本，并分别结构化输出到字段 source_lang, target_lang, text; 否则, source_lang='auto', target_lang='', text='';
-                                                   5) 如果prompt包含有语言翻译的请求，请结构化输出字段：response=''; 否则，尽你所能，进行回答问题或者提供帮助，并将响应内容结构化输出到response;
-                                                   6) 事先定义的用于结构化输出Pydantic的各个字段(field)中，如果以上指示中有遗漏，请使用默认值，最后完整结构化输出该事先定义的Pydantic类。
-                                                   """)
-
-    Qwen_VL_agent = langgraph_agent(model=Qwen_VL.model,
-                                    structure_output=QwenML_trasOptions,
-                                    system_instruction="""
-                                        你善于识图理解，请识别Input的图片或文件，获取其全部内容，然后做如下分析和输出：
-                                        1) 对Input的text部分(非图片或文件部分），是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False; 
-                                        2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
-                                        3) 根据Input中的翻译请求，结合识图理解的内容，整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
-                                        4) 从Input中分析出翻译请求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
-                                        """)
-
-    evaluator = langgraph_agent(model=Qwen_plus.model,
-                                structure_output=EvaluationFeedback,
-                                system_instruction="""
-                                    你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，评估翻译质量是否合格，并给出评价意见, 你将结构化输出: score: 评估结论,包含pass,needs_improvement,end; feedback: 反馈意见;
-                                        a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要结构化输出: score="needs_improvement", feedback为反馈意见，指明翻译内容需要改进的地方;
-                                        b.如果你对翻译内容比较满意，则结构化输出: score="pass", feedback=''; 
-                                        c.如果你认为，不需要给出评估意见，请结构化输出: score="end", feedback=''; 然后,你可以结束进一步推理,停止任何响应,停止任何输出,结束你的工作,退出.
-                                        d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格(pass)的决定。
-                                    """)
-
-    translator = langgraph_agent(model=Qwen_plus.model,
-                                 system_instruction="""
-                                      你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文内容的领域，阅读对象，语气，使用恰当的目标语言和文字，术语，语气来翻译原文的能力，翻译结果专业，贴切。    
-                                      你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
-                                      """)
-
-    builder = StateGraph(State, )
-    builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
-    builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
-    builder.add_node("Qwen_ML_node", Qwen_ML_node)
-    builder.add_node("evaluator", evaluator_node)
-    builder.add_node("translator", translator_node)
-
-    builder.add_edge(START, 'QwenML_transOption_node')
-    builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
-
-    translation_agent = builder.compile()
-    # graph_png_path = r"./translation_agent_graph.png"
-    # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
-
-    return translation_agent
-
-async def graph_astream(graph: StateGraph|CompiledStateGraph, state:State,
-                        stream_mode:Literal['messages', 'updates'] = "updates",
+async def graph_astream(graph: StateGraph | CompiledStateGraph, state: State,
+                        stream_mode: Literal['messages', 'updates'] = "updates",
                         config: dict = None):
-    if isinstance(stream_mode,str):
+    if isinstance(stream_mode, str):
         stream_mode = [stream_mode]
     try:
         async for stream_mode, chunk in graph.astream(state,
-                                                           stream_mode=stream_mode,
-                                                           config=config):
+                                                      stream_mode=stream_mode,
+                                                      config=config):
             if stream_mode == "messages":
                 token, metadata = chunk
                 # print(f"graph运行节点: {metadata['langgraph_node']}")
@@ -636,19 +587,19 @@ async def graph_astream(graph: StateGraph|CompiledStateGraph, state:State,
         response = "Recursion Error"
         print(response)
 
-print(f"graph: {graph.name} 响应完成 !")
+    print(f"graph: {graph.name} 响应完成 !")
 
 
 if __name__ == '__main__':
-    # prompt = '请总结今日国际新闻3条'
     Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True)
     Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
     Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo",
                                                             structure_output=QwenML_trasOptions)
     Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
+    checkpointer = InMemorySaver()
     QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
+                                               checkpointer=checkpointer,
                                                structure_output=QwenML_trasOptions,
-
                                                system_instruction="""
                                                你是一个优秀的助手。你对接收的prompt进行分析，并按照如下指示,将结果按照structured_response事先定义的Pydantic类，进行结构化输出每个字段：
                                                1) 首先对prompt中是否包含图片，做出判断，如果prompt包含有图片，则结构化输出字段: img=True,否则，img=False;
@@ -660,6 +611,7 @@ if __name__ == '__main__':
                                                """)
 
     Qwen_VL_agent = langgraph_agent(model=Qwen_VL.model,
+                                    checkpointer=checkpointer,
                                     structure_output=QwenML_trasOptions,
                                     system_instruction="""
                                     你善于识图理解，请识别Input的图片或文件，获取其全部内容，然后做如下分析和输出：
@@ -670,6 +622,7 @@ if __name__ == '__main__':
                                     """)
 
     evaluator = langgraph_agent(model=Qwen_plus.model,
+                                checkpointer=checkpointer,
                                 structure_output=EvaluationFeedback,
                                 system_instruction="""
                                 你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，评估翻译质量是否合格，并给出评价意见, 你将结构化输出: score: 评估结论,包含pass,needs_improvement,end; feedback: 反馈意见;
@@ -680,6 +633,7 @@ if __name__ == '__main__':
                                 """)
 
     translator = langgraph_agent(model=Qwen_plus.model,
+                                 checkpointer=checkpointer,
                                  system_instruction="""
                                   你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文内容的领域，阅读对象，语气，使用恰当的目标语言和文字，术语，语气来翻译原文的能力，翻译结果专业，贴切。
                                   你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
@@ -695,7 +649,10 @@ if __name__ == '__main__':
     builder.add_edge(START, 'QwenML_transOption_node')
     builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
 
-    translation_agent = builder.compile()
+    translation_agent = builder.compile(name="translation_graph", checkpointer=checkpointer)
+    thread_id = uuid.uuid4()  # 128 位的随机数，通常用 32 个十六进制数字表示
+    config = {"configurable": {"thread_id": thread_id},
+              "recursion_limit": 10}
 
     # graph_png_path = r"./translation_agent_graph.png"
     # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
@@ -704,8 +661,8 @@ if __name__ == '__main__':
     # prompt = '请问今天日期'
     # state_message = {"messages": HumanMessage(content=prompt)}
     state_message = {"messages": {"role": "user", "content": prompt}}
-    asyncio.run(graph_astream(translation_agent,state_message,
-                                             config={"recursion_limit": 10}))
+    asyncio.run(graph_astream(translation_agent, state_message,
+                              config=config))
 
     # graph_draw_path = r"E:/Python_WorkSpace/modelscope/LangGraph/graph_draw.png"
     # # langgraph_agent.agent.get_graph().draw_mermaid_png(output_file_path=graph_draw_path)
