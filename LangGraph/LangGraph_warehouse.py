@@ -582,12 +582,12 @@ async def graph_astream(graph: StateGraph | CompiledStateGraph, state: State,
                                 if msg.content:
                                     print(msg.content)
 
+        print(f"graph: {graph.name} 正常完成 !")
 
     except GraphRecursionError:
         response = "Recursion Error"
-        print(response)
+        print(f"graph: {graph.name} 响应错误:{response} !")
 
-    print(f"graph: {graph.name} 响应完成 !")
 
 
 if __name__ == '__main__':
@@ -652,12 +652,12 @@ if __name__ == '__main__':
     translation_agent = builder.compile(name="translation_graph", checkpointer=checkpointer)
     thread_id = uuid.uuid4()  # 128 位的随机数，通常用 32 个十六进制数字表示
     config = {"configurable": {"thread_id": thread_id},
-              "recursion_limit": 10}
+              "recursion_limit": 15}
 
     # graph_png_path = r"./translation_agent_graph.png"
     # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
 
-    prompt = '请翻译以下文字至英文：和光同尘'
+    prompt = '请翻译以下文字至英文：忠于使命 ,勇于创新 ,善于协同,成于务实'
     # prompt = '请问今天日期'
     # state_message = {"messages": HumanMessage(content=prompt)}
     state_message = {"messages": {"role": "user", "content": prompt}}
