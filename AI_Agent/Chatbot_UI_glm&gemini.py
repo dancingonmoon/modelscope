@@ -21,11 +21,16 @@ from typing import Literal
 import json
 import logging
 
+from LangGraph.LangGraph_warehouse import translation_graph, State, checkpointer
+from langgraph.graph.state import CompiledStateGraph, StateGraph
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 def gradio_msg2LLM_msg(gradio_msg: dict = None,
-                       msg_format: Literal["openai_agents", "gemini", "glm"] = "openai_agents",
+                       msg_format: Literal["openai_agents", "gemini", "glm","langchain"] = "openai_agents",
                        genai_client: genai.Client = None, zhipuai_client: ZhipuAI = None):
     """
     一次gradio的多媒体message(包含text,file)，转换成各类LLM要求的message格式
@@ -125,6 +130,41 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
         input_item.append({"role": "user", "content": contents})
         # print(f"gradio_msg2 input_item:{input_item}")
 
+    # LangGraph-QWQ/Qwen gradio_message 格式处理:
+    elif msg_format == "langchain":
+        if files:
+            for file in files:
+                file_path = Path(file)
+                if file_path.exists() and file_path.is_file():
+                    file_suffix = file_path.suffix.lower()
+                    if file_suffix in supported_img:  # 处理Image:
+                        with open(file_path, "rb") as image_file:
+                            base64_img = base64.b64encode(image_file.read()).decode("utf-8")
+                        if file_suffix in jpg_variant:
+                            file_suffix = "jpeg"
+                        elif file_suffix in tif_variant:
+                            file_suffix = "tiff"
+                        content = {
+                            "type": "image_url", # qwen的OpenAI格式,与openai-agent不同
+                            "image_url": {"url": f"data:image/{file_suffix};base64,{base64_img}"}} # qwen的OpenAI格式,与openai-agent不同
+                            # "type": "input_image",
+                            # "detail": "auto",
+                            # "image_url": f"data:image/{file_suffix};base64,{base64_img}"}  # openAI-Aents格式
+                        contents.append(content)
+                    else:
+                        # 可以处理其它格式文件，例如:使用file.upload
+                        print("✅ 暂时只处理指定格式的IMG格式")
+                        # break
+                else:
+                    print("✅ 文档路径不存在")
+                    # break
+            contents.append({"type": "text", "text": text})
+        else:
+            contents.append(text)
+
+        state = {"messages": [HumanMessage(contents)]}
+        input_item.append(state)
+
     return input_item
 
 
@@ -169,6 +209,8 @@ def add_message(history_gradio: list[gr.ChatMessage] = None, history_llm: list[d
         llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="gemini", genai_client=genai_client)
     elif 'translator' in model.lower():  # translator_agent由openai_agents SDK生成;
         llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="openai_agents")
+    elif "langchain" in model.lower() or "langgraph" in model.lower():
+        llm_message = gradio_msg2LLM_msg(gradio_message, msg_format="langchain")
     else:
         llm_message = [{"role": "user", "content": text}]
 
@@ -328,6 +370,55 @@ async def openai_agents_inference(
         history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
         # print(history_llm)
         yield history_gradio, history_llm
+
+async def translation_langgraph_inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, stop_inference_flag: bool = False,
+                                      graph: StateGraph | CompiledStateGraph=None, stream_mode: Literal['messages', 'updates'] = "updates",
+                                        config: dict = None):
+    if isinstance(stream_mode, str):
+        stream_mode = [stream_mode]
+
+
+    try:
+        while True:
+            present_message = history_llm[-1]
+
+            if new_topic:
+                input_message = present_message
+            else:
+                input_message = history_llm
+
+            async for stream_mode, chunk in graph.astream(input_message,
+                                                          stream_mode=stream_mode,
+                                                          config=config):
+                if stream_mode == "messages":
+                    token, metadata = chunk
+                    # print(f"graph运行节点: {metadata['langgraph_node']}")
+                    if token.content:
+                        print(token.content, end="", flush=True)
+
+                if stream_mode == "updates":
+                    # print(f"graph当前update了node: {[*chunk.keys()]}")
+                    for node in chunk.keys():
+                        print(f"graph当前update的node: {node}")
+                        # print(f"其State为:{chunk[node]}")
+                        #  print modeloutput.content
+                        if isinstance(chunk[node], dict):
+                            if 'messages' in chunk[node]:
+                                modeloutput = chunk[node]['messages']  # list
+                                for msg in modeloutput:
+                                    content = None
+                                    if hasattr(msg, 'content'):
+                                        content = msg.content
+                                    if isinstance(msg, dict):
+                                        content = msg.get('content', None)
+                                    if content:
+                                        print(content)
+
+            print(f"graph: {graph.name} 正常完成 !")
+
+        except GraphRecursionError:
+            response = "Recursion Error"
+            print(f"graph: {graph.name} 响应错误:{response} !")
 
 
 async def translator_agents_inference(
@@ -703,6 +794,7 @@ if __name__ == "__main__":
     # translator = gemini_translator(translate_agent=translate_agent.agent,
     #                                  evaluate_agent=evaluate_agent.agent,
     #                                  )
+    translation_graph = translation_graph(State, name="translation_graph", checkpointer=checkpointer)
 
     demo = gradio_UI()
     demo.queue().launch(server_name='127.0.0.1')
