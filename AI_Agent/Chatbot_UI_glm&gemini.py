@@ -6,6 +6,7 @@ sys.path.append(str(Path(__file__).parent.parent))  # 添加项目根目录
 
 # import asyncio
 import gradio as gr  # gradio 5.5.0 需要python 3.10以上
+from gradio import ChatMessage
 
 
 from zhipuai import ZhipuAI

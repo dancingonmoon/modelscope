@@ -10,6 +10,7 @@ from typing import Annotated
 from pydantic import BaseModel
 
 from tempfile import TemporaryDirectory
+import gradio
 
 from langchain_community import chat_models
 from langchain_community.document_loaders import WebBaseLoader, Docx2txtLoader
@@ -383,11 +384,12 @@ class langgraph_agent:
                         print(f"")
                 if 'updates' not in stream_modes and 'messages ' in stream_modes:
                     msg_think_content, msg_modelOutput, msg_finish_reason, structured_response = response
-                    async for msg_think_content,msg_modelOutput,msg_finish_reason,structured_response in response:
+                    async for msg_think_content, msg_modelOutput, msg_finish_reason, structured_response in response:
                         print(f"")
                 if 'updates' in stream_modes and 'messages' in stream_modes:
-                    async for (updates_think_content, updates_modelOutput, updates_finish_reason, structured_response), (
-                        msg_think_content, msg_modelOutput, msg_finish_reason) in response:
+                    async for (
+                            updates_think_content, updates_modelOutput, updates_finish_reason, structured_response), (
+                            msg_think_content, msg_modelOutput, msg_finish_reason) in response:
                         print(f"")
 
 
@@ -417,6 +419,7 @@ class QwenML_trasOptions(BaseModel):
 class EvaluationFeedback:
     feedback: str
     score: Literal["pass", "needs_improvement", "end"]
+
 
 
 # graph_builder = StateGraph(State)
@@ -525,7 +528,7 @@ async def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]
             score = structured_response['score']
             feedback = structured_response['feedback']
             if score == 'end' or feedback == 'pass':
-                update = {"messages": [AIMessage(modelOutput)],
+                update = {"messages": [AIMessage(feedback)],
                           }  # 节点结束时，state输出结果无需loop_count; state与input state相同;
                 command_params = {'update': update}  # 节点无goto, command后，不再handoff,自行结束;
             elif score == "needs_improvement":
@@ -553,6 +556,20 @@ async def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]
                 goto='evaluator',
                 update=update, )
 
+        # if think:  # 为gradio 在UI上think框单独显示思考内容
+        #     if finish_reason:
+        #         log = f"End translator output"
+        #     else:
+        #         log = f"进入翻译阶段,当前第{loop_account}次改进"
+        #     update = {"messages": [{
+        #         "role": "assistant",
+        #         "content": think,
+        #         "metadata": {"title": "🧠 Thinking",
+        #                      "log": log,
+        #                      "status": "done"}}], }
+        #     yield update  # 如果yeild command 将导致思考部分的content，会被update,
+        #     # 然后，再未出现modeloutput之前，思考部分的content，会被覆盖就会被送入evaluator_node,导致待评估内容不够
+
 
 async def graph_astream(graph: StateGraph | CompiledStateGraph, state: State,
                         stream_mode: Literal['messages', 'updates'] = "updates",
@@ -579,8 +596,13 @@ async def graph_astream(graph: StateGraph | CompiledStateGraph, state: State,
                         if 'messages' in chunk[node]:
                             modeloutput = chunk[node]['messages']  # list
                             for msg in modeloutput:
-                                if msg.content:
-                                    print(msg.content)
+                                content = None
+                                if hasattr(msg, 'content'):
+                                    content = msg.content
+                                if isinstance(msg, dict):
+                                    content = msg.get('content', None)
+                                if content:
+                                    print(content)
 
         print(f"graph: {graph.name} 正常完成 !")
 
@@ -588,6 +610,27 @@ async def graph_astream(graph: StateGraph | CompiledStateGraph, state: State,
         response = "Recursion Error"
         print(f"graph: {graph.name} 响应错误:{response} !")
 
+
+def translation_graph(State: TypedDict, name="translation_graph", checkpointer: None | bool | InMemorySaver = None):
+    builder = StateGraph(State, )
+    builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
+    builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
+    builder.add_node("Qwen_ML_node", Qwen_ML_node)
+    builder.add_node("evaluator", evaluator_node)
+    builder.add_node("translator", translator_node)
+
+    builder.add_edge(START, 'QwenML_transOption_node')
+    builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
+
+    translation_agent = builder.compile(name=name, checkpointer=checkpointer)
+    # thread_id = uuid.uuid4()  # 128 位的随机数，通常用 32 个十六进制数字表示
+    # config = {"configurable": {"thread_id": thread_id},
+    #           "recursion_limit": 20}
+
+    # graph_png_path = r"./translation_agent_graph.png"
+    # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
+
+    return translation_agent
 
 
 if __name__ == '__main__':
@@ -614,11 +657,13 @@ if __name__ == '__main__':
                                     checkpointer=checkpointer,
                                     structure_output=QwenML_trasOptions,
                                     system_instruction="""
-                                    你善于识图理解，请识别Input的图片或文件，获取其全部内容，然后做如下分析和输出：
-                                    1) 对Input的text部分(非图片或文件部分），是否包含对文本进行语言翻译的请求，做出判断，如果包含有文本语言翻译请求，结构化输出：end=True；否则end=False;
-                                    2） 然后，请尽你所能就Input内容中文本翻译请求以外的部分，进行回答问题或者提供帮助，并将响应内容结构化输出到response （注意：不要试图进行文本翻译）;
-                                    3) 根据Input中的翻译请求，结合识图理解的内容，整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出domains;
-                                    4) 从Input中分析出翻译请求的源语言，目标语言，整理出待翻译的文本，并分别结构化输出到 source_lang, target_lang, text;
+                                    你接收到的prompt将同时包括text文本,以及图片img或者文件file.你善于识图理解，请识图并理解输入的图片或文件，获取其全部内容，并且结合接收的prompt,按照structured_response事先定义的Pydantic类，进行结构化输出每个字段：
+                                               1) 显然，你已经收到了图片img或者文件file; 请结构化输出字段: img=True;
+                                               2) 请对prompt是否包含有语言翻译的请求，做出判断，如果包含有语言翻译请求，结构化输出字段：translate_request=True；否则,translate_request=False;
+                                               3) 如果prompt包含有语言翻译的请求，结合识图理解的内容，请从中整理出待翻译的文本，并使用一段自然英文(必须为英文)总结下待翻译文本的领域，语气，从而使得翻译的风格更符合某个领域的特性；并将该总结输出至结构化输出字段domains;否则,domains="";
+                                               4) 如果prompt包含有语言翻译的请求，结合识图理解的内容，请从中分析出翻译请求的源语言，目标语言，以及整理出的待翻译的文本，并分别结构化输出到字段 source_lang, target_lang, text; 否则, source_lang='auto', target_lang='', text='';
+                                               5) 如果prompt包含有语言翻译的请求，结合识图理解的内容，请结构化输出字段：response=''; 否则，尽你所能，就提问的text文本，结合识图理解的内容，进行回答问题或者提供帮助，并将响应内容结构化输出到response;
+                                               6) 事先定义的用于结构化输出Pydantic的各个字段(field)中，如果以上指示中有遗漏，请使用默认值，最后完整结构化输出该事先定义的Pydantic类。                                    
                                     """)
 
     evaluator = langgraph_agent(model=Qwen_plus.model,
@@ -627,8 +672,8 @@ if __name__ == '__main__':
                                 system_instruction="""
                                 你是一个翻译评价家，根据你收到的包含原文以及翻译的内容，评估翻译质量是否合格，并给出评价意见, 你将结构化输出: score: 评估结论,包含pass,needs_improvement,end; feedback: 反馈意见;
                                     a.如果你对翻译内容评估不太满意，认为需改进(needs_improvement)的话，你需要结构化输出: score="needs_improvement", feedback为反馈意见，指明翻译内容需要改进的地方;
-                                    b.如果你对翻译内容比较满意，则结构化输出: score="pass", feedback='';
-                                    c.如果你认为，不需要给出评估意见，请结构化输出: score="end", feedback=''; 然后,你可以结束进一步推理,停止任何响应,停止任何输出,结束你的工作,退出.
+                                    b.如果你对翻译内容比较满意，则结构化输出: score="pass", feedback=你满意的翻译内容;
+                                    c.如果你认为，不需要给出评估意见，请结构化输出: score="end", feedback=原因或理由; 然后,你可以结束进一步推理,停止任何响应,停止任何输出,结束你的工作,退出.
                                     d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格(pass)的决定。
                                 """)
 
@@ -639,24 +684,11 @@ if __name__ == '__main__':
                                   你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
                                   """)
 
-    builder = StateGraph(State, )
-    builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
-    builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
-    builder.add_node("Qwen_ML_node", Qwen_ML_node)
-    builder.add_node("evaluator", evaluator_node)
-    builder.add_node("translator", translator_node)
-
-    builder.add_edge(START, 'QwenML_transOption_node')
-    builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
-
-    translation_agent = builder.compile(name="translation_graph", checkpointer=checkpointer)
     thread_id = uuid.uuid4()  # 128 位的随机数，通常用 32 个十六进制数字表示
     config = {"configurable": {"thread_id": thread_id},
-              "recursion_limit": 15}
+              "recursion_limit": 20}
 
-    # graph_png_path = r"./translation_agent_graph.png"
-    # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
-
+    translation_agent = translation_graph(State=State, checkpointer=checkpointer)
     prompt = '请翻译以下文字至英文：忠于使命 ,勇于创新 ,善于协同,成于务实'
     # prompt = '请问今天日期'
     # state_message = {"messages": HumanMessage(content=prompt)}
@@ -664,11 +696,6 @@ if __name__ == '__main__':
     asyncio.run(graph_astream(translation_agent, state_message,
                               config=config))
 
-    # graph_draw_path = r"E:/Python_WorkSpace/modelscope/LangGraph/graph_draw.png"
-    # # langgraph_agent.agent.get_graph().draw_mermaid_png(output_file_path=graph_draw_path)
-
-    # asyncio.run(Qwen_VL_agent.astreamPrint(prompt))
-    # asyncio.run(QwenML_transOption_agent.multi_turn_conversation())
     ## 测试 webBaseLoader:
     # url= r"https://www.eastcom.com"
     # docs = asyncio.run(web_txtLoader(url))

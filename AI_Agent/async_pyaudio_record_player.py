@@ -1,6 +1,5 @@
 import asyncio
 from collections import deque
-
 import pyaudio  # pyaudio 是一个跨平台的音频输入/输出库，主要用于处理 WAV 格式的音频数据
 from pydub import AudioSegment  # pydub 库本身不直接播放音频文件，但它可以将多种格式的音频文件转换为 WAV 格式
 import traceback
@@ -8,10 +7,11 @@ import logging
 import webrtcvad
 import numpy as np
 import time
+from pathlib import Path
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(gradio_message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),  # 输出到控制台
         # logging.FileHandler("app.log")  # 输出到文件
@@ -30,6 +30,79 @@ logging.basicConfig(
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
+
+def convert_with_librosa(input_file, output_format, target_sr=None):
+    """
+    使用 librosa 读取和转换音频文件
+
+    参数:
+    :param input_file (str): 输入文件路径
+    :param output_file (str): 输出文件路径
+    :param target_sr (int): 目标采样率，None表示保持原样
+    """
+    import librosa
+    import soundfile as sf
+
+    # 检查输入文件是否存在
+    file_path = Path(input_file)
+    if not file_path.exists():
+        print(f"错误: 文件 {input_file} 不存在")
+        return None
+    elif not file_path.is_file():
+        print(f"错误:  {input_file} 不是一个文件")
+        return None
+
+    # 构建输出文件路径
+    output_file = file_path.with_suffix(f".{output_format}")
+
+    try:
+        # 读取音频文件
+        y, sr = librosa.load(file_path, sr=target_sr)
+
+        # 保存音频文件
+        sf.write(output_file, y, sr)
+
+        print(f"使用 librosa 转换完成: {output_file}")
+        return True
+    except Exception as e:
+        print(f"librosa 转换失败: {str(e)}")
+        return False
+def audio_format_convert(input_file_path, output_format='mp3'):
+    """
+    将本地音频文件转换为指定格式并保存到相同路径,后缀不同。
+
+    :param input_file_path (str): 输入音频文件的完整路径
+    :param output_format (str): 输出音频格式，默认为'mp3'，可选'wav', 'flac', 'aac'等
+    :return str: 转换后的文件路径，如果转换失败则返回None
+    """
+    # 检查输入文件是否存在
+    file_path = Path(input_file_path)
+    if not file_path.exists():
+        print(f"错误: 文件 {input_file_path} 不存在")
+        return None
+    elif not file_path.is_file():
+        print(f"错误:  {input_file_path} 不是一个文件")
+        return None
+
+    try:
+        # 构建输出文件路径
+        output_file_path = file_path.with_suffix(f".{output_format}")
+        # 使用pydub加载音频文件
+        audio = AudioSegment.from_file(file_path,format='flac')
+
+        audio_channels = audio.channels
+        audio_sample_rate = audio.frame_rate
+        print(
+            f"音频文件信息: 通道数:{audio_channels},采样率:{audio_sample_rate}"
+        )
+        # 导出为指定格式
+        audio.export(output_file_path, format=output_format)
+        print(f"音频文件已成功转换: {output_file_path}")
+        return output_file_path
+
+    except Exception as e:
+        print(f"转换过程中出现错误: {str(e)}")
+        return None
 def create_wav_header(dataflow, sample_rate=16000, num_channels=1, bits_per_sample=16):
     """
     创建WAV文件头的字节串。 (替代生成wave文件）
@@ -133,6 +206,7 @@ class Pyaudio_Record_Player:
         # 存在问题未解： 当正常播放结束，asyncio.to_thread(input)异步线程等待键盘输入，程序无法关闭
         except asyncio.CancelledError:
             self.logger.info("user_command task cancelled.")
+
 
     async def audiofile_read(self, file_path: str, chunk_size: int = 1024):
         """
@@ -545,14 +619,17 @@ class Pyaudio_Record_Player:
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger("Pyaudio_Record_Player")
-    logger.setLevel("INFO")
-    pya = pyaudio.PyAudio()
-    file_path = r"F:/Music/放牛班的春天10.mp3"
+    # logger = logging.getLogger("Pyaudio_Record_Player")
+    # logger.setLevel("INFO")
+    # pya = pyaudio.PyAudio()
+    file_path = r"F:/Music/萨顶顶 - 左手指月.kgg.flac"
     # query_file_path = r"H:/music/Music/color of the world.mp3"
-    player = Pyaudio_Record_Player(pya, logger, echo_cancellation=True, noise_suppression=False )
+    # player = Pyaudio_Record_Player(pya, logger, echo_cancellation=True, noise_suppression=False )
     # asyncio.run(player.audiofile_player(query_file_path))
-    asyncio.run(
-        player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=1024, )
-    )
+    # asyncio.run(
+    #     player.microphone_test(sample_width=2, channels=1, rate=16000, chunk_size=1024, )
+    # )
+    # 转换音频文件格式
+    audio_format_convert(file_path,output_format='wav')
+    # convert_with_librosa(file_path, output_format='mp3')
 
