@@ -571,17 +571,48 @@ async def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]
         #     # 然后，再未出现modeloutput之前，思考部分的content，会被覆盖就会被送入evaluator_node,导致待评估内容不够
 
 
-async def graph_astream(graph: StateGraph | CompiledStateGraph, state: State,
-                        stream_mode: Literal['messages', 'updates'] = "updates",
-                        config: dict = None):
+async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State,
+                            stream_mode: Literal['messages', 'updates'] = "updates",
+                            print_mode: Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None',
+                            config: dict = None):
+    """
+    包含多个节点的langgraph异步stream输出;
+    可以同时接受'updates','messages'两种stream_mode,以便同时stream token,和输出structured_response;
+        messages特点: 1) stream输出llm token,包括reason_content,以及模型content;
+                     2) 不能输出generate_structured_response;
+        updates特点: 不是token级别stream输出,是每次update的步骤输出.例如,只输出两条update messages:
+                        a)模型输出(带思考在一条message内) b)structured_response
+    :param graph: 多节点的compiled的langgraph对象；
+    :param state: 输入state
+    :param stream_mode: str,或者包含多个stream_mode的列表
+    :param print_mode:
+        'token': to print streaming token_level for "messages"
+        'think': to print streaming think
+        'tools': to print tools
+        'model_output': to print model_output
+        'None': no printing
+    :param config: 典型如: config = {"configurable": {"thread_id": thread_id},
+                                    "recursion_limit": 20}
+    :return:
+        node_name: graph每次update时的node name: 缺省值为: graph.name
+        updates_think_content: graph每次更新状态中如有思考时的输出；缺省值：None；
+        updates_modelOutput: graph每次更新状态中如有模型输出(AIMessage/HumanMessage)时的输出；缺省值：None；
+        updates_finish_reason: graph每次更新状态中如有finish_reason时的输出；例如'stop', 'tool_calls', 缺省值：None；
+    """
     if isinstance(stream_mode, str):
         stream_mode = [stream_mode]
+    node_name = graph.name
+    updates_think_content = None
+    updates_modelOutput = None
+    updates_finish_reason = None
+
     try:
         async for stream_mode, chunk in graph.astream(state,
                                                       stream_mode=stream_mode,
                                                       config=config):
             if stream_mode == "messages":
                 token, metadata = chunk
+                node_name = metadata['langgraph_node']
                 # print(f"graph运行节点: {metadata['langgraph_node']}")
                 if token.content:
                     print(token.content, end="", flush=True)
@@ -590,25 +621,42 @@ async def graph_astream(graph: StateGraph | CompiledStateGraph, state: State,
                 # print(f"graph当前update了node: {[*chunk.keys()]}")
                 for node in chunk.keys():
                     print(f"graph当前update的node: {node}")
+                    node_name = node
                     # print(f"其State为:{chunk[node]}")
-                    #  print modeloutput.content
+
                     if isinstance(chunk[node], dict):
                         if 'messages' in chunk[node]:
                             modeloutput = chunk[node]['messages']  # list
                             for msg in modeloutput:
-                                content = None
-                                if hasattr(msg, 'content'):
-                                    content = msg.content
-                                if isinstance(msg, dict):
-                                    content = msg.get('content', None)
-                                if content:
-                                    print(content)
+                                #  输出reasoning:
+                                if hasattr(msg,
+                                           'additional_kwargs') and "reasoning_content" in msg.additional_kwargs:
+                                    updates_think_content = msg.additional_kwargs["reasoning_content"]
+                                    if 'think' in print_mode and 'token' not in print_mode:
+                                        print(updates_think_content, end="", flush=True)
+                                #  输出content:
+                                if hasattr(msg, 'content') and msg.content:
+                                    updates_modelOutput = msg.content
+                                    if 'model_output' in print_mode and 'token' not in print_mode:
+                                        print(updates_modelOutput, end="", flush=True)
+                                if hasattr(msg, 'response_metadata'):
+                                    updates_finish_reason = msg.response_metadata.get('finish_reason', None)
+                                    if updates_finish_reason == "stop":
+                                        if not "None" in print_mode:
+                                            print("\n*Ending model output...*  \n")
+                                    if updates_finish_reason == "tool_calls":
+                                        if not "None" in print_mode:
+                                            print("\n*Ending tool calls...*  \n")
+
+                                yield node_name,updates_think_content, updates_modelOutput,updates_finish_reason
+
 
         print(f"graph: {graph.name} 正常完成 !")
 
     except GraphRecursionError:
         response = "Recursion Error"
         print(f"graph: {graph.name} 响应错误:{response} !")
+        yield node_name,updates_think_content, updates_modelOutput, updates_finish_reason
 
 
 def translation_graph(State: TypedDict, name="translation_graph", checkpointer: None | bool | InMemorySaver = None):
@@ -693,8 +741,8 @@ if __name__ == '__main__':
     # prompt = '请问今天日期'
     # state_message = {"messages": HumanMessage(content=prompt)}
     state_message = {"messages": {"role": "user", "content": prompt}}
-    asyncio.run(graph_astream(translation_agent, state_message,
-                              config=config))
+    asyncio.run(langgraph_astream(translation_agent, state_message,
+                                  config=config))
 
     ## 测试 webBaseLoader:
     # url= r"https://www.eastcom.com"

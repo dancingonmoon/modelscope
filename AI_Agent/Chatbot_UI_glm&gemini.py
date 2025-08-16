@@ -21,7 +21,7 @@ from typing import Literal
 import json
 import logging
 
-from LangGraph.LangGraph_warehouse import translation_graph, State, checkpointer
+from LangGraph.LangGraph_warehouse import translation_graph, State, checkpointer, langgraph_astream
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
@@ -371,13 +371,11 @@ async def openai_agents_inference(
         # print(history_llm)
         yield history_gradio, history_llm
 
-async def translation_langgraph_inference(history_gradio: list[dict], history_llm: list[dict], new_topic: bool, stop_inference_flag: bool = False,
+async def translation_langgraph_inference(history_gradio: list[dict|ChatMessage], history_llm: list[dict], new_topic: bool, stop_inference_flag: bool = False,
                                       graph: StateGraph | CompiledStateGraph=None, stream_mode: Literal['messages', 'updates'] = "updates",
                                         config: dict = None):
-    if isinstance(stream_mode, str):
-        stream_mode = [stream_mode]
 
-
+   # 未完待续：
     try:
         while True:
             present_message = history_llm[-1]
@@ -387,38 +385,52 @@ async def translation_langgraph_inference(history_gradio: list[dict], history_ll
             else:
                 input_message = history_llm
 
-            async for stream_mode, chunk in graph.astream(input_message,
-                                                          stream_mode=stream_mode,
-                                                          config=config):
-                if stream_mode == "messages":
-                    token, metadata = chunk
-                    # print(f"graph运行节点: {metadata['langgraph_node']}")
-                    if token.content:
-                        print(token.content, end="", flush=True)
+            async for node_name, updates_think_content, updates_modelOutput,updates_finish_reason in langgraph_astream(graph=translation_graph,
+                                                              state=input_message,
+                                                              stream_mode=stream_mode,
+                                                              config=config):
+                gradio_message = ChatMessage(
+                    role="assistant",
+                    content = "")
+                if updates_think_content:
+                    gradio_message = ChatMessage(
+                                    content=updates_think_content,
+                                    metadata={"title":  "🧠 Thinking",
+                                              "log": "......",
+                                              "status":"pending"}
+                                     )
+                    history_gradio.append(gradio_message)
+                    history_llm = graph.get_state_history(config=config)
+                    yield history_gradio, history_llm
 
-                if stream_mode == "updates":
-                    # print(f"graph当前update了node: {[*chunk.keys()]}")
-                    for node in chunk.keys():
-                        print(f"graph当前update的node: {node}")
-                        # print(f"其State为:{chunk[node]}")
-                        #  print modeloutput.content
-                        if isinstance(chunk[node], dict):
-                            if 'messages' in chunk[node]:
-                                modeloutput = chunk[node]['messages']  # list
-                                for msg in modeloutput:
-                                    content = None
-                                    if hasattr(msg, 'content'):
-                                        content = msg.content
-                                    if isinstance(msg, dict):
-                                        content = msg.get('content', None)
-                                    if content:
-                                        print(content)
+                if updates_modelOutput:
+                    gradio_message.content=updates_modelOutput
+                    history_gradio.append(gradio_message)
+                    history_llm = graph.get_state_history(config=config)
+                    yield history_gradio, history_llm
 
-            print(f"graph: {graph.name} 正常完成 !")
+                if updates_finish_reason:
+                    if updates_finish_reason == "stop":
+                        gradio_message.metadata={"title":  "🧠 End Module Output",
+                                              "status":"done"}
 
-        except GraphRecursionError:
-            response = "Recursion Error"
-            print(f"graph: {graph.name} 响应错误:{response} !")
+                    if updates_finish_reason == "tool_calls":
+                        gradio_message.metadata={"title": "🧠 End Tool Calls",
+                                      "status": "done"}
+
+                    history_gradio.append(gradio_message)
+                    history_llm = graph.get_state_history(config=config)
+                    yield history_gradio, history_llm
+
+
+            # print(f"graph: {graph.name} 正常完成 !")
+    except Exception as e:
+        logging.error("Exception encountered:", str(e))
+        history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
+        # print(history_llm)
+        yield history_gradio, history_llm
+
+
 
 
 async def translator_agents_inference(
