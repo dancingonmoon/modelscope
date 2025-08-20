@@ -8,7 +8,6 @@ sys.path.append(str(Path(__file__).parent.parent))  # 添加项目根目录
 import gradio as gr  # gradio 5.5.0 需要python 3.10以上
 from gradio import ChatMessage
 
-
 from zhipuai import ZhipuAI
 # import google.generativeai as genai # 旧版
 from google import genai  # 新版
@@ -25,12 +24,11 @@ from LangGraph.LangGraph_warehouse import translation_graph, State, checkpointer
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 def gradio_msg2LLM_msg(gradio_msg: dict = None,
-                       msg_format: Literal["openai_agents", "gemini", "glm","langchain"] = "openai_agents",
+                       msg_format: Literal["openai_agents", "gemini", "glm", "langchain"] = "openai_agents",
                        genai_client: genai.Client = None, zhipuai_client: ZhipuAI = None):
     """
     一次gradio的多媒体message(包含text,file)，转换成各类LLM要求的message格式
@@ -145,11 +143,12 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
                         elif file_suffix in tif_variant:
                             file_suffix = "tiff"
                         content = {
-                            "type": "image_url", # qwen的OpenAI格式,与openai-agent不同
-                            "image_url": {"url": f"data:image/{file_suffix};base64,{base64_img}"}} # qwen的OpenAI格式,与openai-agent不同
-                            # "type": "input_image",
-                            # "detail": "auto",
-                            # "image_url": f"data:image/{file_suffix};base64,{base64_img}"}  # openAI-Aents格式
+                            "type": "image_url",  # qwen的OpenAI格式,与openai-agent不同
+                            "image_url": {
+                                "url": f"data:image/{file_suffix};base64,{base64_img}"}}  # qwen的OpenAI格式,与openai-agent不同
+                        # "type": "input_image",
+                        # "detail": "auto",
+                        # "image_url": f"data:image/{file_suffix};base64,{base64_img}"}  # openAI-Aents格式
                         contents.append(content)
                     else:
                         # 可以处理其它格式文件，例如:使用file.upload
@@ -371,11 +370,13 @@ async def openai_agents_inference(
         # print(history_llm)
         yield history_gradio, history_llm
 
-async def translation_langgraph_inference(history_gradio: list[dict|ChatMessage], history_llm: list[dict], new_topic: bool, stop_inference_flag: bool = False,
-                                      graph: StateGraph | CompiledStateGraph=None, stream_mode: Literal['messages', 'updates'] = "updates",
-                                        config: dict = None):
 
-   # 未完待续：
+async def translation_langgraph_inference(history_gradio: list[dict | ChatMessage], history_llm: list[dict | any],
+                                          new_topic: bool, stop_inference_flag: bool = False,
+                                          graph: StateGraph | CompiledStateGraph = None,
+                                          stream_mode: Literal['messages', 'updates'] = "updates",
+                                          config: dict = None):
+    # 未完待续：
     try:
         while True:
             present_message = history_llm[-1]
@@ -385,43 +386,41 @@ async def translation_langgraph_inference(history_gradio: list[dict|ChatMessage]
             else:
                 input_message = history_llm
 
-            async for node_name, updates_think_content, updates_modelOutput,updates_finish_reason in langgraph_astream(graph=translation_graph,
-                                                              state=input_message,
-                                                              stream_mode=stream_mode,
-                                                              config=config):
+            async for node_name, updates_think_content, updates_modelOutput, updates_finish_reason in langgraph_astream(
+                    graph=translation_graph,
+                    state=input_message,
+                    stream_mode=stream_mode,
+                    config=config):
                 gradio_message = ChatMessage(
                     role="assistant",
-                    content = "")
+                    content="")
                 if updates_think_content:
-                    gradio_message = ChatMessage(
-                                    content=updates_think_content,
-                                    metadata={"title":  "🧠 Thinking",
-                                              "log": "......",
-                                              "status":"pending"}
-                                     )
+                    gradio_message.content = updates_think_content
+                    gradio_message.metadata = {"title": "🧠 Thinking",
+                                               "log": f"@ graph node: {node_name}",
+                                               "status": "pending"}
                     history_gradio.append(gradio_message)
-                    history_llm = graph.get_state_history(config=config)
+                    # thinking 无需append history_llm
                     yield history_gradio, history_llm
 
                 if updates_modelOutput:
-                    gradio_message.content=updates_modelOutput
+                    gradio_message.content = updates_modelOutput
                     history_gradio.append(gradio_message)
-                    history_llm = graph.get_state_history(config=config)
+                    history_llm.append(graph.get_state(config=config))
                     yield history_gradio, history_llm
 
                 if updates_finish_reason:
                     if updates_finish_reason == "stop":
-                        gradio_message.metadata={"title":  "🧠 End Module Output",
-                                              "status":"done"}
+                        gradio_message.metadata = {"title": "🧠 End Module Output",
+                                                   "status": "done"}
 
                     if updates_finish_reason == "tool_calls":
-                        gradio_message.metadata={"title": "🧠 End Tool Calls",
-                                      "status": "done"}
+                        gradio_message.metadata = {"title": "🧠 End Tool Calls",
+                                                   "status": "done"}
 
                     history_gradio.append(gradio_message)
-                    history_llm = graph.get_state_history(config=config)
+                    # thinking 无需append history_llm
                     yield history_gradio, history_llm
-
 
             # print(f"graph: {graph.name} 正常完成 !")
     except Exception as e:
@@ -429,8 +428,6 @@ async def translation_langgraph_inference(history_gradio: list[dict|ChatMessage]
         history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
         # print(history_llm)
         yield history_gradio, history_llm
-
-
 
 
 async def translator_agents_inference(
@@ -498,7 +495,6 @@ async def translator_agents_inference(
 def gemini_inference(
         history_gradio: list[dict], history_llm: list[dict], new_topic: bool, genai_client: genai.Client = None,
         model: str = None, stop_inference_flag: bool = False, ):
-
     try:
         google_search_tool = Tool(
             google_search=GoogleSearch()
