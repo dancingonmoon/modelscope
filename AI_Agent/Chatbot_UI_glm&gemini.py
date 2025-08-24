@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+import uuid
 
 sys.path.append(str(Path(__file__).parent.parent))  # 添加项目根目录
 
@@ -44,7 +45,7 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
     contents = []
     input_item = []
 
-    text = gradio_msg.get("text", None)
+    text = gradio_msg.get("text", '')
     files = gradio_msg.get("files", [])
     # openAI-Agents gradio_message 格式处理:
     if msg_format == "openai_agents":
@@ -157,11 +158,12 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
                 else:
                     print("✅ 文档路径不存在")
                     # break
-            contents.append({"type": "text", "text": text})
-        else:
-            contents.append(text)
+            # contents.append({"type": "text", "text": text})
+        # else:  # 对于Qwen模型，当promt为列表时，例如VL模型，必须{"type": "text", "text": text};否则必须为字符串非列表
+            # contents.append(text)
 
-        state = {"messages": [HumanMessage(contents)]}
+        contents.append({"type": "text", "text": text})
+        state = HumanMessage(content=contents)
         input_item.append(state)
 
     return input_item
@@ -321,6 +323,14 @@ async def async_inference(history_gradio: list[dict], history_llm: list[dict], n
                                                                              evaluator_agent=evaluator_agent.agent,
                                                                              stop_inference_flag=stop_inference):
             yield history_gradio, history_llm
+    elif "langgraph" in model.lower() and "translation" in model.lower():
+        async for history_gradio, history_llm in translation_langgraph_inference(history_gradio, history_llm,
+                                                                                 graph=translation_graph,
+                                                                                 new_topic=new_topic,
+                                                                                 stop_inference_flag=stop_inference,
+                                                                                 stream_mode="updates",
+                                                                                 config=config):
+            yield history_gradio, history_llm
 
 
 async def openai_agents_inference(
@@ -371,58 +381,67 @@ async def openai_agents_inference(
         yield history_gradio, history_llm
 
 
-async def translation_langgraph_inference(history_gradio: list[dict | ChatMessage], history_llm: list[dict | any],
+async def translation_langgraph_inference(history_gradio: list[dict | ChatMessage], history_llm: list[dict | State],
                                           new_topic: bool, stop_inference_flag: bool = False,
                                           graph: StateGraph | CompiledStateGraph = None,
                                           stream_mode: Literal['messages', 'updates'] = "updates",
                                           config: dict = None):
-    # 未完待续：
     try:
-        while True:
-            present_message = history_llm[-1]
+        present_message = history_llm[-1]
 
-            if new_topic:
-                input_message = present_message
-            else:
-                input_message = history_llm
+        if new_topic:
+            input_message = {'messages': present_message}
+        else:
+            input_message = {"messages": history_llm}
 
-            async for node_name, updates_think_content, updates_modelOutput, updates_finish_reason in langgraph_astream(
-                    graph=translation_graph,
-                    state=input_message,
-                    stream_mode=stream_mode,
-                    config=config):
-                gradio_message = ChatMessage(
-                    role="assistant",
-                    content="")
-                if updates_think_content:
-                    gradio_message.content = updates_think_content
-                    gradio_message.metadata = {"title": "🧠 Thinking",
-                                               "log": f"@ graph node: {node_name}",
-                                               "status": "pending"}
-                    history_gradio.append(gradio_message)
-                    # thinking 无需append history_llm
-                    yield history_gradio, history_llm
+        async for node_name, updates_think_content, updates_modelOutput, updates_finish_reason in langgraph_astream(
+                graph=translation_graph,
+                state=input_message,
+                stream_mode=stream_mode,
+                print_mode=["think",'model_output'],
+                config=config):
+            gradio_message = ChatMessage(
+                role="assistant",
+                content="")
+            if stop_inference_flag:
+                yield history_gradio, history_llm  # 先yield 再return ; 直接return history会导致history不输出
+                return
+            if updates_think_content:
+                gradio_message.content = updates_think_content
+                gradio_message.metadata = {"title": "🧠 Thinking",
+                                           "log": f"@ graph node: {node_name}",
+                                           "status": "pending"}
+                history_gradio.append(gradio_message)
+                # thinking 无需append history_llm
+                yield history_gradio, history_llm
 
-                if updates_modelOutput:
-                    gradio_message.content = updates_modelOutput
-                    history_gradio.append(gradio_message)
-                    history_llm.append(graph.get_state(config=config))
-                    yield history_gradio, history_llm
+            if updates_modelOutput:
+                gradio_message.content = updates_modelOutput
+                gradio_message.metadata = {}
+                history_gradio.append(gradio_message)
+                #  graph的node之间，按照自有的workflow传递state;
+                # history_llm.append(graph.get_state(config=config))
+                yield history_gradio, history_llm
 
-                if updates_finish_reason:
-                    if updates_finish_reason == "stop":
-                        gradio_message.metadata = {"title": "🧠 End Module Output",
-                                                   "status": "done"}
+            if updates_finish_reason:
+                if updates_finish_reason == "stop":
+                    gradio_message.metadata = {"title": "🧠 End Module Output",
+                                               "status": "done"}
 
-                    if updates_finish_reason == "tool_calls":
-                        gradio_message.metadata = {"title": "🧠 End Tool Calls",
-                                                   "status": "done"}
+                if updates_finish_reason == "tool_calls":
+                    gradio_message.metadata = {"title": "🧠 End Tool Calls",
+                                               "status": "done"}
 
-                    history_gradio.append(gradio_message)
-                    # thinking 无需append history_llm
-                    yield history_gradio, history_llm
+                history_gradio.append(gradio_message)
+                # thinking 无需append history_llm
+                yield history_gradio, history_llm
 
-            # print(f"graph: {graph.name} 正常完成 !")
+        #  graph执行完毕之后, graph的state,装载入history_llm;
+        history_llm = graph.get_state(config=config).values['messages']  # get_state输出list，包含thread_id下的全部state
+        # history_llm.append(message)
+        yield history_gradio, history_llm
+
+        # print(f"graph: {graph.name} 正常完成 !")
     except Exception as e:
         logging.error("Exception encountered:", str(e))
         history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})
@@ -728,6 +747,7 @@ def gradio_UI():
             )
             models_dropdown = gr.Dropdown(
                 choices=[
+                    "langgraph_translation_graph",
                     "google_translator_evaluator",
                     "openAI-Agents",
                     "glm-4-flash",
@@ -802,6 +822,10 @@ if __name__ == "__main__":
     # translator = gemini_translator(translate_agent=translate_agent.agent,
     #                                  evaluate_agent=evaluate_agent.agent,
     #                                  )
+    # langgraph_graph:
+    thread_id = uuid.uuid4()  # 128 位的随机数，通常用 32 个十六进制数字表示
+    config = {"configurable": {"thread_id": thread_id},
+              "recursion_limit": 20}
     translation_graph = translation_graph(State, name="translation_graph", checkpointer=checkpointer)
 
     demo = gradio_UI()

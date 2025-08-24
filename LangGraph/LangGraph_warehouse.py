@@ -16,9 +16,9 @@ from langchain_community import chat_models
 from langchain_community.document_loaders import WebBaseLoader, Docx2txtLoader
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain.chat_models import init_chat_model
+from langchain_core.runnables import RunnableConfig
 from langchain_qwq import ChatQwen, ChatQwQ
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, AnyMessage
 from langchain_tavily import TavilySearch
 
 from langgraph.graph.message import add_messages
@@ -40,7 +40,7 @@ async def web_txtLoader(url: str | list[str] = '',
     #  https://python.langchain.com/docs/how_to/document_loader_web/
     headers = {'User-Agent': 'Mozilla/5.0'}  # 设置请求头,防止网站反爬虫机制
 
-    loader = WebBaseLoader(web_path=url, verify_ssl=verify_ssl)
+    loader = WebBaseLoader(web_path=url, verify_ssl=verify_ssl, header_template=headers)
     docs = []
     async for doc in loader.alazy_load():
         docs.append(doc)
@@ -66,7 +66,6 @@ class langchain_qwen_llm:
                  extra_body: dict = None,
                  tools: list = None,
                  structure_output: dict[str, typing_extensions.Any] | BaseModel | type | None = None,
-                 system_instruction: str | list[AnyMessage] = "You are a helpful assistant."
                  ):
         """
         langchain-qwq库中的ChatQwQ与ChatQwen针对Qwen3进行了优化；然而，其缺省的base_url却是阿里云的国际站点；国内使用需要更改base_url为国内站点
@@ -78,7 +77,6 @@ class langchain_qwen_llm:
         :param extra_body: dict; 缺省{"enable_search": True}
         :param tools: list
         :param structure_output: TypedDict
-        :param system_instruction: str
         """
         if extra_body is None:
             extra_body = {
@@ -186,8 +184,8 @@ class langgraph_agent:
     async def astreamOutput(self, input: str | State,
                             stream_modes: Literal['values', 'updates', 'custom', 'messages', 'debug'] | list[
                                 Literal['values', 'updates', 'custom', 'messages', 'debug']] = 'updates',
-                            thread_id: str = None,
-                            print_mode: Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None'):
+                            thread_id: str = None, config: RunnableConfig = None,
+                            print_mode: list[Literal['token', 'think', 'model_output', 'tools', 'None']]|Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None'):
         """
         异步流式打印Agent response,可以同时接受'updates','messages'两种stream_mode,以便同时stream token,和输出structured_response;
         messages特点: 1) stream输出llm token,包括reason_content,以及模型content;
@@ -200,10 +198,11 @@ class langgraph_agent:
                                              id='',
                                              usage_metadata={},
                                              output_token_details={})]}}
-        :param prompt:
+        :param input:
         :param stream_modes: str,或者包含多个stream_mode的列表
         :param thread_id: Short-term memory (thread-level persistence) enables agents to track multi-turn conversations
-        :param print_mode:
+        :param config: config: RunnableConfig=None; 当thread_id=None时，可以直接赋值config = {"configurable": {"thread_id": thread_id}}
+        :param print_mode: list，包含一个多多个选项；
             'token': to print streaming token_level for "messages"
             'think': to print streaming think
             'tools': to print tools
@@ -216,13 +215,15 @@ class langgraph_agent:
         """
         if isinstance(stream_modes, str):
             stream_modes = [stream_modes]
+        if isinstance(print_mode,str):
+            print_mode = [print_mode]
 
         if isinstance(input, str):
             message = {"messages": input}
         else:
             message = input
-
-        config = {"configurable": {"thread_id": thread_id}}
+        if config is None and thread_id is not None:
+            config = {"configurable": {"thread_id": thread_id}}
         response = self.agent.astream(input=message, config=config, stream_mode=stream_modes)
         # response json: {'agent':{'messages':[AIMessage(content='',
         #                                      additional_kwargs={'reasoning_content': '正在思考中...'},
@@ -377,7 +378,7 @@ class langgraph_agent:
                     break
                 # 以下待完成：根据print_mode参数，print不同内容
                 response = self.astreamOutput(user_input, stream_modes=stream_modes,
-                                              print_mode=print_mode, thread_id=thread_id)
+                                              print_mode=print_mode, thread_id=thread_id,config=config)
 
                 if 'updates' in stream_modes and 'messages ' not in stream_modes:
                     async for updates_think_content, updates_modelOutput, updates_finish_reason, structured_response in response:
@@ -405,6 +406,7 @@ class nodeloopState(State):
     loop_count: Annotated[int, operator.add]
 
 
+
 class QwenML_trasOptions(BaseModel):
     response: list[AnyMessage] | str = ""  # Qwen_ML模型就非翻译请求的响应 = “”
     text: str = ""  # 待翻译的文本
@@ -419,7 +421,6 @@ class QwenML_trasOptions(BaseModel):
 class EvaluationFeedback:
     feedback: str
     score: Literal["pass", "needs_improvement", "end"]
-
 
 
 # graph_builder = StateGraph(State)
@@ -452,7 +453,7 @@ class EvaluationFeedback:
 # print(f"LocalFileSystem目录: {LocalFileSystem}")
 
 
-def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qwen_VL_agent']]:
+def QwenML_transOption_node(state: State, config: RunnableConfig) -> Command[Literal['Qwen_ML_node', 'Qwen_VL_agent']]:
     print(f"+ **prompt预分析:**")
     response = QwenML_transOption_agent.agent.invoke(input=state, config=config)
     if response['structured_response'] is None:  # 有时候，由于prompt对于结构化输出的类的各个item生成有遗漏，会导致structure_response=None
@@ -461,7 +462,7 @@ def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qw
         structured_response = response['structured_response']
         if isinstance(structured_response, BaseModel):
             structured_response = structured_response.model_dump()  # 将BaseModel对象转换为字典,为使得Pydantic类型接受get方法
-    update_state = {'messages': AIMessage(structured_response.get('response', 'no response is available'))}
+    update_state = {'messages': [AIMessage(structured_response.get('response', 'no response is available'))]}
     if isinstance(structured_response, dict):
         if structured_response.get('translate_request', False):
             goto = "Qwen_ML_node"
@@ -488,7 +489,7 @@ def QwenML_transOption_node(state: State) -> Command[Literal['Qwen_ML_node', 'Qw
     return Command(**command_params)
 
 
-def Qwen_ML_node(state: QwenML_trasOptions) -> Command[Literal['evaluator']]:
+def Qwen_ML_node(state: QwenML_trasOptions, config: RunnableConfig) -> Command[Literal['evaluator']]:
     print(f"+ **进入Qwen_ML_node，启动首次翻译:**")
     if not state.translate_request:  # 本节点，不带有goto参数，仅update; command后，不再handoff,自行结束;
         command_params = {'update': {"messages": [AIMessage(content=state.response)]}}
@@ -507,21 +508,25 @@ def Qwen_ML_node(state: QwenML_trasOptions) -> Command[Literal['evaluator']]:
         message = [{"role": "user", "content": text}]
         try:
             response = Qwen_MT.model.invoke(input=message, config=config)
+            # print(f"**首次翻译:**\n  {response.content}")
+            update = {"messages": [AIMessage(content=response.content)],
+                      "loop_count": 1,  # operator.add会自动增加1,分别统计循环次数
+                      }
+            command_params = {'update': update, 'goto': 'evaluator'}
         except Exception as e:
             response = str(e)
 
-        # print(f"**首次翻译:**\n  {response.content}")
-        update = {"messages": [AIMessage(content=response.content)],
-                  "loop_count": 1,  # operator.add会自动增加1,分别统计循环次数
-                  }
-        command_params = {'update': update, 'goto': 'evaluator'}
+            update = {"messages": [AIMessage(content=response)],
+                      "loop_count": 0,  # operator.add会自动增加0,分别统计循环次数
+                      }
+            command_params = {'update': update, }
     return Command(**command_params)
 
 
-async def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]:
-    loop_account = state.get("loop_count", 0)
-    print(f"+ **进入翻译评估阶段, 当前第{loop_account}次翻译评估**")
-    response = evaluator.astreamOutput(input=state, stream_modes='updates', print_mode='None', thread_id=thread_id)
+async def evaluator_node(state: nodeloopState, config: RunnableConfig) -> Command[Literal['translator']]:
+    loop_count = state.get("loop_count", 0)
+    print(f"+ **进入翻译评估阶段, 当前第{loop_count}次翻译评估**")
+    response = evaluator.astreamOutput(input=state, stream_modes='updates', print_mode='None', config=config)
     command_params = {'update': [AIMessage("agent doesn't generate structured_response, exit!")]}
     async for think, modelOutput, finish_reason, structured_response in response:
         if structured_response is not None and structured_response:  # 非空{},非None
@@ -529,7 +534,8 @@ async def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]
             feedback = structured_response['feedback']
             if score == 'end' or feedback == 'pass':
                 update = {"messages": [AIMessage(feedback)],
-                          }  # 节点结束时，state输出结果无需loop_count; state与input state相同;
+                          'loop_count': -loop_count,
+                          }  # 节点结束时，state输出将loop_count清零; ;
                 command_params = {'update': update}  # 节点无goto, command后，不再handoff,自行结束;
             elif score == "needs_improvement":
                 goto = "translator"
@@ -542,10 +548,10 @@ async def evaluator_node(state: nodeloopState) -> Command[Literal['translator']]
         yield Command(**command_params)
 
 
-async def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]:
+async def translator_node(state: nodeloopState,config: RunnableConfig) -> Command[Literal['evaluator']]:
     loop_account = state.get("loop_count", 0)
     print(f"+ **进入翻译改进阶段, 当前第{loop_account}次改进**")
-    response = translator.astreamOutput(input=state, stream_modes='updates', print_mode='None', thread_id=thread_id)
+    response = translator.astreamOutput(input=state, stream_modes='updates', print_mode='None', config=config)
     async for think, modelOutput, finish_reason, structured_response in response:
         if modelOutput:
             update = {"messages": [AIMessage(modelOutput)],
@@ -573,7 +579,7 @@ async def translator_node(state: nodeloopState) -> Command[Literal['evaluator']]
 
 async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State,
                             stream_mode: Literal['messages', 'updates'] = "updates",
-                            print_mode: Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None',
+                            print_mode: list[Literal['token', 'think', 'model_output', 'tools', 'None']]|Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None',
                             config: dict = None):
     """
     包含多个节点的langgraph异步stream输出;
@@ -585,7 +591,7 @@ async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State
     :param graph: 多节点的compiled的langgraph对象；
     :param state: 输入state
     :param stream_mode: str,或者包含多个stream_mode的列表
-    :param print_mode:
+    :param print_mode: list,包含一个或者多个选项
         'token': to print streaming token_level for "messages"
         'think': to print streaming think
         'tools': to print tools
@@ -601,6 +607,8 @@ async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State
     """
     if isinstance(stream_mode, str):
         stream_mode = [stream_mode]
+    if isinstance(print_mode, str):
+        print_mode = [print_mode]
     node_name = graph.name
     updates_think_content = None
     updates_modelOutput = None
@@ -648,18 +656,17 @@ async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State
                                         if not "None" in print_mode:
                                             print("\n*Ending tool calls...*  \n")
 
-                                yield node_name,updates_think_content, updates_modelOutput,updates_finish_reason
-
+                                yield node_name, updates_think_content, updates_modelOutput, updates_finish_reason
 
         print(f"graph: {graph.name} 正常完成 !")
 
     except GraphRecursionError:
         response = "Recursion Error"
         print(f"graph: {graph.name} 响应错误:{response} !")
-        yield node_name,updates_think_content, updates_modelOutput, updates_finish_reason
+        yield node_name, updates_think_content, updates_modelOutput, updates_finish_reason
 
 
-def translation_graph(State: TypedDict, name="translation_graph", checkpointer: None | bool | InMemorySaver = None):
+def translation_graph(State: State, name="translation_graph", checkpointer: None | bool | InMemorySaver = None):
     builder = StateGraph(State, )
     builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
     builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
@@ -679,6 +686,7 @@ def translation_graph(State: TypedDict, name="translation_graph", checkpointer: 
     # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
 
     return translation_agent
+
 
 Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True)
 Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
@@ -729,10 +737,9 @@ translator = langgraph_agent(model=Qwen_plus.model,
                               你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文内容的领域，阅读对象，语气，使用恰当的目标语言和文字，术语，语气来翻译原文的能力，翻译结果专业，贴切。
                               你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
                               """)
+
 if __name__ == '__main__':
-
-
-    thread_id = uuid.uuid4()  # 128 位的随机数，通常用 32 个十六进制数字表示
+    thread_id = uuid.uuid4().hex  # 128 位的随机数，通常用 32 个十六进制数字表示
     config = {"configurable": {"thread_id": thread_id},
               "recursion_limit": 20}
 
@@ -740,7 +747,8 @@ if __name__ == '__main__':
     prompt = '请翻译以下文字至英文：忠于使命 ,勇于创新 ,善于协同,成于务实'
     # prompt = '请问今天日期'
     # state_message = {"messages": HumanMessage(content=prompt)}
-    state_message = {"messages": {"role": "user", "content": prompt}}
+    state_message = {"messages": HumanMessage(content=[{'type': 'text', 'text': prompt}])}
+    # state_message = {"messages": {"role": "user", "content": prompt}}
     asyncio.run(langgraph_astream(translation_agent, state_message,
                                   config=config))
 
