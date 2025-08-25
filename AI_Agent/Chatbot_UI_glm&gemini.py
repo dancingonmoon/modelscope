@@ -160,7 +160,7 @@ def gradio_msg2LLM_msg(gradio_msg: dict = None,
                     # break
             # contents.append({"type": "text", "text": text})
         # else:  # 对于Qwen模型，当promt为列表时，例如VL模型，必须{"type": "text", "text": text};否则必须为字符串非列表
-            # contents.append(text)
+        # contents.append(text)
 
         contents.append({"type": "text", "text": text})
         state = HumanMessage(content=contents)
@@ -381,7 +381,7 @@ async def openai_agents_inference(
         yield history_gradio, history_llm
 
 
-async def translation_langgraph_inference(history_gradio: list[dict | ChatMessage], history_llm: list[dict | State],
+async def translation_langgraph_inference(history_gradio: list[dict | gr.ChatMessage], history_llm: list[dict | State],
                                           new_topic: bool, stop_inference_flag: bool = False,
                                           graph: StateGraph | CompiledStateGraph = None,
                                           stream_mode: Literal['messages', 'updates'] = "updates",
@@ -398,26 +398,49 @@ async def translation_langgraph_inference(history_gradio: list[dict | ChatMessag
                 graph=translation_graph,
                 state=input_message,
                 stream_mode=stream_mode,
-                print_mode=["think",'model_output'],
+                print_mode=["think", 'model_output'],
                 config=config):
-            gradio_message = ChatMessage(
+            gradio_message = gr.ChatMessage(
                 role="assistant",
-                content="")
+                content=f"## * graph_node: {node_name}\n",
+            )
+            history_gradio.append(gradio_message)
+            # print(f'append.gradio_message:{history_gradio}')
+            yield history_gradio, history_llm
+
             if stop_inference_flag:
                 yield history_gradio, history_llm  # 先yield 再return ; 直接return history会导致history不输出
                 return
             if updates_think_content:
-                gradio_message.content = updates_think_content
-                gradio_message.metadata = {"title": "🧠 Thinking",
-                                           "log": f"@ graph node: {node_name}",
-                                           "status": "pending"}
+                gradio_message = gr.ChatMessage(
+                    role="assistant",
+                    content=updates_think_content,
+                    metadata={"title": "🧠 Thinking",
+                              "log": f"@ graph node: {node_name}",
+                              "status": "pending"}
+                )
                 history_gradio.append(gradio_message)
                 # thinking 无需append history_llm
                 yield history_gradio, history_llm
 
             if updates_modelOutput:
-                gradio_message.content = updates_modelOutput
-                gradio_message.metadata = {}
+                loop_count = graph.get_state(config=config).values.get('loop_count', None)
+                if loop_count:
+                    content = ""
+                    if "evaluator" in node_name:
+                        content = f"### + {node_name}, 第{loop_count}次评估:\n"
+                    if "translator" in node_name:
+                        content = f"### + {node_name}, 第{loop_count}次翻译:\n"
+                    gradio_message = gr.ChatMessage(
+                        role="assistant",
+                        content=content,
+                    )
+                    history_gradio.append(gradio_message)
+                    yield history_gradio, history_llm
+                gradio_message = gr.ChatMessage(
+                    role="assistant",
+                    content=updates_modelOutput,
+                )
                 history_gradio.append(gradio_message)
                 #  graph的node之间，按照自有的workflow传递state;
                 # history_llm.append(graph.get_state(config=config))
@@ -425,23 +448,36 @@ async def translation_langgraph_inference(history_gradio: list[dict | ChatMessag
 
             if updates_finish_reason:
                 if updates_finish_reason == "stop":
-                    gradio_message.metadata = {"title": "🧠 End Module Output",
-                                               "status": "done"}
+                    gradio_message = gr.ChatMessage(
+                        role="assistant",
+                        content="",
+                        metadata={"title": "🧠 End Module Output",
+                                  "status": "done"}
+                    )
 
                 if updates_finish_reason == "tool_calls":
-                    gradio_message.metadata = {"title": "🧠 End Tool Calls",
-                                               "status": "done"}
+                    gradio_message = gr.ChatMessage(
+                        role="assistant",
+                        content="",
+                        metadata={"title": "🧠 End Tool Calls",
+                                  "status": "done"}
+                    )
 
                 history_gradio.append(gradio_message)
                 # thinking 无需append history_llm
                 yield history_gradio, history_llm
 
-        #  graph执行完毕之后, graph的state,装载入history_llm;
+        #  graph执行完毕之后, graph的state,装载入history_llm;histoy_gradio标记
+        gradio_message = gr.ChatMessage(
+            role="assistant",
+            content=f"{graph.name},执行完成!",
+        )
+        history_gradio.append(gradio_message)
         history_llm = graph.get_state(config=config).values['messages']  # get_state输出list，包含thread_id下的全部state
         # history_llm.append(message)
         yield history_gradio, history_llm
 
-        # print(f"graph: {graph.name} 正常完成 !")
+
     except Exception as e:
         logging.error("Exception encountered:", str(e))
         history_gradio.append({"role": "assistant", "content": f"出现错误,错误内容为: {str(e)}"})

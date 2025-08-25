@@ -548,7 +548,7 @@ async def evaluator_node(state: nodeloopState, config: RunnableConfig) -> Comman
         yield Command(**command_params)
 
 
-async def translator_node(state: nodeloopState,config: RunnableConfig) -> Command[Literal['evaluator']]:
+async def translator_node(state: nodeloopState, config: RunnableConfig) -> Command[Literal['evaluator']]:
     loop_account = state.get("loop_count", 0)
     print(f"+ **进入翻译改进阶段, 当前第{loop_account}次改进**")
     response = translator.astreamOutput(input=state, stream_modes='updates', print_mode='None', config=config)
@@ -562,19 +562,6 @@ async def translator_node(state: nodeloopState,config: RunnableConfig) -> Comman
                 goto='evaluator',
                 update=update, )
 
-        # if think:  # 为gradio 在UI上think框单独显示思考内容
-        #     if finish_reason:
-        #         log = f"End translator output"
-        #     else:
-        #         log = f"进入翻译阶段,当前第{loop_account}次改进"
-        #     update = {"messages": [{
-        #         "role": "assistant",
-        #         "content": think,
-        #         "metadata": {"title": "🧠 Thinking",
-        #                      "log": log,
-        #                      "status": "done"}}], }
-        #     yield update  # 如果yeild command 将导致思考部分的content，会被update,
-        #     # 然后，再未出现modeloutput之前，思考部分的content，会被覆盖就会被送入evaluator_node,导致待评估内容不够
 
 
 async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State,
