@@ -60,6 +60,7 @@ class langchain_qwen_llm:
     def __init__(self,
                  model: str = 'qwen-turbo',
                  base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 阿里云国内站点(默认为国际站点),
+                 api_key: str = None,
                  streaming: bool = False,
                  enable_thinking: bool = False,
                  thinking_budget: int = 100,
@@ -71,6 +72,7 @@ class langchain_qwen_llm:
         langchain-qwq库中的ChatQwQ与ChatQwen针对Qwen3进行了优化；然而，其缺省的base_url却是阿里云的国际站点；国内使用需要更改base_url为国内站点
         :param model: str
         :param base_url: str
+        :param api_key: str ;当None时，则从环境变量中读取：DASH_SCOPE_API_KEY
         :param streaming: bool
         :param enable_thinking: bool; Qwen3 model only
         :param thinking_budget: int
@@ -82,14 +84,17 @@ class langchain_qwen_llm:
             extra_body = {
                 "enable_search": True
             }
-        self.model = ChatQwen(
-            model=model,
-            base_url=base_url,
-            streaming=streaming,
-            enable_thinking=enable_thinking,
-            thinking_budget=thinking_budget,
-            extra_body=extra_body
-        )
+        ChatQwen_param = {
+            'model': model,
+            'base_url': base_url,
+            'streaming': streaming,
+            'enable_thinking': enable_thinking,
+            'thinking_budget': thinking_budget,
+            'extra_body': extra_body,
+        }
+        if api_key:
+            ChatQwen_param['api_key'] = api_key
+        self.model = ChatQwen(**ChatQwen_param)
         if tools is not None:
             self.model = self.model.bind_tools(tools)
 
@@ -185,7 +190,8 @@ class langgraph_agent:
                             stream_modes: Literal['values', 'updates', 'custom', 'messages', 'debug'] | list[
                                 Literal['values', 'updates', 'custom', 'messages', 'debug']] = 'updates',
                             thread_id: str = None, config: RunnableConfig = None,
-                            print_mode: list[Literal['token', 'think', 'model_output', 'tools', 'None']]|Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None'):
+                            print_mode: list[Literal['token', 'think', 'model_output', 'tools', 'None']] | Literal[
+                                'token', 'think', 'model_output', 'tools', 'None'] = 'None'):
         """
         异步流式打印Agent response,可以同时接受'updates','messages'两种stream_mode,以便同时stream token,和输出structured_response;
         messages特点: 1) stream输出llm token,包括reason_content,以及模型content;
@@ -215,7 +221,7 @@ class langgraph_agent:
         """
         if isinstance(stream_modes, str):
             stream_modes = [stream_modes]
-        if isinstance(print_mode,str):
+        if isinstance(print_mode, str):
             print_mode = [print_mode]
 
         if isinstance(input, str):
@@ -378,7 +384,7 @@ class langgraph_agent:
                     break
                 # 以下待完成：根据print_mode参数，print不同内容
                 response = self.astreamOutput(user_input, stream_modes=stream_modes,
-                                              print_mode=print_mode, thread_id=thread_id,config=config)
+                                              print_mode=print_mode, thread_id=thread_id, config=config)
 
                 if 'updates' in stream_modes and 'messages ' not in stream_modes:
                     async for updates_think_content, updates_modelOutput, updates_finish_reason, structured_response in response:
@@ -404,7 +410,6 @@ class langgraph_agent:
 
 class nodeloopState(State):
     loop_count: Annotated[int, operator.add]
-
 
 
 class QwenML_trasOptions(BaseModel):
@@ -563,10 +568,10 @@ async def translator_node(state: nodeloopState, config: RunnableConfig) -> Comma
                 update=update, )
 
 
-
 async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State,
                             stream_mode: Literal['messages', 'updates'] = "updates",
-                            print_mode: list[Literal['token', 'think', 'model_output', 'tools', 'None']]|Literal['token', 'think', 'model_output', 'tools', 'None'] = 'None',
+                            print_mode: list[Literal['token', 'think', 'model_output', 'tools', 'None']] | Literal[
+                                'token', 'think', 'model_output', 'tools', 'None'] = 'None',
                             config: dict = None):
     """
     包含多个节点的langgraph异步stream输出;
@@ -676,9 +681,20 @@ def translation_graph(State: State, name="translation_graph", checkpointer: None
 
 
 Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True)
+Qwen_plus_modelscope = langchain_qwen_llm(
+    model='Qwen/Qwen3-235B-A22B-Thinking-2507',
+    base_url='https://api-inference.modelscope.cn/v1',
+    api_key=os.getenv("MODELSCOPE_ACCESS_TOKEN"),
+    extra_body={},  #  modelscope该模型不支持enable_search=True,这里改成{}
+    enable_thinking=True, streaming=True)
 Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
-Qwen_turbo_noThink_structureOutput = langchain_qwen_llm(model="qwen-turbo",
-                                                        structure_output=QwenML_trasOptions)
+Qwen_turbo_noThink_modelscope = langchain_qwen_llm(
+    model='Qwen/Qwen3-235B-A22B-Thinking-2507',
+    base_url='https://api-inference.modelscope.cn/v1',
+    api_key=os.getenv("MODELSCOPE_ACCESS_TOKEN"),
+    extra_body={}   #  modelscope该模型不支持enable_search=True,这里改成{}
+)
+
 Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
 checkpointer = InMemorySaver()
 QwenML_transOption_agent = langgraph_agent(model=Qwen_turbo_noThink.model,
@@ -736,8 +752,9 @@ if __name__ == '__main__':
     # state_message = {"messages": HumanMessage(content=prompt)}
     state_message = {"messages": HumanMessage(content=[{'type': 'text', 'text': prompt}])}
     # state_message = {"messages": {"role": "user", "content": prompt}}
-    asyncio.run(langgraph_astream(translation_agent, state_message,
-                                  config=config))
+    # asyncio.run(langgraph_astream(translation_agent, state_message,
+    #                               config=config))
+    asyncio.run(Qwen_plus_modelscope.astreamPrint(prompt=prompt))
 
     ## 测试 webBaseLoader:
     # url= r"https://www.eastcom.com"
