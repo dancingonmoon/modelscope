@@ -9,17 +9,13 @@ from typing_extensions import TypedDict
 from typing import Annotated
 from pydantic import BaseModel
 
-from tempfile import TemporaryDirectory
-import gradio
-
 from langchain_community import chat_models
 from langchain_community.document_loaders import WebBaseLoader, Docx2txtLoader
-from langchain_community.agent_toolkits import FileManagementToolkit
-from langchain.chat_models import init_chat_model
+
 from langchain_core.runnables import RunnableConfig
 from langchain_qwq import ChatQwen, ChatQwQ
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, AnyMessage
-from langchain_tavily import TavilySearch
+
 
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
@@ -36,25 +32,10 @@ from dataclasses import dataclass
 import asyncio
 
 
-async def web_txtLoader(url: str | list[str] = '',
-                        verify_ssl: bool = True):
-    #  https://python.langchain.com/docs/how_to/document_loader_web/
-    headers = {'User-Agent': 'Mozilla/5.0'}  # 设置请求头,防止网站反爬虫机制
-
-    loader = WebBaseLoader(web_path=url, verify_ssl=verify_ssl, header_template=headers)
-    docs = []
-    async for doc in loader.alazy_load():
-        docs.append(doc)
-    return docs
 
 
-async def docx_txtLoader(file_path: str | list[str] = None, ):
-    #  https://python.langchain.com/docs/integrations/document_loaders/microsoft_word/
-    loader = Docx2txtLoader(file_path=file_path, )
-    docs = []
-    async for doc in loader.alazy_load():
-        docs.append(doc)
-    return docs
+
+
 
 
 class langchain_qwen_llm:
@@ -411,8 +392,7 @@ class langgraph_agent:
 
 class nodeloopState(State):
     loop_count: Annotated[int, operator.add]
-    trans_result: str
-    save_path: str
+
 
 
 class QwenML_trasOptions(BaseModel):
@@ -431,36 +411,6 @@ class EvaluationFeedback:
     score: Literal["pass", "needs_improvement", "end"]
 
 
-
-
-# graph_builder = StateGraph(State)
-
-# Initialize Tavily Search Tool
-# https://python.langchain.com/docs/integrations/tools/tavily_search/
-# tavily_search_tool = TavilySearch(
-#     max_results=5,
-#     topic="general",
-#     # include_answer=False,
-#     # include_raw_content=False,
-#     # include_images=False,
-#     # include_image_descriptions=False,
-#     # search_depth="basic",
-#     # time_range="day",
-#     # include_domains=None,
-#     # exclude_domains=None
-# )
-# result = tavily_search_tool.invoke(input="今日国际新闻3条")
-# result.keys:dict_keys(['query', 'follow_up_questions', 'answer', 'images', 'results', 'response_time'])
-# result.results[0].keys:dict_keys(['url', 'title', 'content', 'score', 'raw_content'])
-
-# # We'll make a temporary directory to avoid clutter
-# working_directory = TemporaryDirectory(dir='.')
-# LocalFileSystem = FileManagementToolkit(
-#     root_dir=str(working_directory.name),  # pass the temporary directory in as a root directory as a workspace
-#     # # [CopyFileTool, DeleteFileTool, FileSearchTool, MoveFileTool, ReadFileTool, WriteFileTool, ListDirectoryTool]
-#     selected_tools=["read_file", "write_file", "list_directory"],
-# ).get_tools()
-# print(f"LocalFileSystem目录: {LocalFileSystem}")
 
 
 def QwenML_transOption_node(state: State, config: RunnableConfig) -> Command[Literal['Qwen_ML_node', 'Qwen_VL_agent']]:
@@ -572,15 +522,6 @@ async def translator_node(state: nodeloopState, config: RunnableConfig) -> Comma
                 goto='evaluator',
                 update=update, )
 
-        if structured_response is not None and structured_response:  # 非空{},非None
-            trans_result = structured_response['trans_result']
-            save_path = structured_response['save_path']
-            update = {"trans_result": trans_result,
-                      "save_path": save_path,
-                      'loop_count': 0,
-                      }
-            command_params = {'update': update, "goto": 'evaluator'}
-            yield Command(**command_params)
 
 
 async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State,
@@ -685,30 +626,14 @@ def translation_graph(State: State, name="translation_graph", checkpointer: None
     builder.add_edge("Qwen_VL_agent", "Qwen_ML_node")
 
     translation_agent = builder.compile(name=name, checkpointer=checkpointer)
-    # thread_id = uuid.uuid4()  # 128 位的随机数，通常用 32 个十六进制数字表示
-    # config = {"configurable": {"thread_id": thread_id},
-    #           "recursion_limit": 20}
 
-    # graph_png_path = r"./translation_agent_graph.png"
-    # translation_agent.get_graph().draw_mermaid_png(output_file_path=graph_png_path,)
 
     return translation_agent
 
 
 Qwen_plus = langchain_qwen_llm(model="qwen-plus-latest", enable_thinking=True, streaming=True)
-Qwen_plus_modelscope = langchain_qwen_llm(
-    model='Qwen/Qwen3-235B-A22B-Thinking-2507',
-    base_url='https://api-inference.modelscope.cn/v1',
-    api_key=os.getenv("MODELSCOPE_ACCESS_TOKEN"),
-    extra_body={},  # modelscope该模型不支持enable_search=True,这里改成{}
-    enable_thinking=True, streaming=True)
+
 Qwen_turbo_noThink = langchain_qwen_llm(model="qwen-turbo", )
-Qwen_turbo_noThink_modelscope = langchain_qwen_llm(
-    model='Qwen/Qwen3-235B-A22B-Thinking-2507',
-    base_url='https://api-inference.modelscope.cn/v1',
-    api_key=os.getenv("MODELSCOPE_ACCESS_TOKEN"),
-    extra_body={}  # modelscope该模型不支持enable_search=True,这里改成{}
-)
 
 Qwen_VL = langchain_qwen_llm(model="qwen-vl-ocr-latest", )
 checkpointer = InMemorySaver()
@@ -777,21 +702,3 @@ if __name__ == '__main__':
     config = {"configurable": {"thread_id": thread_id},
               "recursion_limit": 20}
 
-    translation_agent = translation_graph(State=State, checkpointer=checkpointer)
-    prompt = '请翻译以下文字至英文：忠于使命 ,勇于创新 ,善于协同,成于务实'
-    # prompt = '请问今天日期'
-    # state_message = {"messages": HumanMessage(content=prompt)}
-    state_message = {"messages": HumanMessage(content=[{'type': 'text', 'text': prompt}])}
-    # state_message = {"messages": {"role": "user", "content": prompt}}
-    # asyncio.run(langgraph_astream(translation_agent, state_message,
-    #                               config=config))
-    asyncio.run(Qwen_plus_modelscope.astreamPrint(prompt=prompt))
-
-    ## 测试 webBaseLoader:
-    # url= r"https://www.eastcom.com"
-    # docs = asyncio.run(web_txtLoader(url))
-    # print(docs[0])
-    ## 测试 docx2txtLoader:
-    # file_path = r"E:/Working Documents/Eastcom/产品/无集/2019年中国专网通信产业全景图谱.docx"
-    # docs = asyncio.run(docx_txtLoader(file_path))
-    # print(docs[0])
