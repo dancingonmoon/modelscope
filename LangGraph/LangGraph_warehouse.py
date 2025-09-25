@@ -772,11 +772,9 @@ translator = langgraph_agent(model=Qwen_plus.model,
                               2)你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
                               """)
 
-# thread_id = uuid.uuid4().hex  # 128 位的随机数，通常用 32 个十六进制数字表示
-# config = {"configurable": {"thread_id": thread_id},
-#               "recursion_limit": 20}
-#
-# translation_agent = translation_graph(State=State, checkpointer=checkpointer)
+# 以下仅在使用langgraph CLI启动langgraph server时，才需要，并且不需要手动设置checkpointer
+#  在使用LangGraph CLI创建智能体项目时，会自动设置记忆相关内容，并进行持久化记忆存储，无需手动设置
+# translation_agent = translation_graph(State=State, )
 
 if __name__ == '__main__':
     thread_id = uuid.uuid4().hex  # 128 位的随机数，通常用 32 个十六进制数字表示
