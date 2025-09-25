@@ -431,8 +431,6 @@ class EvaluationFeedback:
     score: Literal["pass", "needs_improvement", "end"]
 
 
-
-
 # graph_builder = StateGraph(State)
 
 # Initialize Tavily Search Tool
@@ -673,7 +671,7 @@ async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State
         yield node_name, updates_think_content, updates_modelOutput, updates_finish_reason
 
 
-def translation_graph(State: State, name="translation_graph", checkpointer: None | bool | InMemorySaver = None):
+def translation_graph(State: State, name="translation_graph", checkpointer: None | bool | InMemorySaver = None,):
     builder = StateGraph(State, )
     builder.add_node("QwenML_transOption_node", QwenML_transOption_node)
     builder.add_node("Qwen_VL_agent", Qwen_VL_agent.agent)
@@ -748,6 +746,8 @@ evaluator = langgraph_agent(model=Qwen_plus.model,
                                 c.如果你认为，不需要给出评估意见，请结构化输出: score="end", feedback=原因或理由; 然后,你可以结束进一步推理,停止任何响应,停止任何输出,结束你的工作,退出.
                                 d.评价的要求需要严格，尽量不要在首次评价中就给与翻译质量合格(pass)的决定。
                             """)
+
+
 async def get_mcp_tool():
     # get_tools是一个协程对象，需要被await,需要异步函数
     # 并且StructuredTool does not support sync invocation
@@ -771,6 +771,12 @@ translator = langgraph_agent(model=Qwen_plus.model,
                               1)你是一名优异的文档翻译官，具备各类语言的文字，文档的翻译能力；并且具备根据原文的文体，原文内容的领域，阅读对象，语气，使用恰当的目标语言和文字，术语，语气来翻译原文的能力，翻译结果专业，贴切。
                               2)你也会根据输入的评估意见，改进建议，针对性的对翻译结果进行改善;
                               """)
+
+# thread_id = uuid.uuid4().hex  # 128 位的随机数，通常用 32 个十六进制数字表示
+# config = {"configurable": {"thread_id": thread_id},
+#               "recursion_limit": 20}
+#
+# translation_agent = translation_graph(State=State, checkpointer=checkpointer)
 
 if __name__ == '__main__':
     thread_id = uuid.uuid4().hex  # 128 位的随机数，通常用 32 个十六进制数字表示
