@@ -1,7 +1,7 @@
 {
   "dependencies": ["./"],
   "graphs": {
-    "chatbot": "./LangGraph_warehouse.py:translation_agent"
+    "chatbot": "./translation_graph.py:translation_agent"
   },
   "env": ".env"
 }
