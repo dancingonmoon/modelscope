@@ -1,5 +1,5 @@
 /mcp/workspace/
 /mcp/mcp_docs/
-LangGraph/.env
-LangGraph/.langgraph_api
-open_deep_research/.langgraph_api
+/LangGraph/.env
+/LangGraph/.langgraph_api/
+/open_deep_research/.langgraph_api/
