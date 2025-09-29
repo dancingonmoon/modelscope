@@ -8,7 +8,17 @@ from langgraph.constants import Send
 from langgraph.graph import START, END, StateGraph
 from langgraph.types import interrupt, Command
 
-from open_deep_research.state import (
+import sys
+import os
+# 获取当前文件所在目录，然后添加正确的父级目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.join(current_dir, '..')
+sys.path.append(os.path.abspath(current_dir))
+sys.path.append(os.path.abspath(parent_dir))
+print(f"current_dir:{current_dir}")
+
+
+from state import (
     ReportStateInput,
     ReportStateOutput,
     Sections,
@@ -19,7 +29,7 @@ from open_deep_research.state import (
     Feedback
 )
 
-from open_deep_research.prompts import (
+from prompts import (
     report_planner_query_writer_instructions,
     report_planner_instructions,
     query_writer_instructions, 
@@ -29,8 +39,8 @@ from open_deep_research.prompts import (
     section_writer_inputs
 )
 
-from open_deep_research.configuration import WorkflowConfiguration
-from open_deep_research.utils import (
+from configuration import WorkflowConfiguration
+from utils import (
     format_sections, 
     get_config_value, 
     get_search_params, 
@@ -82,6 +92,8 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     writer_provider = get_config_value(configurable.writer_provider)
     writer_model_name = get_config_value(configurable.writer_model)
     writer_model_kwargs = get_config_value(configurable.writer_model_kwargs or {})
+    # if writer_model_name == "claude-3-7-sonnet-latest":
+    #     writer_model_kwargs["max_tokens"] = 20_000
     writer_model = init_chat_model(model=writer_model_name, model_provider=writer_provider, model_kwargs=writer_model_kwargs) 
     structured_llm = writer_model.with_structured_output(Queries)
 

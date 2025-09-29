@@ -14,20 +14,28 @@ from urllib.parse import unquote
 from collections import defaultdict
 import itertools
 
-from exa_py import Exa
-from linkup import LinkupClient
+import sys
+import os
+# 获取当前文件所在目录，然后添加正确的父级目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.join(current_dir, '..')
+sys.path.append(os.path.abspath(parent_dir))
+
+
+# from exa_py import Exa
+# from linkup import LinkupClient
 from tavily import AsyncTavilyClient
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents.aio import SearchClient as AsyncAzureAISearchClient
-from duckduckgo_search import DDGS 
+# from azure.core.credentials import AzureKeyCredential
+# from azure.search.documents.aio import SearchClient as AsyncAzureAISearchClient
+# from duckduckgo_search import DDGS
 from bs4 import BeautifulSoup
-from markdownify import markdownify
+# from markdownify import markdownify
 from pydantic import BaseModel
 from langchain.chat_models import init_chat_model
 from langchain.embeddings import init_embeddings
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-from langchain_anthropic import ChatAnthropic
+# from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolArg
