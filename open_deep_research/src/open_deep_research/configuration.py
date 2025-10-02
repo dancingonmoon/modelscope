@@ -17,6 +17,7 @@ DEFAULT_REPORT_STRUCTURE = """Use this structure to create a report on the user-
    - Aim for 1 structural element (either a list or table) that distills the main body sections 
    - Provide a concise summary of the report"""
 
+
 class SearchAPI(Enum):
     PERPLEXITY = "perplexity"
     TAVILY = "tavily"
@@ -28,6 +29,7 @@ class SearchAPI(Enum):
     GOOGLESEARCH = "googlesearch"
     NONE = "none"
 
+
 @dataclass(kw_only=True)
 class WorkflowConfiguration:
     """Configuration for the workflow/graph-based implementation (graph.py)."""
@@ -36,24 +38,24 @@ class WorkflowConfiguration:
     search_api: SearchAPI = SearchAPI.TAVILY
     search_api_config: Optional[Dict[str, Any]] = None
     process_search_results: Literal["summarize", "split_and_rerank"] | None = None
-    summarization_model_provider: str = "anthropic"
-    summarization_model: str = "claude-3-5-haiku-latest"
+    summarization_model_provider: str = "deepseek"
+    summarization_model: str = "deepseek-chat"
     max_structured_output_retries: int = 3
     include_source_str: bool = False
-    
+
     # Workflow-specific configuration
-    number_of_queries: int = 2 # Number of search queries to generate per iteration
-    max_search_depth: int = 2 # Maximum number of reflection + search iterations
-    planner_provider: str = "anthropic"
-    planner_model: str = "claude-3-7-sonnet-latest"
+    number_of_queries: int = 2  # Number of search queries to generate per iteration
+    max_search_depth: int = 2  # Maximum number of reflection + search iterations
+    planner_provider: str = "deepseek"
+    planner_model: str = "deepseek-chat"
     planner_model_kwargs: Optional[Dict[str, Any]] = None
-    writer_provider: str = "anthropic"
-    writer_model: str = "claude-3-7-sonnet-latest"
+    writer_provider: str = "deepseek"
+    writer_model: str = "deepseek-chat"
     writer_model_kwargs: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_runnable_config(
-        cls, config: Optional[RunnableConfig] = None
+            cls, config: Optional[RunnableConfig] = None
     ) -> "WorkflowConfiguration":
         """Create a WorkflowConfiguration instance from a RunnableConfig."""
         configurable = (
@@ -66,6 +68,7 @@ class WorkflowConfiguration:
         }
         return cls(**{k: v for k, v in values.items() if v})
 
+
 @dataclass(kw_only=True)
 class MultiAgentConfiguration:
     """Configuration for the multi-agent implementation (multi_agent.py)."""
@@ -73,15 +76,16 @@ class MultiAgentConfiguration:
     search_api: SearchAPI = SearchAPI.TAVILY
     search_api_config: Optional[Dict[str, Any]] = None
     process_search_results: Literal["summarize", "split_and_rerank"] | None = None
-    summarization_model_provider: str = "anthropic"
-    summarization_model: str = "claude-3-5-haiku-latest"
+    summarization_model_provider: str = "deepseek"
+    summarization_model: str = "deepseek-chat"
     include_source_str: bool = False
-    
+
     # Multi-agent specific configuration
-    number_of_queries: int = 2 # Number of search queries to generate per section
-    supervisor_model: str = "anthropic:claude-3-7-sonnet-latest"
-    researcher_model: str = "anthropic:claude-3-7-sonnet-latest"
-    ask_for_clarification: bool = False # Whether to ask for clarification from the user
+    number_of_queries: int = 2  # Number of search queries to generate per section
+    supervisor_model: str = "deepseek-chat"
+    researcher_model: str = "deepseek-chat"
+    # it could produce KeyError:'Question', when setting False, as Question tool won't be added into tool list, and remain be invoked later on
+    ask_for_clarification: bool = True  # Whether to ask for clarification from the user
     # MCP server configuration
     mcp_server_config: Optional[Dict[str, Any]] = None
     mcp_prompt: Optional[str] = None
@@ -89,7 +93,7 @@ class MultiAgentConfiguration:
 
     @classmethod
     def from_runnable_config(
-        cls, config: Optional[RunnableConfig] = None
+            cls, config: Optional[RunnableConfig] = None
     ) -> "MultiAgentConfiguration":
         """Create a MultiAgentConfiguration instance from a RunnableConfig."""
         configurable = (
@@ -101,6 +105,7 @@ class MultiAgentConfiguration:
             if f.init
         }
         return cls(**{k: v for k, v in values.items() if v})
+
 
 # Keep the old Configuration class for backward compatibility
 Configuration = WorkflowConfiguration
