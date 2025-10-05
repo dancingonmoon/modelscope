@@ -18,18 +18,18 @@ import os
 # 获取当前文件所在目录，然后添加正确的父级目录
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.join(current_dir, '..')
-# sys.path.append(os.path.abspath(current_dir))
+sys.path.append(os.path.abspath(current_dir))
 sys.path.append(os.path.abspath(parent_dir))
 
-from open_deep_research.configuration import MultiAgentConfiguration
-from open_deep_research.utils import (
+from configuration import MultiAgentConfiguration
+from utils import (
     get_config_value,
     tavily_search,
     duckduckgo_search,
     get_today_str,
 )
 
-from open_deep_research.prompts import SUPERVISOR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS
+from prompts import SUPERVISOR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS
 from langchain_qwen_llm import langchain_qwen_llm
 
 langchain_qwen_llm_list = ["Qwen", "qwen3-max", "qwen-plus", "qwen-flash", "qwen-turbo", "qwq-plus", "qwen-long",
