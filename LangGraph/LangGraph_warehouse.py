@@ -68,6 +68,7 @@ class langchain_qwen_llm:
                  extra_body: dict = None,
                  tools: list = None,
                  structure_output: dict[str, typing_extensions.Any] | BaseModel | type | None = None,
+                 structure_output_method:  Literal["function_calling", "json_mode", "json_schema"] = "function_calling",
                  ):
         """
         langchain-qwq库中的ChatQwQ与ChatQwen针对Qwen3进行了优化；然而，其缺省的base_url却是阿里云的国际站点；国内使用需要更改base_url为国内站点
@@ -80,7 +81,10 @@ class langchain_qwen_llm:
         :param extra_body: dict; 缺省{"enable_search": True}
         :param tools: list
         :param structure_output: TypedDict
-        """
+        :param structure_output_method: The method for steering model generation, one of:
+                                    - "function_calling": Uses DashScope Qwen's `tool-calling features <https:// help. aliyun. com/ zh/ model-studio/ qwen-function-calling>`_.
+                                    - "json_mode": Uses DashScope Qwen's `JSON mode feature <https:// help. aliyun. com/ zh/ model-studio/ json-mode>`_.
+"""
         if extra_body is None:
             extra_body = {
                 "enable_search": True
@@ -100,7 +104,7 @@ class langchain_qwen_llm:
             self.model = self.model.bind_tools(tools)
 
         if structure_output is not None:
-            self.model = self.model.with_structured_output(structure_output)
+            self.model = self.model.with_structured_output(structure_output, method=structure_output_method)
 
     async def astreamPrint(self, prompt,
                            thread_id: str = None):
