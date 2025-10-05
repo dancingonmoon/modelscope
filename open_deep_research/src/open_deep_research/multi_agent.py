@@ -447,6 +447,9 @@ async def research_agent_tools(state: SectionState, config: RunnableConfig):
     }
 
     # Process all tool calls first (required for OpenAI)
+    # print(f"\nresearch_agent_tools,state['message'][-1]:\n{state['messages'][-1]}")
+    # print(f"\nresearch_agent_tools,state['message'][-1].tool_calls:\n{state['messages'][-1].tool_calls}")
+    # 此处需要观察，曾经有错误发生：too_call['name']不存在，KeyError
     for tool_call in state["messages"][-1].tool_calls:
         # Get the tool
         tool = research_tools_by_name[tool_call["name"]]

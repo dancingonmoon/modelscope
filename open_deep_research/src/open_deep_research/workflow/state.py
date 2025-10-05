@@ -1,9 +1,19 @@
 from typing import Annotated, Optional
 from langgraph.graph import MessagesState
+
+import os
+import sys
+# 获取当前文件所在目录，然后添加正确的父级目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.join(current_dir, '..')
+grandpa_dir = os.path.join(parent_dir, '..')
+sys.path.append(os.path.abspath(parent_dir))
+sys.path.append(os.path.abspath(grandpa_dir))
+
+
 from open_deep_research.state import Section, SearchQuery
 import operator
 from pydantic import BaseModel, Field
-
 class ClarifyWithUser(BaseModel):
     question: str = Field(
         description="A question to ask the user to clarify the report scope",

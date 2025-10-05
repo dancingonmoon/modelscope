@@ -32,8 +32,8 @@ def langchain_qwen_llm(
             :param tools: list
             :param structure_output: TypedDict
             :param structure_output_method: The method for steering model generation, one of:
-                    - "function_calling": Uses DashScope Qwen's `tool-calling features <https:// help. aliyun. com/ zh/ model-studio/ qwen-function-calling>`_.
-                    - "json_mode": Uses DashScope Qwen's `JSON mode feature <https:// help. aliyun. com/ zh/ model-studio/ json-mode>`_.
+                    - "function_calling": Uses DashScope Qwen's `tool-calling features <https://help.aliyun.com/zh/model-studio/qwen-function-calling>`_.
+                    - "json_mode": Uses DashScope Qwen's `JSON mode feature <https://help.aliyun.com/zh/model-studio/json-mode>`_.
             :param max_tokens:  Max number of tokens to generate.
             :param max_retries: Max number of retries
             """

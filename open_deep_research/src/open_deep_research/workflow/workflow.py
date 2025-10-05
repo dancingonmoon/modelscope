@@ -73,10 +73,11 @@ async def clarify_with_user(state: ReportState, config: RunnableConfig):
     writer_model_kwargs = get_config_value(configurable.writer_model_kwargs or {})
     if writer_model_name in langchain_qwen_llm_list:
         writer_model = langchain_qwen_llm(model=writer_model_name, enable_thinking=False)
+        structured_llm = writer_model.with_structured_output(ClarifyWithUser)
     else:
         writer_model = init_chat_model(model=writer_model_name, model_provider=writer_provider,
                                        model_kwargs=writer_model_kwargs)
-    structured_llm = writer_model.with_structured_output(ClarifyWithUser)
+        structured_llm = writer_model.with_structured_output(ClarifyWithUser)
     system_instructions = clarify_with_user_instructions.format(messages=get_buffer_string(messages))
     results = await structured_llm.ainvoke([SystemMessage(content=system_instructions),
                                             HumanMessage(
@@ -106,10 +107,11 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig) -> Co
     writer_model_kwargs = get_config_value(configurable.writer_model_kwargs or {})
     if writer_model_name in langchain_qwen_llm_list:
         writer_model = langchain_qwen_llm(model=writer_model_name, enable_thinking=False)
+        structured_llm = writer_model.with_structured_output(Queries, method='json_mode')
     else:
         writer_model = init_chat_model(model=writer_model_name, model_provider=writer_provider,
                                        model_kwargs=writer_model_kwargs)
-    structured_llm = writer_model.with_structured_output(Queries)
+        structured_llm = writer_model.with_structured_output(Queries)
 
     system_instructions_query = report_planner_query_writer_instructions.format(
         messages=get_buffer_string(messages),
@@ -200,10 +202,11 @@ async def generate_queries(state: SectionState, config: RunnableConfig):
     writer_model_kwargs = get_config_value(configurable.writer_model_kwargs or {})
     if writer_model_name in langchain_qwen_llm_list:
         writer_model = langchain_qwen_llm(model=writer_model_name, enable_thinking=False)
+        structured_llm = writer_model.with_structured_output(Queries,method='json_mode')
     else:
         writer_model = init_chat_model(model=writer_model_name, model_provider=writer_provider,
                                        model_kwargs=writer_model_kwargs)
-    structured_llm = writer_model.with_structured_output(Queries)
+        structured_llm = writer_model.with_structured_output(Queries)
     system_instructions = query_writer_instructions.format(messages=get_buffer_string(messages),
                                                            section_topic=section.description,
                                                            number_of_queries=number_of_queries,
@@ -243,7 +246,7 @@ async def write_section(state: SectionState, config: RunnableConfig):
     if writer_model_name in langchain_qwen_llm_list:
         writer_model = langchain_qwen_llm(model=writer_model_name, enable_thinking=False,
                                           max_retries=configurable.max_structured_output_retries).with_structured_output(
-            SectionOutput)
+            SectionOutput, method='json_mode')
     else:
         writer_model = init_chat_model(
             model=writer_model_name,
@@ -280,7 +283,7 @@ async def write_section(state: SectionState, config: RunnableConfig):
     elif planner_model in langchain_qwen_llm_list:
         reflection_model = langchain_qwen_llm(model=planner_model, enable_thinking=False,
                                               max_retries=configurable.max_structured_output_retries).with_structured_output(
-            Feedback)
+            Feedback, method='json_mode')
     else:
         reflection_model = init_chat_model(model=planner_model,
                                            model_provider=planner_provider,
