@@ -20,6 +20,7 @@ import os
 # 获取当前文件所在目录，然后添加正确的父级目录
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.join(current_dir, '..')
+sys.path.append(os.path.abspath(current_dir))
 sys.path.append(os.path.abspath(parent_dir))
 
 # from exa_py import Exa
@@ -46,9 +47,9 @@ from langchain_core.tools import tool
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langsmith import traceable
 
-from open_deep_research.configuration import Configuration
-from open_deep_research.state import Section
-from open_deep_research.prompts import SUMMARIZATION_PROMPT
+from configuration import Configuration
+from state import Section
+from prompts import SUMMARIZATION_PROMPT
 
 from langchain_qwen_llm import langchain_qwen_llm
 

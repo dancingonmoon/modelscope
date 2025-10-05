@@ -12,22 +12,22 @@ class WorkflowConfiguration:
     report_structure: str = DEFAULT_REPORT_STRUCTURE
     search_api: SearchAPI = SearchAPI.TAVILY
     search_api_config: Optional[Dict[str, Any]] = None
-    clarify_with_user: bool = False
-    sections_user_approval: bool = False
+    clarify_with_user: bool = True
+    sections_user_approval: bool = True
     process_search_results: Literal["summarize", "split_and_rerank"] | None = "summarize"
-    summarization_model_provider: str = "anthropic"
-    summarization_model: str = "claude-3-5-haiku-latest"
+    summarization_model_provider: str = "deepseek"
+    summarization_model: str = "deepseek-chat"
     max_structured_output_retries: int = 3
     include_source_str: bool = False
     
     # Workflow-specific configuration
     number_of_queries: int = 2 # Number of search queries to generate per iteration
     max_search_depth: int = 2 # Maximum number of reflection + search iterations
-    planner_provider: str = "anthropic"
-    planner_model: str = "claude-3-7-sonnet-latest"
+    planner_provider: str = "deepseek"
+    planner_model: str = "deepseek-chat"
     planner_model_kwargs: Optional[Dict[str, Any]] = None
-    writer_provider: str = "anthropic"
-    writer_model: str = "claude-3-7-sonnet-latest"
+    writer_provider: str = "deepseek"
+    writer_model: str = "deepseek-chat"
     writer_model_kwargs: Optional[Dict[str, Any]] = None
 
     @classmethod
