@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "Gemini_DeepResearch": "./graph.py:graph"
+    "DeepSeek_DeepResearch": "./src/agent/graph.py:graph"
   },
   "python_version": "3.12",
   "env": ".env"
