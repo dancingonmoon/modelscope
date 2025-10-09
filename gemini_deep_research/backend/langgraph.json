@@ -1,7 +1,9 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "Gemini_DeepResearch": "./graph.py:graph"
+    "Gemini_DeepResearch": "./graph.py:graph",
+    "DeepSeek_DeepResearch": "./deepseek_tavily/deepseek_tavily_graph.py:graph",
+    "Qwen_DeepResearch": "./qwen_tavily/qwen_tavily_graph.py:graph"
   },
   "python_version": "3.12",
   "env": ".env"
