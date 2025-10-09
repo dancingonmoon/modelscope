@@ -1,13 +1,13 @@
 import os
-# import sys
+import sys
 # # 获取当前文件所在目录，然后添加正确的父级目录
-# current_dir = os.path.dirname(os.path.abspath(__file__))
-# parent_dir = os.path.join(current_dir, '..')
-# sys.path.append(os.path.abspath(current_dir))
-# sys.path.append(os.path.abspath(parent_dir))
-# print(f"graph.py, current_dir:{current_dir}")
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.join(current_dir, '..')
+sys.path.append(os.path.abspath(current_dir))
+sys.path.append(os.path.abspath(parent_dir))
+print(f"graph.py, current_dir:{current_dir}")
 
-from ..tools_and_schemas import SearchQueryList, Reflection
+from tools_and_schemas import SearchQueryList, Reflection
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 from langgraph.types import Send
@@ -16,14 +16,14 @@ from langgraph.graph import START, END
 from langchain_core.runnables import RunnableConfig
 from langchain_tavily import TavilySearch
 
-from ..state import (
+from state import (
     OverallState,
     QueryGenerationState,
     ReflectionState,
     WebSearchState,
 )
-from configuration import Configuration
-from ..prompts_cn import (
+from qwen_tavily.configuration import Configuration
+from prompts_cn import (
     get_current_date,
     query_writer_instructions,
     web_searcher_instructions,
@@ -31,7 +31,7 @@ from ..prompts_cn import (
     answer_instructions,
 )
 from langchain_qwq import ChatQwen
-from ..utils import (
+from utils import (
     get_research_topic,
 )
 
@@ -71,9 +71,10 @@ async def generate_query(state: OverallState, config: RunnableConfig) -> QueryGe
     if state.get("initial_search_query_count") is None:
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
-    # init DeepSeek
+    # init Qwen
     llm = ChatQwen(
         model=configurable.query_generator_model,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 阿里云国内站点(默认为国际站点),
         temperature=1.0,
         max_retries=2,
         api_key=os.getenv("DASHSCOPE_API_KEY"),
@@ -106,7 +107,7 @@ def continue_to_web_research(state: QueryGenerationState):
 async def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     """LangGraph node that performs web research using Tavily Search API.
 
-    Executes a web search using Tavily Search API and then uses DeepSeek to analyze and summarize the results.
+    Executes a web search using Tavily Search API and then uses Qwen to analyze and summarize the results.
 
     Args:
         state: Current graph state containing the search query and research loop count
@@ -171,7 +172,7 @@ async def web_research(state: WebSearchState, config: RunnableConfig) -> Overall
     
 
     
-    # Format prompt for DeepSeek to analyze the search results
+    # Format prompt for Qwen to analyze the search results
     formatted_prompt = web_searcher_instructions.format(
         current_date=get_current_date(),
         research_topic=state["search_query"],
@@ -180,9 +181,10 @@ async def web_research(state: WebSearchState, config: RunnableConfig) -> Overall
     # Add search results to the prompt
     analysis_prompt = f"{formatted_prompt}\n\n搜索结果：\n{search_content}\n\n请分析这些搜索结果并提供带有引用的综合摘要。请用中文回答。"
     
-    # Use DeepSeek to analyze and summarize the search results
+    # Use Qwen to analyze and summarize the search results
     llm = ChatQwen(
         model=configurable.query_generator_model,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 阿里云国内站点(默认为国际站点),
         temperature=0,
         max_retries=2,
         api_key=os.getenv("DASHSCOPE_API_KEY"),
@@ -237,6 +239,7 @@ async def reflection(state: OverallState, config: RunnableConfig) -> ReflectionS
     # init Reasoning Model
     llm = ChatQwen(
         model=reasoning_model,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 阿里云国内站点(默认为国际站点),
         temperature=1.0,
         max_retries=2,
         api_key=os.getenv("DASHSCOPE_API_KEY"),
@@ -313,12 +316,13 @@ async def finalize_answer(state: OverallState, config: RunnableConfig):
         summaries="\n---\n\n".join(state["web_research_result"]),
     )
 
-    # init Reasoning Model, default to DeepSeek
+    # init Reasoning Model, default to Qwen
     llm = ChatQwen(
         model=reasoning_model,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 阿里云国内站点(默认为国际站点),
         temperature=0,
         max_retries=2,
-        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        api_key=os.getenv("DASHSCOPE_API_KEY"),
     )
     result = await llm.ainvoke(formatted_prompt)
 

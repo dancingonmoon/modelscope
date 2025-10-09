@@ -1,13 +1,13 @@
 import os
-# import sys
-# # # 获取当前文件所在目录，然后添加正确的父级目录
-# current_dir = os.path.dirname(os.path.abspath(__file__))
-# parent_dir = os.path.join(current_dir, '..')
-# sys.path.append(os.path.abspath(current_dir))
-# sys.path.append(os.path.abspath(parent_dir))
-# print(f"graph.py, current_dir:{current_dir}")
+import sys
+# # 获取当前文件所在目录，然后添加正确的父级目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.join(current_dir, '..')
+sys.path.append(os.path.abspath(current_dir))
+sys.path.append(os.path.abspath(parent_dir))
+print(f"graph.py, current_dir:{current_dir}")
 
-from ..tools_and_schemas import SearchQueryList, Reflection
+from tools_and_schemas import SearchQueryList, Reflection
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 from langgraph.types import Send
@@ -16,14 +16,14 @@ from langgraph.graph import START, END
 from langchain_core.runnables import RunnableConfig
 from langchain_tavily import TavilySearch
 
-from ..state import (
+from state import (
     OverallState,
     QueryGenerationState,
     ReflectionState,
     WebSearchState,
 )
-from configuration import Configuration
-from ..prompts_cn import (
+from deepseek_tavily.configuration import Configuration
+from prompts_cn import (
     get_current_date,
     query_writer_instructions,
     web_searcher_instructions,
@@ -31,7 +31,7 @@ from ..prompts_cn import (
     answer_instructions,
 )
 from langchain_deepseek import ChatDeepSeek
-from ..utils import (
+from utils import (
     get_research_topic,
 )
 
