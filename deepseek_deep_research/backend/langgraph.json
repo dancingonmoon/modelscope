@@ -1,8 +1,0 @@
-{
-  "dependencies": ["."],
-  "graphs": {
-    "DeepSeek_DeepResearch": "./src/agent/graph.py:graph"
-  },
-  "python_version": "3.12",
-  "env": ".env"
-}
