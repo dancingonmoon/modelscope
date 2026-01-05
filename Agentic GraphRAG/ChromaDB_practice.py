@@ -3,11 +3,12 @@ import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
 # embeddingfuction:
-Qwen_embedding = OpenAIEmbeddingFunction(api_key=os.environ["DASHSCOPE_API_KEY"],
-                                         model_name="text-embedding-v4",
-                                         api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
-                                         )
-test_embedding = Qwen_embedding(["hello world"])
+Qwen_embedding_fun = OpenAIEmbeddingFunction(api_key=os.environ["DASHSCOPE_API_KEY"],
+                                             model_name="text-embedding-v4",
+                                             api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                                             )
+test_embedding = Qwen_embedding_fun(["hello world"])
+print(test_embedding)
 
 # Create a ChromaDB client
 # chromadb_path = r"./test.db"
