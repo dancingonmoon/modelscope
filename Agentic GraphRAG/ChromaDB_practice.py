@@ -23,16 +23,15 @@ from chromadb import Documents, EmbeddingFunction, Embeddings
 import dashscope
 
 class QwenEmbeddingFun_2048(EmbeddingFunction):
-    def __init__(self,dimensions: int,
-                 text_type: Literal["query","document"],
-                 instruct: str):
-        self.dimensions = dimensions
-        self.text_type = text_type
-        self.instruct = instruct
-
     def __call__(self, input: Documents,) -> Embeddings:
-        # embed the documents somehow
-        return embeddings
+        resp = dashscope.TextEmbedding.call(
+            model="text-embedding-v4",
+            input=Documents,
+            dimensions=2048,
+            # text_type="query" # "query" or "document",
+            # instruct="Given a research paper query, retrieve relevant research paper"
+                    )
+        return [result['embedding'] for result in resp.output['embeddings']]
 
 
 # # embedding function debugging:
