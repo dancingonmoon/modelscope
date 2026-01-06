@@ -5,7 +5,7 @@ import uuid
 import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
-# embedding function，
+# embedding function， 从Qwen3和ZhipuAI的比较来看，zhipuAI的2048模型效果比Qwen3 的2048 对于这种短语的相似度比较，似乎效果更好。对于长文档，未作比较。
 # Qwen3 默认dimensions=1024,不能更改:
 Qwen_embedding_fun = OpenAIEmbeddingFunction(api_key=os.environ["DASHSCOPE_API_KEY"],
                                              model_name="text-embedding-v4",
