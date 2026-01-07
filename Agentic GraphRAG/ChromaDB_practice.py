@@ -93,32 +93,56 @@ chromadb_path = r"./data/test.db"
 test_client = chromadb.PersistentClient(path=chromadb_path)
 # delete collection:
 test_client.delete_collection(name="test1")
-collection = test_client.get_or_create_collection(name="test1",
-                                                  # embedding_function=Qwen_embedding_fun,
-                                                  # embedding_function=QwenEmbeddingFun_2048,
-                                                  embedding_function=Zhipu_embedding_fun,
-                                                  metadata={"description": "test1",
-
-                                                            "create": datetime.now().strftime("%Y-%m-%d %H:%M")})
-
+# collection = test_client.get_or_create_collection(name="test1",
+#                                                   # embedding_function=Qwen_embedding_fun,
+#                                                   # embedding_function=QwenEmbeddingFun_2048,
+#                                                   embedding_function=Zhipu_embedding_fun,
+#                                                   metadata={"description": "test1",
+#
+#                                                             "create": datetime.now().strftime("%Y-%m-%d %H:%M")})
+#
 ids = []
 metadatas = []
 for i, txt in enumerate(text):
     # ids.append(str(uuid.uuid4())) # 随机数的缺点是每次ids都不同，导致每次重复添加同一组数据；
     ids.append(f"major{i}")
     metadatas.append({"major": i})
-
-# # # delete collection data:
-# collection.delete(where={"major": {"$gte": 0}}) # 删除大于等于0的major,即，全部删除
-# # # upsert data :　(add or update)
-if len(text) > 10:
-    for i in range(0, len(text), 10):
-        collection.upsert(documents=text[i:i + 10],
-                          metadatas=metadatas[i:i + 10],
-                          ids=ids[i:i + 10])
-print(collection.count())
 #
-# # query:
-result = collection.query(query_texts=["人工智能"],
-                          n_results=10)
-print(result)
+# # # # delete collection data:
+# # collection.delete(where={"major": {"$gte": 0}}) # 删除大于等于0的major,即，全部删除
+# # # # upsert data :　(add or update)
+# if len(text) > 10:
+#     for i in range(0, len(text), 10):
+#         collection.upsert(documents=text[i:i + 10],
+#                           metadatas=metadatas[i:i + 10],
+#                           ids=ids[i:i + 10])
+# print(collection.count())
+# #
+# # # query:
+# result = collection.query(query_texts=["人工智能"],
+#                           n_results=10)
+# print(result)
+
+# # # langchain_chroma vector store 用法：
+from langchain_chroma import Chroma
+from langchain_community.embeddings import ZhipuAIEmbeddings, DashScopeEmbeddings
+
+Zhipu_embedding = ZhipuAIEmbeddings(model="embedding-3", )
+
+vector_store = Chroma(
+    collection_name="test1",
+    embedding_function=Zhipu_embedding,
+    persist_directory=chromadb_path,
+    collection_metadata={"description": "test1",
+                         "create": datetime.now().strftime("%Y-%m-%d %H:%M")},
+    client=test_client,
+    create_collection_if_not_exists=True,
+)
+vector_store.add_texts(texts=text,
+                       metadatas=metadatas,
+                       ids=ids)
+result = vector_store.similarity_search_with_score(query="人工智能",
+                                          k=10, )
+print([res[0].page_content for res in result])
+print([res[0].id for res in result])
+print([res[1] for res in result])
