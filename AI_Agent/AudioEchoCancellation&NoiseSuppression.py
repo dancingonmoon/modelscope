@@ -37,7 +37,7 @@ if aec_mark:
 #     model='damo/speech_zipenhancer_ans_multiloss_16k_base')
 # result = ans(
 #     'https://modelscope.oss-cn-beijing.aliyuncs.com/test/audios/speech_with_noise1.wav',
-#     output_path='output.wav')
+#     output_dir='output.wav')
 if ans_mark:
     ans = pipeline(
     Tasks.acoustic_noise_suppression,

@@ -485,7 +485,7 @@ class Pyaudio_Record_Player:
         使用方法:
         ans = pipeline(
         Tasks.acoustic_noise_suppression,model='damo/speech_zipenhancer_ans_multiloss_16k_base')
-        result = ans(音频wav文件或者添加wave head的音频数据, output_path='output.wav')
+        result = ans(音频wav文件或者添加wave head的音频数据, output_dir='output.wav')
         """
         vad = webrtcvad.Vad(vad_mode)
         mic_info = self.pyaudio_instance.get_default_input_device_info()
