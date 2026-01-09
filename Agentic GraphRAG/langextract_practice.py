@@ -19,11 +19,12 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 API_URL = 'https://n9pfq0l2acc5zeie.aistudio-app.com/layout-parsing'  # PaddleOCR_VL
 TOKEN = os.getenv('paddleOCR_TOKEN')
 
+
 def paddleOCR_read(paddle_api_url: str = 'https://n9pfq0l2acc5zeie.aistudio-app.com/layout-parsing',
                    paddle_token: str = None,
-                   input_path: str|Path = None,
+                   input_path: str | Path = None,
                    input_file_type: Literal['pdf', 'image'] = 'pdf',
-                   output_dir: str|Path = None,
+                   output_dir: str | Path = None,
                    useDocOrientationClassify: bool = False,  # 图像方向纠正;
                    useDocUnwarping: bool = False,  # 图片扭曲纠正;
                    useChartRecognition: bool = True,  # 图表识别;
