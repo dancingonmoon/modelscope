@@ -255,9 +255,8 @@ if __name__ == '__main__':
         output_name=f"{pdf_path.stem}.json",
         output_dir=str(OUTPUT_DIR)
     )
+    print(f"结果已保存: {OUTPUT_DIR}/{pdf_path.stem}.json")
 
-    output_jsonl_path = OUTPUT_DIR / "罗密欧与朱丽叶_extractions.jsonl"
-    print(f"结果已保存: {output_jsonl_path}")
     # 打印 LangExtract 结果
     print("LangExtract 提取结果:")
     print("=" * 80)
