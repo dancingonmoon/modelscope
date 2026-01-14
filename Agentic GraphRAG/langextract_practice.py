@@ -31,6 +31,7 @@ def paddleOCR_API(paddle_api_url: str = 'https://n9pfq0l2acc5zeie.aistudio-app.c
                   useDocUnwarping: bool = False,  # 图片扭曲纠正;
                   useChartRecognition: bool = True,  # 图表识别;
                   useLayoutDetection: bool = False,  # 版本分析
+                  visualize:bool=False, # 支持返回可视化结果图及处理过程中的中间图像。
                   promptLabel: str = None,
                   output_format: Literal['json', 'markdown'] = 'json',
                   ):
@@ -44,15 +45,15 @@ def paddleOCR_API(paddle_api_url: str = 'https://n9pfq0l2acc5zeie.aistudio-app.c
     :param paddle_token:
     :param input_path: 服务器可访问的图像文件或PDF文件的URL，或上述类型文件内容的Base64编码结果。默认对于超过10页的PDF文件，只有前10页的内容会被处理。
     :parm input_file_type: 文件类型。0表示PDF文件，1表示图像文件。若请求体无此属性，则将根据URL推断文件类型。
-    :param output_dir:
     :param useDocOrientationClassify: 是否在推理时使用文本图像方向矫正模块，开启后，可以自动识别并矫正 0°、90°、180°、270°的图片。
     :param useDocUnwarping: 是否在推理时使用文本图像矫正模块，开启后，可以自动矫正扭曲图片，例如褶皱、倾斜等情况。
     :param useChartRecognition: 是否在推理时使用图表解析模块，开启后，可以自动解析文档中的图表（如柱状图、饼图等）并转换为表格形式，方便查看和编辑数据。
     :param useLayoutDetection: 是否在推理时使用版面区域检测排序模块，开启后，可以自动检测文档中不同区域并排序。
+    :param visualize: 支持返回可视化结果图及处理过程中的中间图像。开启此功能后，将增加结果返回时间。
     :param promptLabel: VL模型的 prompt 类型设置，当且仅当 useLayoutDetection=False 时生效。
-    :param output_format: 选择以json或者markdown格式存储
-    :param output_dir: 本地存储的文件夹
-    :return: 返回阅读出的json对象
+    :param output_format: 选择以json或者markdown格式存储或return
+    :param output_dir: 当None时，不以文件本地存储方式输出;否则，在指定目录，以指定的output_format格式文件存储输出;
+    :return: 返回json对象，或者合并后的markdown文本;
     """
     if input_path:
         input_path = Path(input_path)
@@ -86,6 +87,7 @@ def paddleOCR_API(paddle_api_url: str = 'https://n9pfq0l2acc5zeie.aistudio-app.c
         "useDocUnwarping": useDocUnwarping,  # 图片扭曲纠正;
         "useChartRecognition": useChartRecognition,  # 图表识别;
         "useLayoutDetection": useLayoutDetection,  # 版本分析
+        "visualize": visualize,
     }
     if useLayoutDetection is False:
         optional_payload["promptLabel"] = promptLabel
@@ -102,31 +104,40 @@ def paddleOCR_API(paddle_api_url: str = 'https://n9pfq0l2acc5zeie.aistudio-app.c
             with open(json_output_path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
             print(f"json document saved at {json_output_path}")
+        return result
     elif output_format == 'markdown':
+        markdown_text = ""
         for i, res in enumerate(result["layoutParsingResults"]):
-            md_filename = Path(output_dir, f"{input_path.stem}_doc{i}.md")
-            with open(md_filename, "w", encoding="utf-8") as md_file:
-                md_file.write(res["markdown"]["text"])
-            print(f"Markdown document saved at {md_filename}")
-            for img_path, img in res["markdown"]["images"].items():
-                full_img_path = Path(output_dir, img_path)
-                os.makedirs(os.path.dirname(full_img_path), exist_ok=True)
-                img_bytes = requests.get(img).content
-                with open(full_img_path, "wb") as img_file:
-                    img_file.write(img_bytes)
-                print(f"Image saved to: {full_img_path}")
-            for img_name, img in res["outputImages"].items():
-                img_response = requests.get(img)
-                if img_response.status_code == 200:
-                    # Save image to local
-                    filename = Path(output_dir, f"{img_name}_{i}.jpg")
-                    with open(filename, "wb") as f:
-                        f.write(img_response.content)
-                    print(f"Image saved to: {filename}")
-                else:
-                    print(f"Failed to download image, status code: {img_response.status_code}")
+            # 链接markdown文本，用于return
+            markdown_text += res["markdown"]["text"]
+            markdown_text += "\n"
+            print(f"Markdown text for doc{i} completed. ")
+            if output_dir:
+                md_filename = Path(output_dir, f"{input_path.stem}_doc{i}.md")
+                with open(md_filename, "w", encoding="utf-8") as md_file:
+                    md_file.write(res["markdown"]["text"])
+                print(f"Markdown document saved at {md_filename}")
+                for img_path, img in res["markdown"]["images"].items():
+                    full_img_path = Path(output_dir, img_path)
+                    os.makedirs(os.path.dirname(full_img_path), exist_ok=True)
+                    img_bytes = requests.get(img).content
+                    with open(full_img_path, "wb") as img_file:
+                        img_file.write(img_bytes)
+                    print(f"Markdown Layout Image saved to: {full_img_path}")
+                for img_name, img in res["outputImages"].items():
+                    img_response = requests.get(img)
+                    if img_response.status_code == 200:
+                        # Save image to local
+                        filename = Path(output_dir, f"{img_name}_{i}.jpg")
+                        with open(filename, "wb") as f:
+                            f.write(img_response.content)
+                        print(f"Markdown Output Image saved to: {filename}")
+                    else:
+                        print(f"Failed to download image, status code: {img_response.status_code}")
 
-    return result
+        return markdown_text
+    else:
+        return result
 
 
 # from langchain_deepseek import ChatDeepSeek
@@ -136,24 +147,31 @@ deepseek_model = OpenAILanguageModel(
     # model_id='deepseek-chat',
     # api_key=os.getenv('DEEPSEEK_API_KEY'),
     # base_url="https://api.deepseek.com")
-    model_id='qwen-plus',
+    model_id='qwen-flash',
     api_key=os.getenv('DASHSCOPE_API_KEY'),
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
 
 if __name__ == '__main__':
-    result = paddleOCR_API(input_path=pdf_path,
-                           input_file_type='pdf',
-                           output_format='markdown', output_dir=OUTPUT_DIR)
+    # result = paddleOCR_API(input_path=pdf_path,
+    #                        input_file_type='pdf',
+    #                        output_format='markdown', output_dir=None)
 
     # input_text = "弗雷德里克•奥尼尔是19世纪涌入中国的新教传教士之一。这批人相信他们在中国能够取得成功。他们的对手、耶稣会会士一个世纪之前在中国传教的行动曾遭遇失败。他们要对抗的是疾病、孤单，还有难以接受新鲜事物的民众，没有几位传教士发现自己拯救了很多灵魂。罗伯特•马礼逊(Robert Morrison)是首批到中国的新教传教士之一。他曾有一句名言说，自己在27年的时间里仅仅让25人皈依新教。"
     pdf_path = Path(r"E:/Working Documents/Eastcom/市场资料/阿联酋投资问与答.pdf")
 
-    input_text = paddleOCR_API(input_path=pdf_path,
-                               input_file_type='pdf',
-                               output_dir=OUTPUT_DIR,
-                               useChartRecognition=True,
-                               useLayoutDetection=True,
-                               output_format='markdown', )
+    # input_text = paddleOCR_API(input_path=pdf_path,
+    #                            input_file_type='pdf',
+    #                            output_dir=OUTPUT_DIR,
+    #                            useChartRecognition=True,
+    #                            useLayoutDetection=True,
+    #                            output_format='markdown', )
+    # ## 从已经OCR读出的MD文件中，合并Markdown text:
+    input_text = ""
+    for i in range(65):
+        md_path = Path(OUTPUT_DIR, f"{pdf_path.stem}_doc{i}.md")
+        with open(md_path, "r", encoding="utf-8") as f:
+            input_text += f.read()
+        input_text += "\n"
 
     # 1 定义 LangExtract 的任务描述
     # langextract_prompt = """
@@ -184,6 +202,8 @@ if __name__ == '__main__':
         2. 为每个提取添加丰富的属性信息
         3. 关系类型必须在 attributes 中标注涉及的主体
         4. 保持原文出现顺序
+        5. 输出严格遵循JSON格式，确保语法正确
+        6. 每个JSON对象必须有冒号分隔符
         """)
     # 2 定义 LangExtract 的 Few-shot 示例
     # examples = [
@@ -241,7 +261,7 @@ if __name__ == '__main__':
                                 prompt_description=langextract_prompt,
                                 examples=examples,
                                 model=deepseek_model,
-                                extraction_passes=3,  # 多轮提取提高召回率;长文本时有效
+                                extraction_passes=2,  # 多轮提取提高召回率;长文本时有效
                                 max_workers=20,  # 并行处理加速;长文本时有效
                                 max_char_buffer=1000,  # 较小的上下文提高准确性;长文本时有效
                                 fence_output=True,  # 要求 LLM 输出用代码块包裹，避免格式错误
@@ -255,7 +275,7 @@ if __name__ == '__main__':
         output_name=f"{pdf_path.stem}.json",
         output_dir=str(OUTPUT_DIR)
     )
-    print(f"结果已保存: {OUTPUT_DIR}/{pdf_path.stem}.json")
+    print(f"结果已保存: {OUTPUT_DIR}/{pdf_path.stem}_LangExtract.json")
 
     # 打印 LangExtract 结果
     print("LangExtract 提取结果:")
