@@ -9,6 +9,7 @@ from pathlib import Path
 import langextract as lx
 from langextract.providers.openai import OpenAILanguageModel
 from langextract.prompt_validation import PromptValidationLevel
+from langextract.core.data import Document
 
 # pdf_path = Path(r"E:/Working Documents/Eastcom/市场资料/彭博行业研究_全球关税展望.pdf")
 pdf_path = Path(r"E:/Working Documents/Eastcom/Russia/Igor/专网/LeoTelecom/yaml/Delivery/收款/PI_251110.pdf")
@@ -31,7 +32,7 @@ def paddleOCR_API(paddle_api_url: str = 'https://n9pfq0l2acc5zeie.aistudio-app.c
                   useDocUnwarping: bool = False,  # 图片扭曲纠正;
                   useChartRecognition: bool = True,  # 图表识别;
                   useLayoutDetection: bool = False,  # 版本分析
-                  visualize:bool=False, # 支持返回可视化结果图及处理过程中的中间图像。
+                  visualize: bool = False,  # 支持返回可视化结果图及处理过程中的中间图像。
                   promptLabel: str = None,
                   output_format: Literal['json', 'markdown'] = 'json',
                   ):
@@ -159,19 +160,33 @@ if __name__ == '__main__':
     # input_text = "弗雷德里克•奥尼尔是19世纪涌入中国的新教传教士之一。这批人相信他们在中国能够取得成功。他们的对手、耶稣会会士一个世纪之前在中国传教的行动曾遭遇失败。他们要对抗的是疾病、孤单，还有难以接受新鲜事物的民众，没有几位传教士发现自己拯救了很多灵魂。罗伯特•马礼逊(Robert Morrison)是首批到中国的新教传教士之一。他曾有一句名言说，自己在27年的时间里仅仅让25人皈依新教。"
     pdf_path = Path(r"E:/Working Documents/Eastcom/市场资料/阿联酋投资问与答.pdf")
 
+
     # input_text = paddleOCR_API(input_path=pdf_path,
     #                            input_file_type='pdf',
     #                            output_dir=OUTPUT_DIR,
     #                            useChartRecognition=True,
     #                            useLayoutDetection=True,
     #                            output_format='markdown', )
-    # ## 从已经OCR读出的MD文件中，合并Markdown text:
-    input_text = ""
-    for i in range(65):
-        md_path = Path(OUTPUT_DIR, f"{pdf_path.stem}_doc{i}.md")
-        with open(md_path, "r", encoding="utf-8") as f:
-            input_text += f.read()
-        input_text += "\n"
+    # ## 从存储在本地目录，已经OCR读出的MD文件中，按照Document Object的dataclass转换，并生成Iterable Document Object, 以送入lx.extract:
+    # input_text = ""
+    def load_md_Document_from_dir(pdf_path: str | Path, output_dir: str | Path):
+        """
+        从存储在本地目录，已经OCR读出的MD文件中，按照Document Object的dataclass转换，按doc的序列，生成Iterable Document dataclass, 以送入lx.extract:
+        :param pdf_path:
+        :param output_dir:
+        :return: langextract.core.Document dataclass
+        """
+        for i in range(65):
+            if not isinstance(pdf_path, Path):
+                pdf_path = Path(pdf_path)
+            md_path = Path(output_dir, f"{pdf_path.stem}_doc{i}.md")
+            with open(md_path, "r", encoding="utf-8") as f:
+                md_text = f.read()
+            md_Document = Document(text=md_text, document_id=f"doc{i}")
+            yield md_Document
+
+
+    input_text = load_md_Document_from_dir(pdf_path, OUTPUT_DIR)
 
     # 1 定义 LangExtract 的任务描述
     # langextract_prompt = """
@@ -265,14 +280,14 @@ if __name__ == '__main__':
                                 max_workers=20,  # 并行处理加速;长文本时有效
                                 max_char_buffer=1000,  # 较小的上下文提高准确性;长文本时有效
                                 fence_output=True,  # 要求 LLM 输出用代码块包裹，避免格式错误
-                                use_schema_constraints=False,  # 不使用严格的 schema 约束，提高灵活性
+                                use_schema_constraints=True,  # 使用严格的 schema 约束，XX(提高灵活性)
                                 prompt_validation_level=PromptValidationLevel.OFF,  # 关闭提示词验证
                                 show_progress=True,  # 显示提取进度
                                 )
     # 保存提取结果为 JSONL 格式
     lx.io.save_annotated_documents(
-        [extract_result],
-        output_name=f"{pdf_path.stem}.json",
+        extract_result,
+        output_name=f"{pdf_path.stem}_LangExtract.json",
         output_dir=str(OUTPUT_DIR)
     )
     print(f"结果已保存: {OUTPUT_DIR}/{pdf_path.stem}_LangExtract.json")
@@ -280,10 +295,20 @@ if __name__ == '__main__':
     # 打印 LangExtract 结果
     print("LangExtract 提取结果:")
     print("=" * 80)
-    for ext in extract_result.extractions:
-        if ext.char_interval:
-            pos_info = f"[{ext.char_interval.start_pos}-{ext.char_interval.end_pos}]"
-        else:
-            pos_info = f"[~]"
-        print(f"{ext.extraction_index}: [{ext.extraction_class}] {ext.extraction_text} {pos_info}")
-    print("=" * 80)
+    if isinstance(extract_result, list):
+        for extract_buffer in extract_result:
+            for ext in extract_buffer.extractions:
+                if ext.char_interval:
+                    pos_info = f"[{ext.char_interval.start_pos}-{ext.char_interval.end_pos}]"
+                else:
+                    pos_info = f"[~]"
+                print(f"{ext.extraction_index}: [{ext.extraction_class}] {ext.extraction_text} {pos_info}")
+            print("=" * 80)
+    elif isinstance(extract_result, lx.data.AnnotatedDocument):
+        for ext in extract_result.extractions:
+            if ext.char_interval:
+                pos_info = f"[{ext.char_interval.start_pos}-{ext.char_interval.end_pos}]"
+            else:
+                pos_info = f"[~]"
+            print(f"{ext.extraction_index}: [{ext.extraction_class}] {ext.extraction_text} {pos_info}")
+        print("=" * 80)
