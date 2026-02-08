@@ -19,8 +19,8 @@ client = ZhipuAI(api_key=api_key)
 #     stream=False,
 # )
 # print(response.choices[0].gradio_message)
-# for chunk in response:
-#     print(chunk.choices[0].delta.content)
+# for chunk_size in response:
+#     print(chunk_size.choices[0].delta.content)
 
 # 2 图像文本模型 Vision-LLM
 import base64
@@ -142,8 +142,8 @@ prompt_template = """
 #             ],
 #     stream=False,
 # )
-# # for chunk in response:
-# #     print(chunk.choices[0].delta)
+# # for chunk_size in response:
+# #     print(chunk_size.choices[0].delta)
 # print(response.choices[0].gradio_message.content)
 
 # web_search
@@ -165,8 +165,8 @@ response = client.chat.completions.create(
     ],
     stream=False,
 )
-# for chunk in response:
-#     print(chunk.choices[0].delta)
+# for chunk_size in response:
+#     print(chunk_size.choices[0].delta)
 print(response.choices[0].message.content)
 
 # 自定义one-shot-RAG:

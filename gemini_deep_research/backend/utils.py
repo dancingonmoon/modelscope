@@ -88,7 +88,7 @@ def get_citations(response, resolved_urls_map):
         response: The response object from the Gemini model, expected to have
                   a structure including `candidates[0].grounding_metadata`.
                   It also relies on a `resolved_map` being available in its
-                  scope to map chunk URIs to resolved URLs.
+                  scope to map chunk_size URIs to resolved URLs.
 
     Returns:
         list: A list of dictionaries, where each dictionary represents a citation
@@ -99,7 +99,7 @@ def get_citations(response, resolved_urls_map):
               - "end_index" (int): The character index immediately after the
                                    end of the cited segment (exclusive).
               - "segments" (list[str]): A list of individual markdown-formatted
-                                        links for each grounding chunk.
+                                        links for each grounding chunk_size.
               - "segment_string" (str): A concatenated string of all markdown-
                                         formatted links for the citation.
               Returns an empty list if no valid candidates or grounding supports
@@ -158,7 +158,7 @@ def get_citations(response, resolved_urls_map):
                         }
                     )
                 except (IndexError, AttributeError, NameError):
-                    # Handle cases where chunk, web, uri, or resolved_map might be problematic
+                    # Handle cases where chunk_size, web, uri, or resolved_map might be problematic
                     # For simplicity, we'll just skip adding this particular segment link
                     # In a production system, you might want to log this.
                     pass

@@ -826,8 +826,8 @@ if __name__ == "__main__":
     # # 测试zhipuai
     # model = "glm-4-flash"
     # response = zhipuai_api("请联网搜索，回答：美国大选最新情况", model=model)
-    # for chunk in response:
-    #     out = chunk.choices[0].delta.content
+    # for chunk_size in response:
+    #     out = chunk_size.choices[0].delta.content
 
     # gemini client:
     genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))

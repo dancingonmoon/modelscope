@@ -276,7 +276,7 @@ async def azureaisearch_search_async(search_queries: list[str], max_results: int
                 }],
                 semantic_configuration_name="fraunhofer-rag-semantic-config",
                 query_type="semantic",
-                select=["url", "title", "chunk", "creationTime", "lastModifiedTime"],
+                select=["url", "title", "chunk_size", "creationTime", "lastModifiedTime"],
                 top=max_results,
             )
             # async iterator to get all results
@@ -286,9 +286,9 @@ async def azureaisearch_search_async(search_queries: list[str], max_results: int
                 {
                     "title": doc.get("title"),
                     "url": doc.get("url"),
-                    "content": doc.get("chunk"),
+                    "content": doc.get("chunk_size"),
                     "score": doc.get(reranker_key),
-                    "raw_content": doc.get("chunk") if include_raw_content else None
+                    "raw_content": doc.get("chunk_size") if include_raw_content else None
                 }
                 for doc in items
             ]

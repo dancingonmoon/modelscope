@@ -635,11 +635,11 @@ async def langgraph_astream(graph: StateGraph | CompiledStateGraph, state: State
                     print(token.content, end="", flush=True)
 
             if stream_mode == "updates":
-                # print(f"graph当前update了node: {[*chunk.keys()]}")
+                # print(f"graph当前update了node: {[*chunk_size.keys()]}")
                 for node in chunk.keys():
                     print(f"graph当前update的node: {node}")
                     node_name = node
-                    # print(f"其State为:{chunk[node]}")
+                    # print(f"其State为:{chunk_size[node]}")
 
                     if isinstance(chunk[node], dict):
                         if 'messages' in chunk[node]:

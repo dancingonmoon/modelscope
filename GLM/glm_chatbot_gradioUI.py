@@ -198,8 +198,8 @@ if __name__ == "__main__":
     # # 测试zhipuai
     # model = "glm-4-flash"
     # response = zhipuai_api("请联网搜索，回答：美国大选最新情况", model=model)
-    # for chunk in response:
-    #     out = chunk.choices[0].delta.content
+    # for chunk_size in response:
+    #     out = chunk_size.choices[0].delta.content
 
     with gr.Blocks() as demo:
         gr.Markdown("# 多模态Robot 🤗")
