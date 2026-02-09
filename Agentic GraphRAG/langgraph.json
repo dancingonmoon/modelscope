@@ -1,0 +1,8 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "AgenticGraphRAG": "./AgenticGraphRAG_agent.py:graphrag_agent"
+  },
+  "python_version": "3.12",
+  "env": ".env"
+}

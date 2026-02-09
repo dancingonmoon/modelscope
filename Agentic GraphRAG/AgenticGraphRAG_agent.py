@@ -12,8 +12,24 @@ from langchain_community.embeddings import ZhipuAIEmbeddings
 
 Zhipu_embedding = ZhipuAIEmbeddings(model="embedding-3", )
 
-
+# 以下在langgraph studio中使用时，才需要内存中预先启动：
 # 向量数据库搜索(vector_knowledge_search)，需要显性的在LLM tool中，赋值向量数据库vectorstore
+json_path = Path(
+        r"E:/Python_WorkSpace/modelscope/Agentic GraphRAG/data/lx_output/阿联酋投资问与答_LangExtract.json")
+chromadb_path = r"E:/Python_WorkSpace/modelscope/Agentic GraphRAG/data/UAE_investment_QA"
+collection_name = "UAE_investment_QA"
+doc_title = '阿联酋投资问与答'
+json_data = iterate_json_loader(json_path)
+_, KnowledgeGraph_ = load_KnowledgeExtraction_KnowledgeGraph_from_json(json_data,
+                                                                       doc_title=doc_title)
+# 从chromadb向量数据库中加载
+chroma_client = chromadb.PersistentClient(path=chromadb_path)
+# 从chromadb向量数据库中加载
+vector_store = Chroma(
+    collection_name=collection_name,
+    client=chroma_client,
+    create_collection_if_not_exists=False,
+    embedding_function=Zhipu_embedding, )
 # Graph搜索(graph_knowledge_search),需要显性的在LLM tool中，赋值KnowledgeGraph类型的数据库
 
 # =============================================================================
